@@ -40,11 +40,11 @@ rpl::producer<TextWithEntities> Text2() {
 		lt_gpl_link,
 		rpl::single(Ui::Text::Link(
 			"GNU GPL",
-			"https://github.com/TDesktop-x64/tdesktop/blob/dev/LICENSE")),
+			"https://github.com/Clansty/tdesktop/blob/dev/LICENSE")),
 		lt_github_link,
 		rpl::single(Ui::Text::Link(
 			"GitHub",
-			"https://github.com/TDesktop-x64/tdesktop")),
+			"https://github.com/Clansty/tdesktop")),
 		Ui::Text::WithEntities);
 }
 
@@ -65,9 +65,10 @@ AboutBox::AboutBox(QWidget *parent)
 }
 
 void AboutBox::prepare() {
-	setTitle(rpl::single(u"64Gram Desktop"_q));
+	setTitle(rpl::single(u"0wGram Desktop"_q));
 
 	addButton(tr::lng_close(), [this] { closeBox(); });
+	addButton(tr::lng_nya(), [this] { closeBox(); });
 
 	_text1->setLinksTrusted();
 	_text2->setLinksTrusted();
@@ -156,6 +157,7 @@ QString currentVersionText() {
 	if (Platform::IsWindows64Bit()) {
 		result += " x64";
 	}
+	result += QString("｜v%1").arg(Upstream64Version);
 	result += QString("｜v%1").arg(UpstreamVersion);
 	return result;
 }

@@ -1,6 +1,6 @@
 /*
-This file is part of 64Gram Desktop,
-the official desktop application for the Telegram messaging service.
+This file is part of 0wGram Desktop,
+the unofficial desktop application for the Telegram messaging service.
 
 For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
@@ -260,7 +260,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_flood_error" = "Too many tries. Please try again later.";
 "lng_edit_error" = "You cannot edit this message";
 "lng_error_phone_flood" = "Sorry, you have deleted and re-created your account too many times recently. Please wait for a few days before signing up again.";
-"lng_error_start_minimized_passcoded" = "You have set a local passcode, so 64Gram Desktop can't be launched minimised; it will ask you to enter your passcode before it can start working.";
+"lng_error_start_minimized_passcoded" = "You have set a local passcode, so Telegram Desktop can't be launched minimised; it will ask you to enter your passcode before it can start working.";
 "lng_error_public_groups_denied" = "Unfortunately, you were banned from participating in public groups.\n{more_info}";
 "lng_error_cant_add_member" = "Sorry, you can't add the bot to this group. Ask a group admin to do it.";
 "lng_error_cant_add_bot" = "Sorry, this bot can't be added to groups.";
@@ -282,7 +282,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_sure_enable_socks" = "Are you sure you want to enable this proxy?\n\nServer: {server}\nPort: {port}\n\nYou can change your proxy server later in the Settings (Connection Type).";
 "lng_sure_enable" = "Enable";
 "lng_proxy_invalid" = "The proxy link is invalid.";
-"lng_proxy_unsupported" = "Your 64Gram Desktop version doesn't support this proxy type or the proxy link is invalid. Please update 64Gram Desktop to the latest version.";
+"lng_proxy_unsupported" = "Your 0wGram Desktop version doesn't support this proxy type or the proxy link is invalid. Please update 0wGram Desktop to the latest version.";
 
 "lng_edit_deleted" = "This message was deleted";
 "lng_edit_limit_reached#one" = "You've reached the message text limit. Please make the text shorter by {count} character.";
@@ -317,8 +317,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_edit_caption_attach" = "Sorry, you can't attach a new media while you're editing your message.";
 "lng_edit_caption_voice" = "Sorry, you can't edit your message while you're having an unsent voice message.";
 
-"lng_intro_about" = "Welcome to the Official 64Gram Desktop app.\nIt's fast and secure.";
-"lng_start_msgs" = "Start messaging";
+"lng_intro_about" = "Welcome to the Unofficial 0wGram Desktop app.\nIt's 0wOw0wowOw0wOwo.";
+"lng_start_msgs" = "加入 Impact";
 
 "lng_intro_next" = "Next";
 "lng_intro_finish" = "Sign up";
@@ -474,8 +474,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_settings_events_pinned" = "Pinned messages";
 "lng_settings_notifications_calls_title" = "Calls";
 
-"lng_notification_preview_title" = "Dino Rex";
-"lng_notification_preview_text" = "It's morning in Tokyo 😎";
+"lng_notification_preview_title" = "Clansty ad Astra";
+"lng_notification_preview_text" = "喵！";
 "lng_notification_show_name" = "Name";
 "lng_notification_show_text" = "Text";
 "lng_notification_preview" = "You have a new message";
@@ -582,9 +582,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 "lng_settings_chat_reactions_title" = "Quick Reaction";
 "lng_settings_chat_reactions_subtitle" = "Choose your favorite reaction";
-"lng_settings_chat_message_reply_from" = "Bob Harris";
-"lng_settings_chat_message_reply" = "Good morning";
-"lng_settings_chat_message" = "Do you know what time it is?";
+"lng_settings_chat_message_reply_from" = "Clansty ad Astra";
+"lng_settings_chat_message_reply" = "服务器又炸了";
+"lng_settings_chat_message" = "好似喵！";
 
 "lng_settings_section_filters" = "Folders";
 
@@ -819,7 +819,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_theme_reverting#other" = "Reverting to the old theme in {count} seconds.";
 "lng_theme_keep_changes" = "Keep changes";
 "lng_theme_revert" = "Revert";
-"lng_theme_no_desktop" = "Sorry, this theme doesn't include a version for 64Gram Desktop.";
+"lng_theme_no_desktop" = "Sorry, this theme doesn't include a version for 0wGram Desktop.";
 "lng_theme_share" = "Share";
 "lng_theme_edit" = "Edit";
 "lng_theme_delete" = "Delete";
@@ -891,7 +891,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_passcode_enter_first" = "Enter a passcode";
 "lng_passcode_enter_new" = "Enter new passcode";
 "lng_passcode_confirm_new" = "Re-enter new passcode";
-"lng_passcode_about" = "When a local passcode is set, a lock icon appears at the top of your chats list. Click it to lock the app.\n\nNote: if you forget your local passcode, you'll need to relogin in 64Gram Desktop.";
+"lng_passcode_about" = "When a local passcode is set, a lock icon appears at the top of your chats list. Click it to lock the app.\n\nNote: if you forget your local passcode, you'll need to relogin in 0wGram Desktop.";
 "lng_passcode_about1" = "When a local passcode is set, a lock icon appears at the top of your chats list.";
 "lng_passcode_about2" = "Click it to lock Telegram Desktop.";
 "lng_passcode_about3" = "Note: if you forget your passcode, you'll need to log out of Telegram Desktop and log in again.";
@@ -1540,7 +1540,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_sure_delete_selected_days#other" = "{count} selected days";
 
 "lng_message_empty" = "Empty Message";
-"lng_message_unsupported" = "This message is not supported by your version of 64Gram Desktop. Please update to the latest version in Settings, or install it from {link}";
+"lng_message_unsupported" = "This message is not supported by your version of 0wGram Desktop. Please update to the latest version in Settings, or install it from {link}";
 "lng_message_not_found" = "Message doesn't exist.";
 
 "lng_duration_minsec_minutes#one" = "{count} min";
@@ -1860,7 +1860,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_cancel_edit_post_yes" = "Yes";
 "lng_cancel_edit_post_no" = "No";
 
-"lng_bot_share_location_unavailable" = "Sorry, location sharing is currently unavailable in 64Gram Desktop.";
+"lng_bot_share_location_unavailable" = "Sorry, location sharing is currently unavailable in 0wGram Desktop.";
 "lng_bot_share_phone" = "Do you want to share your phone number with this bot?";
 "lng_bot_share_phone_confirm" = "Share";
 "lng_bot_allow_write_title" = "Allow messaging";
@@ -2931,7 +2931,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_theme_preview_users#other" = "{count} people are using this theme";
 
 "lng_new_version_wrap" = "Telegram Desktop was updated to version {version}\n\n{changes}\n\nFull version history is available here:\n{link}";
-"lng_new_version_wrap2" = "64Gram Desktop was updated to version {version}\n\n{changes}\n\nFull version history is available here:\n{link}";
+"lng_new_version_wrap2" = "0wGram Desktop was updated to version {version}\n\n{changes}\n\nFull version history is available here:\n{link}";
 "lng_new_version_minor" = "— Bug fixes and other minor improvements";
 
 "lng_menu_insert_unicode" = "Insert Unicode control character";
@@ -3232,7 +3232,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_group_call_context_remove" = "Remove";
 "lng_group_call_remove_channel" = "Remove {channel} from the voice chat?";
 "lng_group_call_remove_channel_from_channel" = "Remove {channel} from the live stream?";
-"lng_group_call_mac_access" = "64Gram Desktop does not have access to system wide keyboard input required for Push to Talk.";
+"lng_group_call_mac_access" = "0wGram Desktop does not have access to system wide keyboard input required for Push to Talk.";
 "lng_group_call_mac_input" = "Please allow **Input Monitoring** for Telegram in Privacy Settings.";
 "lng_group_call_mac_accessibility" = "Please allow **Accessibility** for Telegram in Privacy Settings.\n\nApp restart may be required.";
 "lng_group_call_mac_screencast_access" = "Telegram Desktop does not have access to screen recording required for Screen Sharing.";
@@ -3930,7 +3930,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_language_not_found" = "Sorry, this language pack doesn't exist.";
 "lng_language_already" = "You're already using this language pack. You can change your language back in Settings.";
 "lng_language_not_ready_title" = "Insufficient data";
-"lng_language_not_ready_about" = "Unfortunately, this custom language pack ({lang_name}) doesn't contain data for 64Gram Desktop. You can contribute to this language pack using the {link}.";
+"lng_language_not_ready_about" = "Unfortunately, this custom language pack ({lang_name}) doesn't contain data for 0wGram Desktop. You can contribute to this language pack using the {link}.";
 "lng_language_not_ready_link" = "translations platform";
 
 "lng_translate_box_error" = "Translate failed.";
@@ -3994,8 +3994,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 "lng_outdated_title" = "PLEASE UPDATE YOUR OPERATING SYSTEM.";
 "lng_outdated_title_bits" = "PLEASE SWITCH TO 64 BIT OPERATING SYSTEM.";
-"lng_outdated_soon" = "Otherwise, 64Gram Desktop will stop updating on {date}.";
-"lng_outdated_now" = "So that 64Gram Desktop can update to newer versions.";
+"lng_outdated_soon" = "Otherwise, 0wGram Desktop will stop updating on {date}.";
+"lng_outdated_now" = "So that 0wGram Desktop can update to newer versions.";
 
 "lng_filters_all" = "All chats";
 "lng_filters_setup" = "Edit";
@@ -4513,7 +4513,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 "lng_mac_hold_to_quit" = "Hold {text} to Quit";
 
-"lng_intro_about2" = "Welcome to the 64Gram Desktop app.\nIt's fast and secure.";
+"lng_intro_about2" = "Welcome to the Unofficial 0wGram Desktop app.\nIt's 0wOw0wowOw0wOwo.";
 
 "lng_settings_enhanced" = "Enhanced Settings";
 "lng_settings_network" = "Network";
@@ -4651,4 +4651,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_group_requests_ban" = "Ban";
 
 "lng_blocked_user_hint" = "[Blocked User Message]\n";
+
+// 0wGram
+
+"lng_nya" = "nyanyan!";
+
 // Keys finished

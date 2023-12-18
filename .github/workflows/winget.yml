@@ -8,5 +8,5 @@ jobs:
     steps:
       - uses: vedantmgoyal2009/winget-releaser@v1
         with:
-          identifier: 64Gram.64Gram
+          identifier: 0wGram.0wGram
           token: ${{ secrets.WINGET_TOKEN }}

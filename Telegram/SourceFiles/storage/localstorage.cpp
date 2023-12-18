@@ -1132,6 +1132,7 @@ void readLangPack() {
 	if (langpack.stream.status() == QDataStream::Ok) {
 		Lang::GetInstance().fillFromSerialized(data, langpack.version);
 	}
+    return;
 	QString langPackBaseId = Lang::GetInstance().baseId();
 	QString langPackId = Lang::GetInstance().id();
 	if (langPackId.isEmpty()) {
@@ -1361,7 +1362,7 @@ void CustomLangPack::fetchFinished() {
 	auto statusCode = _chkReply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
 
 	if (statusCode == 404 && !langPackId.isEmpty() && !langPackBaseId.isEmpty() && !needFallback) {
-		LOG(("64Gram Language pack not found! Fallback to main language: %1...").arg(langPackBaseId));
+		LOG(("0wGram Language pack not found! Fallback to main language: %1...").arg(langPackBaseId));
 		needFallback = true;
 		_chkReply->disconnect();
 		fetchCustomLangPack("", langPackBaseId);
@@ -1389,12 +1390,12 @@ void CustomLangPack::fetchError(QNetworkReply::NetworkError e) {
 		QString langPackId = Lang::GetInstance().id();
 
 		if (!langPackId.isEmpty() && !langPackBaseId.isEmpty() && !needFallback) {
-			LOG(("64Gram Language pack not found! Fallback to main language: %1...").arg(langPackBaseId));
+			LOG(("0wGram Language pack not found! Fallback to main language: %1...").arg(langPackBaseId));
 			needFallback = true;
 			_chkReply->disconnect();
 			fetchCustomLangPack("", langPackBaseId);
 		} else {
-			LOG(("64Gram Language pack not found! Fallback to default language: English..."));
+			LOG(("0wGram Language pack not found! Fallback to default language: English..."));
 			loadDefaultLangFile();
 			_chkReply = nullptr;
 		}
@@ -1406,6 +1407,7 @@ void CustomLangPack::loadDefaultLangFile() {
 	if (file.open(QIODevice::ReadOnly)) {
 		QJsonDocument str = QJsonDocument::fromJson(file.readAll());
 		QJsonObject json = str.object();
+        qDebug() << str.toJson().toStdString().c_str();
 		for (const QString& key : json.keys()) {
 			Lang::GetInstance().applyValue(key.toUtf8(), json.value(key).toString().toUtf8());
 		}

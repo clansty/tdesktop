@@ -1035,7 +1035,7 @@ auto HtmlWriter::Wrap::pushMessage(
 			dialog,
 			basePath,
 			"This message is not supported by this version "
-			"of 64Gram Desktop. Please update the application.") };
+			"of 0wGram Desktop. Ask Clansty to update the application.") };
 	}
 
 	const auto wrapReplyToLink = [&](const QByteArray &text) {

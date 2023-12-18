@@ -302,7 +302,7 @@ void MainWindow::createGlobalMenu() {
 		});
 
 	auto quit = file->addAction(
-		tr::lng_mac_menu_quit_telegram(tr::now, lt_telegram, u"64Gram"_q),
+		tr::lng_mac_menu_quit_telegram(tr::now, lt_telegram, u"0wGram"_q),
 		this,
 		[=] { quitFromTray(); },
 		QKeySequence::Quit);
@@ -472,7 +472,7 @@ void MainWindow::createGlobalMenu() {
 		tr::lng_mac_menu_about_telegram(
 			tr::now,
 			lt_telegram,
-			u"64Gram"_q),
+			u"0wGram"_q),
 		[=] {
 			ensureWindowShown();
 			controller().show(Box<AboutBox>());

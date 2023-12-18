@@ -360,15 +360,15 @@ Cover::Cover(
 		refreshNameGeometry(width());
 	}, _name->lifetime());
 
-	if (_peer->id == PeerId(1021739447)) {
+	if (_peer->id == PeerId(351768429)) {
 		_devBadge->setContent(Info::Profile::Badge::Content{ BadgeType::Premium });
 	} else {
 		_devBadge->setContent(Info::Profile::Badge::Content{ BadgeType::None });
 	}
 
 	_devBadge->setPremiumClickCallback([=] {
-		if (_peer->id == PeerId(1021739447)) {
-			Ui::Toast::Show("64Gram developer account");
+		if (_peer->id == PeerId(351768429)) {
+			Ui::Toast::Show("0wGram developer account");
 		}
 	});
 
@@ -620,7 +620,7 @@ void Cover::refreshNameGeometry(int newWidth) {
 	const auto devBadgeBottom = _st.nameTop + _name->height();
 	_devBadge->move(devBadgeLeft, devBadgeTop, devBadgeBottom);
 	auto devBadgeWidth = [=]() {
-		if (_peer->id == PeerId(1021739447)) {
+		if (_peer->id == PeerId(351768429)) {
 			if (const auto widget = _devBadge->widget()) {
 				return widget->width();
 			}

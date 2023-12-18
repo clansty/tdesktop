@@ -378,15 +378,15 @@ void Preview::updateToScale(int scale) {
 	_textStyle.pre.iconPosition = scaled(QPoint{ 4, 2 });
 	_nameText.setText(
 		_nameStyle,
-		u"Bob Harris"_q,
+		u"Clansty ad Astra"_q,
 		Ui::NameTextOptions());
 	_replyText.setText(
 		_textStyle,
-		u"Good morning!"_q,
+		u"服务器又炸了"_q,
 		Ui::ItemTextDefaultOptions());
 	_messageText.setText(
 		_textStyle,
-		u"Do you know what time it is?"_q,
+		u"好似喵！"_q,
 		Ui::ItemTextDefaultOptions());
 
 	const auto namePosition = QPoint(
