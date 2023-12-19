@@ -1,4 +1,4 @@
-﻿/*
+/*
 This file is part of Telegram Desktop,
 the official desktop application for the Telegram messaging service.
 
@@ -508,11 +508,10 @@ void AddRepeaterAction(
 	const auto itemId = item->fullId();
 	const auto _history = item->history();
 	auto fwdSubmenu = std::make_unique<Ui::PopupMenu>(list, st::popupMenuWithIcons);
-	auto repeatSubmenu = std::make_unique<Ui::PopupMenu>(list, st::popupMenuWithIcons);
 	if ((item->history()->peer->isMegagroup() || item->history()->peer->isChat() || item->history()->peer->isUser())) {
 		if (GetEnhancedBool("show_repeater_option")) {
 			if (item->allowsForward()) {
-				repeatSubmenu->addAction(tr::lng_context_repeat_msg(tr::now), [=] {
+				menu->addAction(tr::lng_context_repeat_msg(tr::now), [=] {
 					if (item->id <= 0) return;
 					const auto api = &item->history()->peer->session().api();
 					auto action = Api::SendAction(item->history()->peer->owner().history(item->history()->peer), Api::SendOptions{ .sendAs = _history->session().sendAsPeers().resolveChosen(_history->peer) });
@@ -537,7 +536,7 @@ void AddRepeaterAction(
 				}, &st::menuIconDiscussion);
 			}
 			if (!item->isService() && !item->emptyText() && item->media() == nullptr) {
-				repeatSubmenu->addAction(tr::lng_context_repeat_msg_no_fwd(tr::now), [=] {
+				menu->addAction(tr::lng_context_repeat_msg_no_fwd(tr::now), [=] {
 					if (item->id <= 0) return;
 					const auto api = &item->history()->peer->session().api();
 					auto message = ApiWrap::MessageToSend(prepareSendAction(_history->peer->owner().history(item->history()->peer), Api::SendOptions{ .sendAs = _history->session().sendAsPeers().resolveChosen(_history->peer) }));
@@ -559,7 +558,7 @@ void AddRepeaterAction(
 			}
 			else if (!item->isService() && item->media()->document() != nullptr && item->media()->document()->sticker() != nullptr) {
 				if (item->allowsForward()) {
-					repeatSubmenu->addAction(tr::lng_context_repeat_msg_no_fwd(tr::now), [=] {
+					menu->addAction(tr::lng_context_repeat_msg_no_fwd(tr::now), [=] {
 						if (item->id <= 0) return;
 						const auto api = &item->history()->peer->session().api();
 						auto action = Api::SendAction(item->history()->peer->owner().history(item->history()->peer), Api::SendOptions{ .sendAs = _history->session().sendAsPeers().resolveChosen(_history->peer) });
@@ -586,7 +585,7 @@ void AddRepeaterAction(
 						}, &st::menuIconDiscussion);
 				}
 				else {
-					repeatSubmenu->addAction(tr::lng_context_repeat_msg_no_fwd(tr::now), [=] {
+					menu->addAction(tr::lng_context_repeat_msg_no_fwd(tr::now), [=] {
 						if (item->id <= 0) return;
 						const auto document = item->media()->document();
 						const auto history = item->history()->peer->owner().history(item->history()->peer);
@@ -622,9 +621,6 @@ void AddRepeaterAction(
 			}
 			if (!fwdSubmenu->empty()) {
 				menu->addAction(tr::lng_context_forward(tr::now), std::move(fwdSubmenu), &st::menuIconForward);
-			}
-			if (GetEnhancedBool("show_repeater_option") && !repeatSubmenu->empty()) {
-				menu->addAction(tr::lng_context_repeater(tr::now), std::move(repeatSubmenu), &st::menuIconDiscussion);
 			}
 		}
 	}
