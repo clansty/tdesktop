@@ -1264,6 +1264,25 @@ void HistoryInner::paintEvent(QPaintEvent *e) {
 					width(),
 					st::msgPhotoSize,
 					context.paused);
+
+				const auto user = from->asUser();
+				const auto now = user ? base::unixtime::now() : TimeId();
+				if(user && Data::IsUserOnline(user, now)){
+					const auto size = st::chatOnlineBadgeSize;
+					const auto stroke = st::chatOnlineBadgeStroke;
+					const auto skip = st::chatOnlineBadgeSkip;
+									
+					auto pen = QPen(Qt::transparent);
+					pen.setWidthF(stroke);
+					p.setPen(pen);
+					p.setBrush(st::dialogsOnlineBadgeFg);
+					p.drawEllipse(QRectF(
+						st::historyPhotoLeft + st::msgPhotoSize + skip.x() - size,
+						userpicTop + st::msgPhotoSize + skip.y() - size,
+						size,
+						size
+					));
+				}
 			} else if (const auto info = item->hiddenSenderInfo()) {
 				if (info->customUserpic.empty()) {
 					info->emptyUserpic.paintCircle(

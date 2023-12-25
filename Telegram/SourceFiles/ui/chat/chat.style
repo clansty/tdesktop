@@ -1012,3 +1012,7 @@ chatSimilarName: TextStyle(defaultTextStyle) {
 }
 chatSimilarWidthMax: 424px;
 chatSimilarSkip: 12px;
+
+chatOnlineBadgeStroke: 2px;
+chatOnlineBadgeSize: 10px;
+chatOnlineBadgeSkip: point(0px, 2px);
