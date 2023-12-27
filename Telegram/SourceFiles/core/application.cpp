@@ -1088,35 +1088,7 @@ bool Application::openInternalUrl(const QString &url, QVariant context) {
 }
 
 QString Application::changelogLink() const {
-	const auto base = u"https://github.com/TDesktop-x64/tdesktop/releases"_q;
-	const auto languages = {
-		"id",
-		"de",
-		"fr",
-		"nl",
-		"pl",
-		"tr",
-		"uk",
-		"fa",
-		"ru",
-		"ms",
-		"es",
-		"it",
-		"uz",
-		"pt-br",
-		"be",
-		"ar",
-		"ko",
-	};
-	const auto current = _langpack->id().replace("-raw", "");
-	if (current.isEmpty()) {
-		return base;
-	}
-	for (const auto language : languages) {
-		if (current == language || current.split(u'-')[0] == language) {
-			return base + "?setln=" + language;
-		}
-	}
+	const auto base = u"https://github.com/Clansty/tdesktop"_q;
 	return base;
 }
 

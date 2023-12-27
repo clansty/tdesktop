@@ -101,6 +101,8 @@
     "lng_context_repeat_msg_no_fwd": "Repeat as copy",
     "lng_context_forward_msg_no_quote": "Forward as copy",
     "lng_forward_to_saved_message": "Forward to Saved",
+    "lng_forward_to_quotly": "Forward to QuotLy",
+    "lng_forward_to_stickers": "Forward to Stickers",
     "lng_context_repeater": "Repeater",
     "lng_context_forward": "Forward",
 

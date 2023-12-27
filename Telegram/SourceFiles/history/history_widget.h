@@ -265,6 +265,7 @@ public:
 	void forwardSelected();
 	void forwardNoQuoteSelected();
 	void forwardSelectedToSavedMessages();
+	void forwardSelectedToQuotLy();
 	void confirmDeleteSelected();
 	void clearSelected();
 

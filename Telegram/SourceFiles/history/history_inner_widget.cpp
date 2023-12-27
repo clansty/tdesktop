@@ -2526,6 +2526,9 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 				_menu->addAction(tr::lng_forward_to_saved_message(tr::now), [=] {
 					_widget->forwardSelectedToSavedMessages();
 				}, &st::menuIconFave);
+				_menu->addAction(tr::lng_forward_to_quotly(tr::now), [=] {
+					_widget->forwardSelectedToQuotLy();
+				}, &st::menuIconAsMessages);
 			}
 			if (selectedState.count > 0 && selectedState.canDeleteCount == selectedState.count) {
 				_menu->addAction(tr::lng_context_delete_selected(tr::now), [=] {
@@ -2644,7 +2647,41 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 							Ui::Toast::Show(tr::lng_share_done(tr::now));
 						});
 					}, &st::menuIconFave);
-				}
+					fwdSubmenu->addAction(tr::lng_forward_to_quotly(tr::now), [=] {
+						if (item->id <= 0) return;
+						const auto api = &item->history()->peer->session().api();
+						const auto quotly = api->session().data().peerByUsername("QuotLyBot")->asUser();
+						auto action = Api::SendAction(item->history()->peer->owner().history(quotly));
+						action.clearDraft = false;
+						action.generateLocal = false;
+
+						const auto history = item->history()->peer->owner().history(quotly);
+						auto resolved = history->resolveForwardDraft(Data::ForwardDraft{ .ids = std::move(MessageIdsList( 1, itemId )) });
+
+						api->forwardMessages(std::move(resolved), action, [] {
+							Ui::Toast::Show(tr::lng_share_done(tr::now));
+						});
+					}, &st::menuIconAsMessages);
+					if (item->media() &&
+						item->media()->document() &&
+						item->media()->document()->sticker()) {
+						fwdSubmenu->addAction(tr::lng_forward_to_stickers(tr::now), [=] {
+							if (item->id <= 0) return;
+							const auto api = &item->history()->peer->session().api();
+							const auto bot = api->session().data().peerByUsername("Stickers")->asUser();
+							auto action = Api::SendAction(item->history()->peer->owner().history(bot));
+							action.clearDraft = false;
+							action.generateLocal = false;
+							
+							const auto history = item->history()->peer->owner().history(bot);
+							auto resolved = history->resolveForwardDraft(Data::ForwardDraft{.ids = std::move(MessageIdsList(1, itemId))});
+							
+							api->forwardMessages(std::move(resolved), action, [] {
+								Ui::Toast::Show(tr::lng_share_done(tr::now));
+							});
+						}, &st::menuIconStickers);
+					}
+}
 				if (!fwdSubmenu->empty()) {
 					_menu->addAction(tr::lng_context_forward(tr::now), std::move(fwdSubmenu), &st::menuIconForward);
 				}
@@ -2840,6 +2877,9 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 				_menu->addAction(tr::lng_forward_to_saved_message(tr::now), [=] {
 					_widget->forwardSelectedToSavedMessages();
 				}, &st::menuIconFave);
+				_menu->addAction(tr::lng_forward_to_quotly(tr::now), [=] {
+					_widget->forwardSelectedToQuotLy();
+				}, &st::menuIconAsMessages);
 			}
 			if (selectedState.count > 0 && selectedState.count == selectedState.canDeleteCount) {
 				_menu->addAction(tr::lng_context_delete_selected(tr::now), [=] {
@@ -2951,6 +2991,40 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 							Ui::Toast::Show(tr::lng_share_done(tr::now));
 						});
 					}, &st::menuIconFave);
+					fwdSubmenu->addAction(tr::lng_forward_to_quotly(tr::now), [=] {
+						if (item->id <= 0) return;
+						const auto api = &item->history()->peer->session().api();
+						const auto quotly = api->session().data().peerByUsername("QuotLyBot")->asUser();
+						auto action = Api::SendAction(item->history()->peer->owner().history(quotly));
+						action.clearDraft = false;
+						action.generateLocal = false;
+
+						const auto history = item->history()->peer->owner().history(quotly);
+						auto resolved = history->resolveForwardDraft(Data::ForwardDraft{.ids = std::move(MessageIdsList(1, itemId))});
+
+						api->forwardMessages(std::move(resolved), action, [] {
+							Ui::Toast::Show(tr::lng_share_done(tr::now));
+						});
+					}, &st::menuIconAsMessages);
+					if (item->media() &&
+						item->media()->document() &&
+						item->media()->document()->sticker()) {
+						fwdSubmenu->addAction(tr::lng_forward_to_stickers(tr::now), [=] {
+							if (item->id <= 0) return;
+							const auto api = &item->history()->peer->session().api();
+							const auto bot = api->session().data().peerByUsername("Stickers")->asUser();
+							auto action = Api::SendAction(item->history()->peer->owner().history(bot));
+							action.clearDraft = false;
+							action.generateLocal = false;
+							
+							const auto history = item->history()->peer->owner().history(bot);
+							auto resolved = history->resolveForwardDraft(Data::ForwardDraft{.ids = std::move(MessageIdsList(1, itemId))});
+							
+							api->forwardMessages(std::move(resolved), action, [] {
+								Ui::Toast::Show(tr::lng_share_done(tr::now));
+							});
+						}, &st::menuIconStickers);
+					}
 				}
 				if (!fwdSubmenu->empty()) {
 					_menu->addAction(tr::lng_context_forward(tr::now), std::move(fwdSubmenu), &st::menuIconForward);

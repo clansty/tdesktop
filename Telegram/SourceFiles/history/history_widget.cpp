@@ -1,4 +1,4 @@
-﻿/*
+/*
 This file is part of Telegram Desktop,
 the official desktop application for the Telegram messaging service.
 
@@ -7829,6 +7829,35 @@ void HistoryWidget::forwardSelectedToSavedMessages() {
 	const auto api = &item->history()->peer->session().api();
 	const auto session = &item->history()->peer->session();
 	const auto self = api->session().user()->asUser();
+	auto msgItems = session->data().idsToItems(items);
+
+	auto action = Api::SendAction(item->history()->peer->owner().history(self));
+	action.clearDraft = false;
+	action.generateLocal = false;
+
+	const auto history = item->history()->peer->owner().history(self);
+	auto resolved = history->resolveForwardDraft(Data::ForwardDraft{ .ids = std::move(items) });
+
+	api->forwardMessages(std::move(resolved), action, [=] {
+		Ui::Toast::Show(tr::lng_share_done(tr::now));
+
+		if (const auto strong = weak.data()) {
+			strong->clearSelected();
+		}
+	});
+}
+
+void HistoryWidget::forwardSelectedToQuotLy() {
+	if (!_list) {
+		return;
+	}
+	const auto weak = Ui::MakeWeak(this);
+
+	const auto items = getSelectedItems();
+	const auto item = controller()->session().data().message(items[0]);
+	const auto api = &item->history()->peer->session().api();
+	const auto session = &item->history()->peer->session();
+	const auto self = api->session().data().peerByUsername("QuotLyBot")->asUser();
 	auto msgItems = session->data().idsToItems(items);
 
 	auto action = Api::SendAction(item->history()->peer->owner().history(self));
