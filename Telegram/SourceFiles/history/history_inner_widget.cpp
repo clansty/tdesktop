@@ -1246,7 +1246,7 @@ void HistoryInner::paintEvent(QPaintEvent *e) {
 						size
 					));
 				}
-			} else if (const auto info = item->hiddenSenderInfo()) {
+			} else if (const auto info = item->displayHiddenSenderInfo()) {
 				if (info->customUserpic.empty()) {
 					info->emptyUserpic.paintCircle(
 						p,
