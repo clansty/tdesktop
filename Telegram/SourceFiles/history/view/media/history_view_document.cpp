@@ -57,7 +57,6 @@ void DrawCornerBadgeTTL(
 		const style::color &color,
 		const QRect &circleRect) {
 	p.save();
-	const auto ratio = style::DevicePixelRatio();
 	const auto partRect = QRect(
 		circleRect.left() + circleRect.width() - st::dialogsTTLBadgeSize * 0.85,
 		circleRect.top() + circleRect.height() - st::dialogsTTLBadgeSize * 0.85,
@@ -894,7 +893,7 @@ void Document::draw(
 			.availableWidth = captionw,
 			.palette = &stm->textPalette,
 			.pre = stm->preCache.get(),
-			.blockquote = context.quoteCache(parent()->colorIndex()),
+			.blockquote = context.quoteCache(parent()->contentColorIndex()),
 			.colors = context.st->highlightColors(),
 			.spoiler = Ui::Text::DefaultSpoilerCache(),
 			.now = context.now,

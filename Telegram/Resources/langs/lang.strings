@@ -2095,6 +2095,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_premium_gifts_about_paid_below#one" = "They now have access to additional features.";
 "lng_premium_gifts_about_paid_below#other" = "They now have access to additional features.";
 "lng_premium_gifts_summary_subtitle" = "What's Included";
+"lng_premium_gifts_terms" = "By gifting Telegram Premium, you agree to the Telegram {link} and {policy}.";
+"lng_premium_gifts_terms_policy" = "Privacy Policy";
 
 "lng_boost_channel_button" = "Boost Channel";
 "lng_boost_again_button" = "Boost Again";
@@ -2539,6 +2541,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_replies_view_original" = "View in chat";
 "lng_replies_messages" = "Replies";
 "lng_hidden_author_messages" = "Author Hidden";
+"lng_my_notes" = "My Notes";
 "lng_replies_discussion_started" = "Discussion started";
 "lng_replies_no_comments" = "No comments here yet...";
 

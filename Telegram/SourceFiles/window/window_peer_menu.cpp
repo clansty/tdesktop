@@ -1141,7 +1141,8 @@ void Filler::addGiftPremium() {
 		|| user->isBot()
 		|| user->isNotificationsUser()
 		|| !user->canReceiveGifts()
-		|| user->isRepliesChat()) {
+		|| user->isRepliesChat()
+		|| !user->session().premiumCanBuy()) {
 		return;
 	}
 
