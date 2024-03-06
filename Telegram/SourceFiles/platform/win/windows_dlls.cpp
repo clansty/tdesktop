@@ -18,14 +18,45 @@ bool DirectXResolveCompiler();
 
 namespace Platform {
 namespace Dlls {
-namespace {
 
-struct SafeIniter {
-	SafeIniter();
-};
+using base::Platform::SafeLoadLibrary;
+using base::Platform::LoadMethod;
 
-SafeIniter::SafeIniter() {
-	base::Platform::InitDynamicLibraries();
+void init() {
+	static bool inited = false;
+	if (inited) return;
+	inited = true;
+
+	// Remove the current directory from the DLL search order.
+	::SetDllDirectory(L"");
+
+	const auto list = {
+		u"dbghelp.dll"_q,
+		u"dbgcore.dll"_q,
+		u"propsys.dll"_q,
+		u"winsta.dll"_q,
+		u"textinputframework.dll"_q,
+		u"uxtheme.dll"_q,
+		u"igdumdim32.dll"_q,
+		u"amdhdl32.dll"_q,
+		u"wtsapi32.dll"_q,
+		u"propsys.dll"_q,
+		u"combase.dll"_q,
+		u"dwmapi.dll"_q,
+		u"rstrtmgr.dll"_q,
+		u"psapi.dll"_q,
+		u"user32.dll"_q,
+		u"d3d9.dll"_q,
+		u"d3d11.dll"_q,
+		u"dxgi.dll"_q,
+	};
+	for (const auto &lib : list) {
+		SafeLoadLibrary(lib);
+	}
+}
+
+void start() {
+	init();
 
 	const auto LibShell32 = LoadLibrary(L"shell32.dll");
 	LOAD_SYMBOL(LibShell32, SHAssocEnumHandlers);
@@ -52,10 +83,21 @@ SafeIniter::SafeIniter() {
 	//	}
 	//}
 
-	const auto LibPropSys = LoadLibrary(L"propsys.dll");
-	LOAD_SYMBOL(LibPropSys, PSStringFromPropertyKey);
+	if (IsWindowsVistaOrGreater()) {
+		const auto LibWtsApi32 = SafeLoadLibrary(u"wtsapi32.dll"_q);
+		LOAD_SYMBOL(LibWtsApi32, WTSRegisterSessionNotification);
+		LOAD_SYMBOL(LibWtsApi32, WTSUnRegisterSessionNotification);
 
-	const auto LibPsApi = LoadLibrary(L"psapi.dll");
+		const auto LibPropSys = SafeLoadLibrary(u"propsys.dll"_q);
+		LOAD_SYMBOL(LibPropSys, PropVariantToString);
+		LOAD_SYMBOL(LibPropSys, PSStringFromPropertyKey);
+
+		const auto LibDwmApi = SafeLoadLibrary(u"dwmapi.dll"_q);
+		LOAD_SYMBOL(LibDwmApi, DwmIsCompositionEnabled);
+		LOAD_SYMBOL(LibDwmApi, DwmSetWindowAttribute);
+	}
+
+	const auto LibPsApi = SafeLoadLibrary(u"psapi.dll"_q);
 	LOAD_SYMBOL(LibPsApi, GetProcessMemoryInfo);
 
 	const auto LibUser32 = LoadLibrary(L"user32.dll");

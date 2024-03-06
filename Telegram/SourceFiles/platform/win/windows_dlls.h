@@ -22,7 +22,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 namespace Platform {
 namespace Dlls {
 
-void CheckLoadedModules();
+void init();
+void start();
+
+// KERNEL32.DLL
+inline BOOL(__stdcall *SetDllDirectory)(LPCWSTR lpPathName);
+
+// UXTHEME.DLL
+inline HRESULT(__stdcall *SetWindowTheme)(
+	HWND hWnd,
+	LPCWSTR pszSubAppName,
+	LPCWSTR pszSubIdList);
 
 //inline void(__stdcall *RefreshImmersiveColorPolicyState)();
 //

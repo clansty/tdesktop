@@ -1763,38 +1763,6 @@ endif()
 
 set_target_properties(Telegram PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${output_folder})
 
-if (WIN32)
-    target_link_libraries(Telegram
-    PRIVATE
-        delayimp
-    )
-    target_link_options(Telegram
-    PRIVATE
-        /DELAYLOAD:secur32.dll
-        # /DELAYLOAD:winmm.dll
-        /DELAYLOAD:ws2_32.dll
-        /DELAYLOAD:user32.dll
-        /DELAYLOAD:gdi32.dll
-        /DELAYLOAD:advapi32.dll
-        /DELAYLOAD:shell32.dll
-        /DELAYLOAD:ole32.dll
-        /DELAYLOAD:oleaut32.dll
-        /DELAYLOAD:shlwapi.dll
-        /DELAYLOAD:iphlpapi.dll
-        /DELAYLOAD:gdiplus.dll
-        /DELAYLOAD:version.dll
-        /DELAYLOAD:dwmapi.dll
-        /DELAYLOAD:uxtheme.dll
-        /DELAYLOAD:crypt32.dll
-        /DELAYLOAD:bcrypt.dll
-        /DELAYLOAD:imm32.dll
-        /DELAYLOAD:netapi32.dll
-        /DELAYLOAD:userenv.dll
-        /DELAYLOAD:wtsapi32.dll
-        /DELAYLOAD:propsys.dll
-    )
-endif()
-
 target_prepare_qrc(Telegram)
 
 if (NOT DESKTOP_APP_DISABLE_AUTOUPDATE AND NOT build_macstore AND NOT build_winstore)
@@ -1815,36 +1783,12 @@ if (NOT DESKTOP_APP_DISABLE_AUTOUPDATE AND NOT build_macstore AND NOT build_wins
         RUNTIME_OUTPUT_DIRECTORY ${output_folder}
     )
 
-    if (WIN32)
-        get_filename_component(lib_base_loc lib_base REALPATH)
-        nice_target_sources(Updater ${lib_base_loc}
-        PRIVATE
-            base/platform/win/base_windows_safe_library.cpp
-            base/platform/win/base_windows_safe_library.h
-        )
-        target_include_directories(Updater PRIVATE ${lib_base_loc})
-        if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-            target_link_libraries(Updater
-            PRIVATE
-                delayimp
-            )
-            target_link_options(Updater
-            PRIVATE
-                /DELAYLOAD:user32.dll
-                /DELAYLOAD:advapi32.dll
-                /DELAYLOAD:shell32.dll
-                /DELAYLOAD:ole32.dll
-                /DELAYLOAD:shlwapi.dll
-            )
-        else()
-            target_link_options(Updater PRIVATE -municode)
-        endif()
-    elseif (APPLE)
-        add_custom_command(TARGET Updater
-        PRE_LINK
-            COMMAND mkdir -p $<TARGET_FILE_DIR:Telegram>/../Frameworks
-            COMMAND cp $<TARGET_FILE:Updater> $<TARGET_FILE_DIR:Telegram>/../Frameworks/
-        )
+    if (WIN32 AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+        target_link_options(Updater PRIVATE -municode)
+    endif()
+
+    if (LINUX)
+        target_link_options(Updater PRIVATE -static-libstdc++)
     endif()
 
     if (DESKTOP_APP_SPECIAL_TARGET)

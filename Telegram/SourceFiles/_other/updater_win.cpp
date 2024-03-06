@@ -7,8 +7,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "updater.h"
 
-#include "base/platform/win/base_windows_safe_library.h"
-
 bool _debug = false;
 
 wstring updaterName, updaterDir, updateTo, exeName, customWorkingDir, customKeyFile;
@@ -331,8 +329,6 @@ void updateRegistry() {
 }
 
 int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE prevInstance, LPWSTR cmdParamarg, int cmdShow) {
-	base::Platform::InitDynamicLibraries();
-
 	openLog();
 
 	_oldWndExceptionFilter = SetUnhandledExceptionFilter(_exceptionFilter);
