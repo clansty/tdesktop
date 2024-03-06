@@ -519,6 +519,7 @@ PRIVATE
     data/data_groups.h
     data/data_histories.cpp
     data/data_histories.h
+    data/data_lastseen_status.h
     data/data_location.cpp
     data/data_location.h
     data/data_media_rotation.cpp
@@ -679,8 +680,6 @@ PRIVATE
     history/view/controls/history_view_ttl_button.h
     history/view/controls/history_view_voice_record_bar.cpp
     history/view/controls/history_view_voice_record_bar.h
-    history/view/controls/history_view_voice_record_button.cpp
-    history/view/controls/history_view_voice_record_button.h
     history/view/controls/history_view_webpage_processor.cpp
     history/view/controls/history_view_webpage_processor.h
     history/view/media/history_view_call.cpp
@@ -756,6 +755,8 @@ PRIVATE
     history/view/reactions/history_view_reactions_strip.h
     history/view/reactions/history_view_reactions_tabs.cpp
     history/view/reactions/history_view_reactions_tabs.h
+    history/view/history_view_about_view.cpp
+    history/view/history_view_about_view.h
     history/view/history_view_bottom_info.cpp
     history/view/history_view_bottom_info.h
     history/view/history_view_contact_status.cpp
@@ -1020,6 +1021,7 @@ PRIVATE
     media/audio/media_audio.h
     media/audio/media_audio_capture.cpp
     media/audio/media_audio_capture.h
+    media/audio/media_audio_capture_common.h
     media/audio/media_audio_ffmpeg_loader.cpp
     media/audio/media_audio_ffmpeg_loader.h
     media/audio/media_audio_loader.cpp
@@ -1235,8 +1237,6 @@ PRIVATE
     platform/mac/touchbar/mac_touchbar_manager.mm
     platform/mac/touchbar/mac_touchbar_media_view.h
     platform/mac/touchbar/mac_touchbar_media_view.mm
-    platform/win/audio_win.cpp
-    platform/win/audio_win.h
     platform/win/file_utilities_win.cpp
     platform/win/file_utilities_win.h
     platform/win/launcher_win.cpp
@@ -1260,7 +1260,6 @@ PRIVATE
     platform/win/windows_autostart_task.h
     platform/win/windows_toast_activator.cpp
     platform/win/windows_toast_activator.h
-    platform/platform_audio.h
     platform/platform_file_utilities.h
     platform/platform_launcher.h
     platform/platform_integration.cpp
@@ -1424,6 +1423,8 @@ PRIVATE
     ui/widgets/level_meter.h
     ui/countryinput.cpp
     ui/countryinput.h
+    ui/dynamic_thumbnails.cpp
+    ui/dynamic_thumbnails.h
     ui/filter_icons.cpp
     ui/filter_icons.h
     ui/filter_icon_panel.cpp

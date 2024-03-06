@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/share_box.h"
 #include "chat_helpers/compose/compose_show.h"
 #include "chat_helpers/message_field.h"
+#include "chat_helpers/share_message_phrase_factory.h"
 #include "ui/wrap/slide_wrap.h"
 #include "ui/widgets/fields/input_field.h"
 #include "api/api_chat_participants.h"
@@ -232,13 +233,22 @@ void ForwardToSelf(
 	const auto history = session->data().history(session->user());
 	auto resolved = history->resolveForwardDraft(draft);
 	if (!resolved.items.empty()) {
+		const auto count = resolved.items.size();
 		auto action = Api::SendAction(history);
 		action.clearDraft = false;
 		action.generateLocal = false;
 		session->api().forwardMessages(
 			std::move(resolved),
 			action,
-			[=] { show->showToast(tr::lng_share_done(tr::now)); });
+			[=] {
+				auto phrase = rpl::variable<TextWithEntities>(
+					ChatHelpers::ForwardedMessagePhrase({
+					.toCount = 1,
+					.singleMessage = (count == 1),
+					.to1 = session->user(),
+				})).current();
+				show->showToast(std::move(phrase));
+			});
 	}
 }
 
@@ -1053,13 +1063,18 @@ void Filler::addViewStatistics() {
 				}
 			}, &st::menuIconStats);
 		}
-		if (!channel->isMegagroup()
-			&& (canGetStats
-				|| channel->amCreator()
-				|| channel->canPostStories())) {
+		if (canGetStats
+			|| channel->amCreator()
+			|| channel->canPostStories()) {
 			_addAction(tr::lng_boosts_title(tr::now), [=] {
 				if (const auto strong = weak.get()) {
 					controller->showSection(Info::Boosts::Make(peer));
+				}
+			}, &st::menuIconBoosts);
+		} else if (channel->isMegagroup()) {
+			_addAction(tr::lng_boost_group_button(tr::now), [=] {
+				if (const auto strong = weak.get()) {
+					controller->resolveBoostState(channel);
 				}
 			}, &st::menuIconBoosts);
 		}
@@ -1275,7 +1290,7 @@ void Filler::addSearchTopics() {
 	const auto history = forum->history();
 	const auto controller = _controller;
 	_addAction(tr::lng_dlg_filter(tr::now), [=] {
-		controller->content()->searchInChat(history);
+		controller->searchInChat(history);
 	}, &st::menuIconSearch);
 }
 
@@ -1591,8 +1606,11 @@ void PeerMenuShareContactBox(
 	*weak = navigation->parentController()->show(
 		Box<PeerListBox>(
 			std::make_unique<ChooseRecipientBoxController>(
-				&navigation->session(),
-				std::move(callback)),
+				ChooseRecipientArgs{
+					.session = &navigation->session(),
+					.callback = std::move(callback),
+					.premiumRequiredError = WritePremiumRequiredError,
+				}),
 			[](not_null<PeerListBox*> box) {
 				box->addButton(tr::lng_cancel(), [=] {
 					box->closeBox();
@@ -1829,10 +1847,12 @@ QPointer<Ui::BoxContent> ShowChooseRecipientBox(
 		}
 	};
 	*weak = navigation->parentController()->show(Box<PeerListBox>(
-		std::make_unique<ChooseRecipientBoxController>(
-			&navigation->session(),
-			std::move(callback),
-			std::move(filter)),
+		std::make_unique<ChooseRecipientBoxController>(ChooseRecipientArgs{
+			.session = &navigation->session(),
+			.callback = std::move(callback),
+			.filter = std::move(filter),
+			.premiumRequiredError = WritePremiumRequiredError,
+		}),
 		std::move(initBox)));
 	return weak->data();
 }
@@ -1861,7 +1881,7 @@ QPointer<Ui::BoxContent> ShowOldForwardMessagesBox(
 		}
 
 		[[nodiscard]] Data::ForwardOptions forwardOptionsData() const {
-			return (_forwardOptions.hasCaptions
+			return (_forwardOptions.captionsCount
 					&& _forwardOptions.dropCaptions)
 				? Data::ForwardOptions::NoNamesAndCaptions
 				: _forwardOptions.dropNames
@@ -2067,7 +2087,6 @@ QPointer<Ui::BoxContent> ShowOldForwardMessagesBox(
 			};
 			Ui::FillForwardOptions(
 				std::move(createView),
-				msgIds.size(),
 				state->box->forwardOptions(),
 				[=](Ui::ForwardOptions o) {
 					state->box->setForwardOptions(o);
@@ -2314,9 +2333,9 @@ QPointer<Ui::BoxContent> ShowNewForwardMessagesBox(
 		.filterCallback = std::move(filterCallback),
 		.title = no_quote ? tr::lng_title_forward_as_copy() : tr::lng_title_multiple_forward(),
 		.forwardOptions = {
-			.messagesCount = int(data->msgIds.size()),
+			.sendersCount = ItemsForwardSendersCount(itemsList),
+			.captionsCount = ItemsForwardCaptionsCount(itemsList),
 			.show = !hasOnlyForcedForwardedInfo,
-			.hasCaptions = hasCaptions,
 		},
 	}));
 	return weak->data();
@@ -2328,7 +2347,10 @@ QPointer<Ui::BoxContent> ShowForwardMessagesBox(
 		Fn<void()> &&successCallback) {
 	const auto session = &show->session();
 	const auto owner = &session->data();
-	const auto msgIds = owner->itemsToIds(owner->idsToItems(draft.ids));
+	const auto itemsList = owner->idsToItems(draft.ids);
+	const auto msgIds = owner->itemsToIds(itemsList);
+	const auto sendersCount = ItemsForwardSendersCount(itemsList);
+	const auto captionsCount = ItemsForwardCaptionsCount(itemsList);
 	if (msgIds.empty()) {
 		return nullptr;
 	}
@@ -2346,7 +2368,7 @@ QPointer<Ui::BoxContent> ShowForwardMessagesBox(
 		}
 
 		[[nodiscard]] Data::ForwardOptions forwardOptionsData() const {
-			return (_forwardOptions.hasCaptions
+			return (_forwardOptions.captionsCount
 					&& _forwardOptions.dropCaptions)
 				? Data::ForwardOptions::NoNamesAndCaptions
 				: _forwardOptions.dropNames
@@ -2371,15 +2393,18 @@ QPointer<Ui::BoxContent> ShowForwardMessagesBox(
 		using Chosen = not_null<Data::Thread*>;
 
 		Controller(not_null<Main::Session*> session)
-		: ChooseRecipientBoxController(
-			session,
-			[=](Chosen thread) mutable { _singleChosen.fire_copy(thread); },
-			nullptr) {
+		: ChooseRecipientBoxController({
+			.session = session,
+			.callback = [=](Chosen thread) {
+				_singleChosen.fire_copy(thread);
+			},
+			.premiumRequiredError = WritePremiumRequiredError,
+		}) {
 		}
 
 		void rowClicked(not_null<PeerListRow*> row) override final {
 			const auto count = delegate()->peerListSelectedRowsCount();
-			if (count && row->peer()->isForum()) {
+			if (showLockedError(row) || (count && row->peer()->isForum())) {
 				return;
 			} else if (!count || row->peer()->isForum()) {
 				ChooseRecipientBoxController::rowClicked(row);
@@ -2432,6 +2457,10 @@ QPointer<Ui::BoxContent> ShowForwardMessagesBox(
 		const auto controllerRaw = controller.get();
 		auto box = Box<ListBox>(std::move(controller), nullptr);
 		const auto boxRaw = box.data();
+		boxRaw->setForwardOptions({
+			.sendersCount = sendersCount,
+			.captionsCount = captionsCount,
+		});
 		show->showBox(std::move(box));
 		auto state = State{ boxRaw, controllerRaw };
 		return boxRaw->lifetime().make_state<State>(std::move(state));
@@ -2552,7 +2581,6 @@ QPointer<Ui::BoxContent> ShowForwardMessagesBox(
 			};
 			Ui::FillForwardOptions(
 				std::move(createView),
-				msgIds.size(),
 				state->box->forwardOptions(),
 				[=](Ui::ForwardOptions o) {
 					state->box->setForwardOptions(o);
@@ -2698,10 +2726,12 @@ QPointer<Ui::BoxContent> ShowShareGameBox(
 		});
 	};
 	*weak = navigation->parentController()->show(Box<PeerListBox>(
-		std::make_unique<ChooseRecipientBoxController>(
-			&navigation->session(),
-			std::move(chosen),
-			std::move(filter)),
+		std::make_unique<ChooseRecipientBoxController>(ChooseRecipientArgs{
+			.session = &navigation->session(),
+			.callback = std::move(chosen),
+			.filter = std::move(filter),
+			.premiumRequiredError = WritePremiumRequiredError,
+		}),
 		std::move(initBox)));
 	return weak->data();
 }

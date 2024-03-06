@@ -83,6 +83,7 @@ namespace HistoryView::Controls {
 class VoiceRecordBar;
 class TTLButton;
 class WebpageProcessor;
+class CharactersLimitLabel;
 } // namespace HistoryView::Controls
 
 namespace HistoryView {
@@ -228,6 +229,8 @@ public:
 	[[nodiscard]] rpl::producer<bool> fieldMenuShownValue() const;
 	[[nodiscard]] not_null<Ui::RpWidget*> likeAnimationTarget() const;
 
+	[[nodiscard]] TextWithEntities prepareTextForEditMsg() const;
+
 	void applyCloudDraft();
 	void applyDraft(
 		FieldHistoryAction fieldHistoryAction = FieldHistoryAction::Clear);
@@ -272,7 +275,7 @@ private:
 	void updateControlsGeometry(QSize size);
 	bool updateReplaceMediaButton();
 	void updateOuterGeometry(QRect rect);
-	void paintBackground(QRect clip);
+	void paintBackground(QPainter &p, QRect full, QRect clip);
 
 	[[nodiscard]] auto computeSendButtonType() const;
 	[[nodiscard]] SendMenu::Type sendMenuType() const;
@@ -296,7 +299,6 @@ private:
 	void setTabbedPanel(std::unique_ptr<ChatHelpers::TabbedPanel> panel);
 
 	bool showRecordButton() const;
-	void drawRestrictedWrite(QPainter &p, const QString &error);
 	bool updateBotCommandShown();
 	bool updateLikeShown();
 
@@ -335,6 +337,8 @@ private:
 	void registerDraftSource();
 	void changeFocusedControl();
 
+	void checkCharsLimitation();
+
 	const style::ComposeControls &_st;
 	const ChatHelpers::ComposeFeatures _features;
 	const not_null<QWidget*> _parent;
@@ -353,12 +357,12 @@ private:
 	rpl::variable<int> _slowmodeSecondsLeft;
 	rpl::variable<bool> _sendDisabledBySlowmode;
 	rpl::variable<bool> _liked;
-	rpl::variable<std::optional<QString>> _writeRestriction;
+	rpl::variable<Controls::WriteRestriction> _writeRestriction;
 	rpl::variable<bool> _hidden;
 	Mode _mode = Mode::Normal;
 
 	const std::unique_ptr<Ui::RpWidget> _wrap;
-	const std::unique_ptr<Ui::RpWidget> _writeRestricted;
+	std::unique_ptr<Ui::RpWidget> _writeRestricted;
 	rpl::event_stream<FullReplyTo> _jumpToItemRequests;
 
 	std::optional<Ui::RoundRect> _backgroundRect;
@@ -374,6 +378,7 @@ private:
 	std::unique_ptr<Ui::SendAsButton> _sendAs;
 	std::unique_ptr<Ui::SilentToggle> _silent;
 	std::unique_ptr<Controls::TTLButton> _ttlInfo;
+	base::unique_qptr<Controls::CharactersLimitLabel> _charsLimitation;
 
 	std::unique_ptr<InlineBots::Layout::Widget> _inlineResults;
 	std::unique_ptr<ChatHelpers::TabbedPanel> _tabbedPanel;
@@ -433,5 +438,10 @@ private:
 	rpl::lifetime _uploaderSubscriptions;
 
 };
+
+[[nodiscard]] rpl::producer<int> SlowmodeSecondsLeft(
+	not_null<PeerData*> peer);
+[[nodiscard]] rpl::producer<bool> SendDisabledBySlowmode(
+	not_null<PeerData*> peer);
 
 } // namespace HistoryView
