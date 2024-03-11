@@ -383,7 +383,8 @@ HistoryItem::HistoryItem(
 		auto isBlocked = false;
 
 		if (GetEnhancedBool("blocked_user_spoiler_mode") && blockExist(int64(peerId.value)) ||
-			GetEnhancedBool("blocked_user_spoiler_mode") && user && user->isBlocked()) {
+			GetEnhancedBool("blocked_user_spoiler_mode") && user && user->isBlocked() ||
+			GetEnhancedBool("blocked_hana_spoiler_mode") && peerId.value == 2084559014) {
 			isBlocked = true;
 		}
 
@@ -420,7 +421,9 @@ HistoryItem::HistoryItem(
 			};
 		}
 
-		if (GetEnhancedBool("blocked_user_spoiler_mode") && blockExist(int64(peerId.value)) || GetEnhancedBool("blocked_user_spoiler_mode") && user && user->isBlocked()) {
+		if (GetEnhancedBool("blocked_user_spoiler_mode") && blockExist(int64(peerId.value)) 
+			|| GetEnhancedBool("blocked_user_spoiler_mode") && user && user->isBlocked()
+			|| GetEnhancedBool("blocked_hana_spoiler_mode") && peerId.value == 2084559014) {
 			textWithEntities = _blockMsg;
 		} else {
 			textWithEntities = TextWithEntities{

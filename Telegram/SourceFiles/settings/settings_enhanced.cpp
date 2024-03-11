@@ -366,6 +366,22 @@ namespace Settings {
 			}
 		}, container->lifetime());
 
+		auto hideHanaBtn = AddButtonWithIcon(
+			inner,
+			tr::lng_settings_hide_messages_hana(),
+			st::settingsButtonNoIcon
+		);
+		hideHanaBtn->setColorOverride(QColor(255, 0, 0));
+		hideHanaBtn->toggleOn(
+				rpl::single(GetEnhancedBool("blocked_hana_spoiler_mode"))
+		)->toggledChanges(
+		) | rpl::filter([=](bool toggled) {
+			return (toggled != GetEnhancedBool("blocked_hana_spoiler_mode"));
+		}) | rpl::start_with_next([=](bool toggled) {
+			SetEnhancedValue("blocked_hana_spoiler_mode", toggled);
+			EnhancedSettings::Write();
+		}, container->lifetime());
+
 		AddDividerText(inner, tr::lng_settings_hide_messages_desc());
 	}
 

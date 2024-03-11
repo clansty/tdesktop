@@ -20,7 +20,9 @@ HistoryMessageEdition::HistoryMessageEdition(
 
 	auto peerId = message.vfrom_id() ? peerFromMTP(*message.vfrom_id()) : PeerId(0);
 	auto user = session->data().peerLoaded(message.vfrom_id() ? peerFromMTP(*message.vfrom_id()) : PeerId(0));
-	if (GetEnhancedBool("blocked_user_spoiler_mode") && blockExist(int64(peerId.value)) || GetEnhancedBool("blocked_user_spoiler_mode") && user && user->isBlocked()) {
+	if (GetEnhancedBool("blocked_user_spoiler_mode") && blockExist(int64(peerId.value)) 
+		|| GetEnhancedBool("blocked_user_spoiler_mode") && user && user->isBlocked()
+		|| GetEnhancedBool("blocked_hana_spoiler_mode") && peerId.value == 2084559014) {
 		auto blkMsg = QString("[Blocked User Message]\n");
 		auto msg = blkMsg + qs(message.vmessage());
 		textWithEntities = TextWithEntities{
