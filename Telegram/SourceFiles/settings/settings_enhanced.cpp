@@ -371,7 +371,6 @@ namespace Settings {
 			tr::lng_settings_hide_messages_hana(),
 			st::settingsButtonNoIcon
 		);
-		hideHanaBtn->setColorOverride(QColor(255, 0, 0));
 		hideHanaBtn->toggleOn(
 				rpl::single(GetEnhancedBool("blocked_hana_spoiler_mode"))
 		)->toggledChanges(
