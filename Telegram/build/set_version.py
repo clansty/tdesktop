@@ -149,8 +149,8 @@ rcReplaces = [
 print('Patching Telegram.rc...')
 replaceInFile(scriptPath + '/../Resources/winrc/Telegram.rc', rcReplaces)
 
-print('Patching Updater.rc...')
-replaceInFile(scriptPath + '/../Resources/winrc/Updater.rc', rcReplaces)
+# print('Patching Updater.rc...')
+# replaceInFile(scriptPath + '/../Resources/winrc/Updater.rc', rcReplaces)
 
 print('Patching appxmanifest.xml...')
 replaceInFile(scriptPath + '/../Resources/uwp/AppX/AppxManifest.xml', [
