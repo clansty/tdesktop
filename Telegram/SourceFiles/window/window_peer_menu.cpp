@@ -107,6 +107,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <history/view/history_view_pinned_section.h>
 
 #include "boxes/abstract_box.h"
+#include "data/business/data_shortcut_messages.h"
 
 namespace Window {
 namespace {
@@ -146,7 +147,8 @@ void ShareBotGame(
 			MTPReplyMarkup(),
 			MTPVector<MTPMessageEntity>(),
 			MTP_int(0), // schedule_date
-			MTPInputPeer() // send_as
+			MTPInputPeer(), // send_as
+			MTPInputQuickReplyShortcut()
 		), [=](const MTPUpdates &, const MTP::Response &) {
 	}, [=](const MTP::Error &error, const MTP::Response &) {
 		history->session().api().sendMessageFail(error, history->peer);
@@ -2303,7 +2305,8 @@ QPointer<Ui::BoxContent> ShowNewForwardMessagesBox(
 						peer->input,
 						MTP_int(topicRootId),
 						MTP_int(options.scheduled),
-						MTP_inputPeerEmpty() // send_as
+						MTP_inputPeerEmpty(), // send_as
+						Data::ShortcutIdToMTP(session, options.shortcutId)
 				)).done([=](const MTPUpdates &updates, mtpRequestId reqId) {
 					history->session().api().applyUpdates(updates);
 					data->requests.remove(reqId);
