@@ -859,13 +859,12 @@ win:
     SET MSYS2_PATH_TYPE=inherit
 
     if "%X8664%" equ "x64" (
-        SET "TARGET=x86_64-win64-vs17"
+        SET "TOOLCHAIN=x86_64-win64-vs17"
     ) else (
-        SET "TARGET=x86-win32-vs17"
+        SET "TOOLCHAIN=x86-win32-vs17"
     )
 
 depends:patches/build_libvpx_win.sh
-    %THIRDPARTY_DIR%\\msys64\\usr\\bin\\sed.exe -i 's/-j8/-j%NUMBER_OF_PROCESSORS%/g' ../patches/build_libvpx_win.sh
     bash --login ../patches/build_libvpx_win.sh
 
     SET PATH=%PATH_BACKUP_%
@@ -1308,7 +1307,7 @@ if buildQt5:
     stage('qt_5_15_12', """
     git clone https://github.com/qt/qt5.git qt_5_15_12
     cd qt_5_15_12
-    perl init-repository --module-subset=qtbase,qtimageformats,qtsvg
+    perl init-repository.pl --module-subset=qtbase,qtimageformats,qtsvg
     git checkout v5.15.12-lts-lgpl
     git submodule update qtbase qtimageformats qtsvg
 depends:patches/qtbase_5.15.12/*.patch
