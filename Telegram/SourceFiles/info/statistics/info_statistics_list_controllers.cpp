@@ -10,6 +10,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_credits.h"
 #include "api/api_statistics.h"
 #include "boxes/peer_list_controllers.h"
+#include "boxes/peer_list_widgets.h"
+#include "chat_helpers/stickers_gift_box_pack.h"
 #include "core/ui_integration.h" // Core::MarkedTextContext.
 #include "data/data_channel.h"
 #include "data/data_credits.h"
@@ -23,6 +25,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session.h"
 #include "main/session/session_show.h"
 #include "settings/settings_credits_graphics.h" // PaintSubscriptionRightLabelCallback
+#include "ui/dynamic_image.h"
+#include "ui/dynamic_thumbnails.h"
 #include "ui/effects/credits_graphics.h"
 #include "ui/effects/outline_segments.h" // Ui::UnreadStoryOutlineGradient.
 #include "ui/effects/toggle_arrow.h"
@@ -34,6 +38,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/wrap/slide_wrap.h"
 #include "ui/wrap/vertical_layout.h"
 #include "styles/style_boxes.h"
+#include "styles/style_color_indices.h"
 #include "styles/style_credits.h"
 #include "styles/style_dialogs.h" // dialogsStoriesFull.
 #include "styles/style_layers.h" // boxRowPadding.
@@ -46,8 +51,6 @@ namespace Info::Statistics {
 namespace {
 
 using BoostCallback = Fn<void(const Data::Boost &)>;
-constexpr auto kColorIndexUnclaimed = int(3);
-constexpr auto kColorIndexPending = int(4);
 
 [[nodiscard]] PeerListRowId UniqueRowIdFromEntry(
 		const Data::CreditsHistoryEntry &entry) {
@@ -58,27 +61,6 @@ constexpr auto kColorIndexPending = int(4);
 		+ (entry.in ? '1' : '0'));
 }
 
-void AddArrow(not_null<Ui::RpWidget*> parent) {
-	const auto arrow = Ui::CreateChild<Ui::RpWidget>(parent.get());
-	arrow->paintRequest(
-	) | rpl::start_with_next([=](const QRect &r) {
-		auto p = QPainter(arrow);
-
-		const auto path = Ui::ToggleUpDownArrowPath(
-			st::statisticsShowMoreButtonArrowSize,
-			st::statisticsShowMoreButtonArrowSize,
-			st::statisticsShowMoreButtonArrowSize,
-			st::mainMenuToggleFourStrokes,
-			0.);
-
-		auto hq = PainterHighQualityEnabler(p);
-		p.fillPath(path, st::lightButtonFg);
-	}, arrow->lifetime());
-	arrow->resize(Size(st::statisticsShowMoreButtonArrowSize * 2));
-	arrow->move(st::statisticsShowMoreButtonArrowPosition);
-	arrow->show();
-}
-
 void AddSubtitle(
 		not_null<Ui::VerticalLayout*> container,
 		rpl::producer<QString> title) {
@@ -87,6 +69,17 @@ void AddSubtitle(
 		container,
 		std::move(title),
 		{ 0, -subtitlePadding.top(), 0, -subtitlePadding.bottom() });
+}
+
+[[nodiscard]] object_ptr<Ui::SettingsButton> CreateShowMoreButton(
+		not_null<Ui::RpWidget*> parent,
+		rpl::producer<QString> title) {
+	auto owned = object_ptr<Ui::SettingsButton>(
+		parent,
+		std::move(title),
+		st::statisticsShowMoreButton);
+	Ui::AddToggleUpDownArrowToMoreButton(owned.data());
+	return owned;
 }
 
 [[nodiscard]] QString FormatText(
@@ -138,6 +131,7 @@ struct CreditsDescriptor final {
 	not_null<PeerData*> peer;
 	bool in = false;
 	bool out = false;
+	bool subscription = false;
 };
 
 class PeerListRowWithFullId : public PeerListRow {
@@ -477,6 +471,7 @@ private:
 	Ui::EmptyUserpic _userpic;
 	QImage _badge;
 	QImage _rightBadge;
+	PaintRoundImageCallback _paintUserpicCallback;
 
 };
 
@@ -491,16 +486,51 @@ BoostRow::BoostRow(const Data::Boost &boost)
 : PeerListRow(UniqueRowIdFromString(boost.id))
 , _boost(boost)
 , _userpic(
-	Ui::EmptyUserpic::UserpicColor(boost.isUnclaimed
-		? kColorIndexUnclaimed
-		: kColorIndexPending),
+	Ui::EmptyUserpic::UserpicColor(boost.credits
+		? st::colorIndexOrange
+		: boost.isUnclaimed
+		? st::colorIndexSea
+		: st::colorIndexBlue),
 	QString()) {
 	init();
 }
 
 void BoostRow::init() {
+	if (!PeerListRow::special()) {
+		_paintUserpicCallback = PeerListRow::generatePaintUserpicCallback(
+			false);
+	} else if (_boost.credits) {
+		const auto creditsIcon = std::make_shared<QImage>();
+		_paintUserpicCallback = [=](
+				Painter &p,
+				int x,
+				int y,
+				int outerWidth,
+				int size) mutable {
+			_userpic.paintCircle(p, x, y, outerWidth, size);
+			if (creditsIcon->isNull()) {
+				*creditsIcon = Ui::CreditsWhiteDoubledIcon(size, 1.);
+			}
+			p.drawImage(x, y, *creditsIcon);
+		};
+	} else {
+		_paintUserpicCallback = [=](
+				Painter &p,
+				int x,
+				int y,
+				int outerWidth,
+				int size) mutable {
+			_userpic.paintCircle(p, x, y, outerWidth, size);
+			(_boost.isUnclaimed
+				? st::boostsListUnclaimedIcon
+				: st::boostsListUnknownIcon).paintInCenter(
+					p,
+					Rect(x, y, Size(size)));
+		};
+	}
+
 	invalidateBadges();
-	auto status = !PeerListRow::special()
+	auto status = (!PeerListRow::special() || _boost.credits)
 		? tr::lng_boosts_list_status(
 			tr::now,
 			lt_date,
@@ -520,23 +550,18 @@ const Data::Boost &BoostRow::boost() const {
 QString BoostRow::generateName() {
 	return !PeerListRow::special()
 		? PeerListRow::generateName()
+		: _boost.credits
+		? tr::lng_giveaway_prizes_additional_credits_amount(
+			tr::now,
+			lt_count_decimal,
+			_boost.credits)
 		: _boost.isUnclaimed
 		? tr::lng_boosts_list_unclaimed(tr::now)
 		: tr::lng_boosts_list_pending(tr::now);
 }
 
 PaintRoundImageCallback BoostRow::generatePaintUserpicCallback(bool force) {
-	if (!PeerListRow::special()) {
-		return PeerListRow::generatePaintUserpicCallback(force);
-	}
-	return [=](Painter &p, int x, int y, int outerWidth, int size) mutable {
-		_userpic.paintCircle(p, x, y, outerWidth, size);
-		(_boost.isUnclaimed
-			? st::boostsListUnclaimedIcon
-			: st::boostsListUnknownIcon).paintInCenter(
-				p,
-				{ x, y, size, size });
-	};
+	return _paintUserpicCallback;
 }
 
 void BoostRow::invalidateBadges() {
@@ -560,7 +585,7 @@ void BoostRow::invalidateBadges() {
 	const auto &rightIcon = _boost.isGiveaway
 		? st::boostsListGiveawayMiniIcon
 		: st::boostsListGiftMiniIcon;
-	_rightBadge = (_boost.isGift || _boost.isGiveaway)
+	_rightBadge = ((_boost.isGift || _boost.isGiveaway) && !_boost.credits)
 		? CreateBadge(
 			st::boostsListRightBadgeTextStyle,
 			_boost.isGiveaway
@@ -750,6 +775,18 @@ public:
 		bool selected,
 		bool actionSelected) override;
 
+	void paintStatusText(
+		Painter &p,
+		const style::PeerListItem &st,
+		int x,
+		int y,
+		int available,
+		int outer,
+		bool selected) override;
+
+	const style::PeerListItem &computeSt(
+		const style::PeerListItem &st) const override;
+
 private:
 	void init();
 
@@ -763,7 +800,11 @@ private:
 	QString _title;
 	QString _name;
 
+	Ui::Text::String _description;
 	Ui::Text::String _rightText;
+
+	std::shared_ptr<Ui::DynamicImage> _descriptionThumbnail;
+	QImage _descriptionThumbnailCache;
 
 	base::has_weak_ptr _guard;
 };
@@ -809,27 +850,37 @@ void CreditsRow::init() {
 	const auto name = !isSpecial
 		? PeerListRow::generateName()
 		: Ui::GenerateEntryName(_entry).text;
-	_name = _entry.reaction
-		? Ui::GenerateEntryName(_entry).text
-		: _entry.title.isEmpty()
+	_name = _entry.title.isEmpty()
+		? name
+		: (!_entry.subscriptionUntil.isNull() && !isSpecial)
 		? name
 		: _entry.title;
-	const auto joiner = QString(QChar(' ')) + QChar(8212) + QChar(' ');
-	PeerListRow::setCustomStatus(
-		langDateTimeFull(_entry.date)
-		+ (_entry.refunded
-			? (joiner + tr::lng_channel_earn_history_return(tr::now))
-			: _entry.pending
-			? (joiner + tr::lng_channel_earn_history_pending(tr::now))
-			: _entry.failed
-			? (joiner + tr::lng_channel_earn_history_failed(tr::now))
-			: !_entry.subscriptionUntil.isNull()
-			? (joiner
-				+ tr::lng_credits_box_history_entry_subscription(tr::now))
-			: QString())
-		+ ((_entry.gift && isSpecial)
-			? (joiner + tr::lng_credits_box_history_entry_anonymous(tr::now))
-			: ((_name == name) ? QString() : (joiner + name))));
+	setSkipPeerBadge(true);
+	const auto description = _entry.floodSkip
+		? tr::lng_credits_box_history_entry_floodskip_about(
+			tr::now,
+			lt_count_decimal,
+			_entry.floodSkip)
+		: (!_entry.subscriptionUntil.isNull() && !_entry.title.isEmpty())
+		? _entry.title
+		: _entry.refunded
+		? tr::lng_channel_earn_history_return(tr::now)
+		: _entry.pending
+		? tr::lng_channel_earn_history_pending(tr::now)
+		: _entry.failed
+		? tr::lng_channel_earn_history_failed(tr::now)
+		: !_entry.subscriptionUntil.isNull()
+		? tr::lng_credits_box_history_entry_subscription(tr::now)
+		: (_entry.peerType
+			== Data::CreditsHistoryEntry::PeerType::PremiumBot)
+		? tr::lng_credits_box_history_entry_via_premium_bot(tr::now)
+		: (_entry.gift && isSpecial)
+		? tr::lng_credits_box_history_entry_anonymous(tr::now)
+		: (_name == name)
+		? Ui::GenerateEntryName(_entry).text
+		: name;
+	_description.setText(st::defaultTextStyle, description);
+	PeerListRow::setCustomStatus(langDateTime(_entry.date));
 	if (_subscription) {
 		PeerListRow::setCustomStatus((_subscription.expired
 			? tr::lng_credits_subscription_status_none
@@ -839,6 +890,24 @@ void CreditsRow::init() {
 				tr::now,
 				lt_date,
 				langDayOfMonthFull(_subscription.until.date())));
+		_description.setText(st::defaultTextStyle, _subscription.title);
+	}
+	const auto descriptionPhotoId = (!_entry.subscriptionUntil.isNull())
+		? _entry.photoId
+		: _subscription.photoId;
+	if (descriptionPhotoId) {
+		_descriptionThumbnail = Ui::MakePhotoThumbnail(
+			_context.session->data().photo(descriptionPhotoId),
+			{});
+		_descriptionThumbnail->subscribeToUpdates([this] {
+			const auto thumbnailSide = st::defaultTextStyle.font->height;
+			_descriptionThumbnailCache = Images::Round(
+				_descriptionThumbnail->image(thumbnailSide),
+				ImageRoundRadius::Large);
+			if (_context.customEmojiRepaint) {
+				_context.customEmojiRepaint();
+			}
+		});
 	}
 	auto &manager = _context.session->data().customEmojiManager();
 	if (_entry) {
@@ -847,15 +916,19 @@ void CreditsRow::init() {
 			st::semiboldTextStyle,
 			TextWithEntities()
 				.append(_entry.in ? QChar('+') : kMinus)
-				.append(
-					Lang::FormatCountDecimal(std::abs(int64(_entry.credits))))
+				.append(Lang::FormatStarsAmountDecimal(_entry.credits.abs()))
 				.append(QChar(' '))
 				.append(manager.creditsEmoji()),
 			kMarkupTextOptions,
 			_context);
 	}
 	if (!_paintUserpicCallback) {
-		_paintUserpicCallback = !isSpecial
+		_paintUserpicCallback = _entry.stargift
+			? Ui::GenerateGiftStickerUserpicCallback(
+				_context.session,
+				_entry.bareGiftStickerId,
+				_context.customEmojiRepaint)
+			: !isSpecial
 			? PeerListRow::generatePaintUserpicCallback(false)
 			: Ui::GenerateCreditsPaintUserpicCallback(_entry);
 	}
@@ -870,26 +943,43 @@ const Data::SubscriptionEntry &CreditsRow::subscription() const {
 }
 
 QString CreditsRow::generateName() {
-	return _entry.title.isEmpty() ? _name : _entry.title;
+	return (!_entry.title.isEmpty() && !_entry.subscriptionUntil.isNull())
+		? _name
+		: _entry.title.isEmpty()
+		? _name
+		: _entry.title;
 }
 
 PaintRoundImageCallback CreditsRow::generatePaintUserpicCallback(bool force) {
 	return _paintUserpicCallback;
 }
 
+[[nodiscard]] QString RightActionText(const Data::SubscriptionEntry &s) {
+	return s.cancelledByBot
+		? tr::lng_credits_subscription_status_off_by_bot_right(tr::now)
+		: s.cancelled
+		? tr::lng_credits_subscription_status_off_right(tr::now)
+		: s.expired
+		? tr::lng_credits_subscription_status_none_right(tr::now)
+		: QString();
+}
+
 QSize CreditsRow::rightActionSize() const {
 	if (_rightLabel) {
 		return _rightLabel->size;
-	} else if (_subscription.cancelled || _subscription.expired) {
-		const auto text = _subscription.cancelled
-			? tr::lng_credits_subscription_status_off_right(tr::now)
-			: tr::lng_credits_subscription_status_none_right(tr::now);
-		return QSize(
-			st::contactsStatusFont->width(text) + st::boxRowPadding.right(),
-			_rowHeight);
+	} else if (const auto t = RightActionText(_subscription); !t.isEmpty()) {
+		const auto lines = t.split('\n');
+		auto maxWidth = 0;
+		for (const auto &line : lines) {
+			const auto width = st::contactsStatusFont->width(line);
+			if (width > maxWidth) {
+				maxWidth = width;
+			}
+		}
+		return QSize(maxWidth + st::boxRowPadding.right(), _rowHeight);
 	} else if (_subscription || _entry) {
 		return QSize(
-			_rightText.maxWidth() + st::boxRowPadding.right(),
+			_rightText.maxWidth() + st::boxRowPadding.right() / 2,
 			_rowHeight);
 	} else if (!_entry && !_subscription) {
 		return QSize();
@@ -916,18 +1006,31 @@ void CreditsRow::rightActionPaint(
 	const auto rightSkip = st::boxRowPadding.right();
 	if (_rightLabel) {
 		return _rightLabel->draw(p, x, y, _rowHeight);
-	} else if (_subscription.cancelled || _subscription.expired) {
+	} else if (const auto t = RightActionText(_subscription); !t.isEmpty()) {
 		const auto &statusFont = st::contactsStatusFont;
 		y += _rowHeight / 2;
 		p.setFont(statusFont);
 		p.setPen(st::attentionButtonFg);
-		p.drawTextRight(
-			rightSkip,
-			y - statusFont->height / 2,
-			outerWidth,
-			_subscription.expired
-				? tr::lng_credits_subscription_status_none_right(tr::now)
-				: tr::lng_credits_subscription_status_off_right(tr::now));
+
+		const auto lines = t.split('\n');
+		if (lines.size() > 1) {
+			const auto rect = QRect(x, 0, outerWidth - x, _rowHeight);
+			const auto lineHeight = statusFont->height;
+			const auto totalHeight = lines.size() * lineHeight;
+			auto startY = rect.top()
+				+ (rect.height() - totalHeight) / 2
+				+ statusFont->ascent;
+
+			for (const auto &line : lines) {
+				const auto lineWidth = statusFont->width(line);
+				const auto startX = rect.left()
+					+ (rect.width() - lineWidth) / 2;
+				p.drawText(startX, startY, line);
+				startY += lineHeight;
+			}
+			return;
+		}
+		p.drawTextRight(rightSkip, y - statusFont->height / 2, outerWidth, t);
 		return;
 	}
 	y += _rowHeight / 2;
@@ -943,6 +1046,43 @@ void CreditsRow::rightActionPaint(
 		.outerWidth = outerWidth,
 		.availableWidth = outerWidth,
 	});
+}
+
+void CreditsRow::paintStatusText(
+		Painter &p,
+		const style::PeerListItem &st,
+		int x,
+		int y,
+		int available,
+		int outer,
+		bool selected) {
+	PeerListRow::paintStatusText(p, st, x, y, available, outer, selected);
+	p.setPen(st.nameFg);
+	if (!_descriptionThumbnailCache.isNull()) {
+		const auto thumbnailSide = _descriptionThumbnailCache.width()
+			/ style::DevicePixelRatio();
+		const auto thumbnailSpace = st::lineWidth * 4 + thumbnailSide;
+		p.drawImage(
+			x,
+			y - thumbnailSide,
+			_descriptionThumbnailCache);
+		x += thumbnailSpace;
+		outer -= thumbnailSpace;
+		available -= thumbnailSpace;
+	}
+	_description.draw(p, {
+		.position = QPoint(x, y - _description.minHeight()),
+		.outerWidth = outer,
+		.availableWidth = available,
+		.elisionLines = 1,
+	});
+}
+
+const style::PeerListItem &CreditsRow::computeSt(
+		const style::PeerListItem &st) const {
+	return (!_subscription || !_subscription.title.isEmpty())
+		? st
+		: st::boostsListBox.item;
 }
 
 class CreditsController final : public PeerListController {
@@ -963,6 +1103,7 @@ private:
 	void applySlice(const Data::CreditsStatusSlice &slice);
 
 	const not_null<Main::Session*> _session;
+	const bool _subscription;
 	Clicked _entryClickedCallback;
 
 	Api::CreditsHistory _api;
@@ -977,6 +1118,7 @@ private:
 
 CreditsController::CreditsController(CreditsDescriptor d)
 : _session(&d.peer->session())
+, _subscription(d.subscription)
 , _entryClickedCallback(std::move(d.entryClickedCallback))
 , _api(d.peer, d.in, d.out)
 , _firstSlice(std::move(d.firstSlice))
@@ -984,7 +1126,7 @@ CreditsController::CreditsController(CreditsDescriptor d)
 	.session = _session,
 	.customEmojiRepaint = [] {},
 }) {
-	PeerListController::setStyleOverrides(&st::boostsListBox);
+	PeerListController::setStyleOverrides(&st::creditsHistoryEntriesList);
 }
 
 Main::Session &CreditsController::session() const {
@@ -1001,7 +1143,7 @@ void CreditsController::requestNext() {
 		_requesting = false;
 		applySlice(s);
 	};
-	if (!_firstSlice.subscriptions.empty()) {
+	if (_subscription) {
 		return _api.requestSubscriptions(_apiToken, done);
 	}
 	_api.request(_apiToken, done);
@@ -1017,7 +1159,7 @@ void CreditsController::loadMoreRows() {
 
 void CreditsController::applySlice(const Data::CreditsStatusSlice &slice) {
 	_allLoaded = slice.allLoaded;
-	_apiToken = slice.tokenSubscriptions;
+	_apiToken = _subscription ? slice.tokenSubscriptions : slice.token;
 
 	auto create = [&](
 			const Data::CreditsHistoryEntry &i,
@@ -1026,19 +1168,30 @@ void CreditsController::applySlice(const Data::CreditsStatusSlice &slice) {
 			.entry = i,
 			.subscription = s,
 			.context = _context,
-			.rowHeight = computeListSt().item.height,
+			.rowHeight = ((!s || !s.title.isEmpty())
+				? computeListSt().item
+				: st::boostsListBox.item).height,
 			.updateCallback = [=](not_null<PeerListRow*> row) {
 				delegate()->peerListUpdateRow(row);
 			},
 		};
-		if (const auto peerId = PeerId(i.barePeerId + s.barePeerId)) {
+		if (i.bareActorId) {
+			const auto peer = session().data().peer(PeerId(i.bareActorId));
+			return std::make_unique<CreditsRow>(peer, descriptor);
+		} else if (const auto peerId = PeerId(i.barePeerId + s.barePeerId)) {
 			const auto peer = session().data().peer(peerId);
 			return std::make_unique<CreditsRow>(peer, descriptor);
 		} else {
 			return std::make_unique<CreditsRow>(descriptor);
 		}
 	};
+
+	auto giftPacksRequested = false;
 	for (const auto &item : slice.list) {
+		if (item.bareGiveawayMsgId && !giftPacksRequested) {
+			giftPacksRequested = true;
+			session().giftBoxStickersPacks().load();
+		}
 		delegate()->peerListAppendRow(create(item, {}));
 	}
 	for (const auto &item : slice.subscriptions) {
@@ -1138,13 +1291,9 @@ void AddMembersList(
 		object_ptr<PeerListContent>(container, &state->controller)));
 	state->controller.setDelegate(&state->delegate);
 
-	const auto wrap = container->add(
-		object_ptr<Ui::SlideWrap<Ui::SettingsButton>>(
-			container,
-			object_ptr<Ui::SettingsButton>(
-				container,
-				tr::lng_stories_show_more())),
-		{ 0, -st::settingsButton.padding.top(), 0, 0 });
+	const auto wrap = AddShowMoreButton(
+		container,
+		tr::lng_stories_show_more());
 
 	const auto showMore = [=] {
 		state->limit = std::min(int(max), state->limit + kPerPage);
@@ -1178,23 +1327,14 @@ void AddBoostsList(
 		object_ptr<PeerListContent>(container, &state->controller)));
 	state->controller.setDelegate(&state->delegate);
 
-	const auto wrap = container->add(
-		object_ptr<Ui::SlideWrap<Ui::SettingsButton>>(
-			container,
-			object_ptr<Ui::SettingsButton>(
-				container,
-				(firstSlice.token.gifts
-					? tr::lng_boosts_show_more_gifts
-					: tr::lng_boosts_show_more_boosts)(
-						lt_count,
-						state->controller.totalBoostsValue(
-						) | rpl::map(
-							max - rpl::mappers::_1
-						) | tr::to_count()),
-				st::statisticsShowMoreButton)),
-		{ 0, -st::settingsButton.padding.top(), 0, 0 });
-	const auto button = wrap->entity();
-	AddArrow(button);
+	const auto wrap = AddShowMoreButton(
+		container,
+		(firstSlice.token.gifts
+			? tr::lng_boosts_show_more_gifts
+			: tr::lng_boosts_show_more_boosts)(
+				lt_count,
+				state->controller.totalBoostsValue(
+				) | rpl::map(max - rpl::mappers::_1) | tr::to_count()));
 
 	const auto showMore = [=] {
 		if (!state->controller.skipRequest()) {
@@ -1206,7 +1346,7 @@ void AddBoostsList(
 		state->controller.totalBoostsValue(
 		) | rpl::map(rpl::mappers::_1 > 0 && rpl::mappers::_1 < max),
 		anim::type::instant);
-	button->setClickedCallback(showMore);
+	wrap->entity()->setClickedCallback(showMore);
 }
 
 void AddCreditsHistoryList(
@@ -1216,35 +1356,37 @@ void AddCreditsHistoryList(
 		Clicked callback,
 		not_null<PeerData*> bot,
 		bool in,
-		bool out) {
+		bool out,
+		bool subs) {
 	struct State final {
-		State(
-			CreditsDescriptor d,
-			std::shared_ptr<Main::SessionShow> show)
-		: delegate(std::move(show))
-		, controller(std::move(d)) {
+		State(CreditsDescriptor d) : controller(std::move(d)) {
 		}
-		PeerListContentDelegateShow delegate;
+		std::optional<PeerListContentDelegateShow> creditsDelegate;
+		std::optional<PeerListWidgetsDelegate> subscriptionDelegate;
 		CreditsController controller;
 	};
 	const auto state = container->lifetime().make_state<State>(
-		CreditsDescriptor{ firstSlice, callback, bot, in, out },
-		show);
-
-	state->delegate.setContent(container->add(
-		object_ptr<PeerListContent>(container, &state->controller)));
-	state->controller.setDelegate(&state->delegate);
+		CreditsDescriptor{ firstSlice, callback, bot, in, out, subs });
+	if (subs) {
+		state->subscriptionDelegate.emplace();
+		state->subscriptionDelegate->setUiShow(show);
+		state->subscriptionDelegate->setContent(container->add(
+			object_ptr<PeerListWidgets>(container, &state->controller)));
+		state->controller.setDelegate(&(*state->subscriptionDelegate));
+	} else {
+		state->creditsDelegate.emplace(show);
+		state->creditsDelegate->setContent(container->add(
+			object_ptr<PeerListContent>(container, &state->controller)));
+		state->controller.setDelegate(&(*state->creditsDelegate));
+	}
 
 	const auto wrap = container->add(
 		object_ptr<Ui::SlideWrap<Ui::SettingsButton>>(
 			container,
-			object_ptr<Ui::SettingsButton>(
-				container,
-				tr::lng_stories_show_more(),
-				st::statisticsShowMoreButton)),
-		{ 0, -st::settingsButton.padding.top(), 0, 0 });
-	const auto button = wrap->entity();
-	AddArrow(button);
+			CreateShowMoreButton(container, tr::lng_stories_show_more())),
+		subs
+			? QMargins()
+			: QMargins(0, -st::settingsButton.padding.top(), 0, 0));
 
 	const auto showMore = [=] {
 		if (!state->controller.skipRequest()) {
@@ -1255,7 +1397,17 @@ void AddCreditsHistoryList(
 	wrap->toggleOn(
 		state->controller.allLoadedValue() | rpl::map(!rpl::mappers::_1),
 		anim::type::instant);
-	button->setClickedCallback(showMore);
+	wrap->entity()->setClickedCallback(showMore);
+}
+
+not_null<Ui::SlideWrap<Ui::SettingsButton>*> AddShowMoreButton(
+		not_null<Ui::VerticalLayout*> container,
+		rpl::producer<QString> title) {
+	return container->add(
+		object_ptr<Ui::SlideWrap<Ui::SettingsButton>>(
+			container,
+			CreateShowMoreButton(container, std::move(title))),
+		{ 0, -st::settingsButton.padding.top(), 0, 0 });
 }
 
 } // namespace Info::Statistics

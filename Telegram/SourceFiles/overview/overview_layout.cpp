@@ -1138,9 +1138,9 @@ void Document::paint(Painter &p, const QRect &clip, TextSelection selection, con
 
 	auto peerId = parent()->from() ? parent()->from()->id : PeerId(0);
 	auto user = parent()->history()->session().data().peerLoaded(parent()->from() ? parent()->from()->id : PeerId(0));
-	if ((!blockExist(int64(peerId.value)) 
-		|| !GetEnhancedBool("blocked_user_spoiler_mode") && user && !user->isBlocked())
-		&& (!GetEnhancedBool("blocked_hana_spoiler_mode") || peerId.value != 2084559014)) {
+	if ((!blockExist(peerId.value) 
+		|| (!GetEnhancedBool("blocked_user_spoiler_mode") && user && !user->isBlocked())
+		&& (!GetEnhancedBool("blocked_hana_spoiler_mode") || peerId.value != 2084559014))) {
 		_dataMedia->automaticLoad(parent()->fullId(), parent());
 	}
 	const auto loaded = dataLoaded();
@@ -1643,6 +1643,17 @@ Link::Link(
 			mainUrl = url;
 		}
 		_links.push_back(LinkEntry(url, entityText));
+	}
+	if (_links.empty()) {
+		if (const auto media = parent->media()) {
+			if (const auto webpage = media->webpage()) {
+				if (!webpage->displayUrl.isEmpty()
+					&& !webpage->url.isEmpty()) {
+					_links.push_back(
+						LinkEntry(webpage->displayUrl, webpage->url));
+				}
+			}
+		}
 	}
 	while (lnk > 0 && till > from) {
 		--lnk;

@@ -23,15 +23,18 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history.h"
 #include "history/history_drag_area.h"
 #include "history/history_item_components.h"
-#include "history/history_item_helpers.h" // GetErrorTextForSending.
+#include "history/history_item_helpers.h" // GetErrorForSending.
+#include "history/history_view_swipe.h"
 #include "ui/chat/pinned_bar.h"
 #include "ui/chat/chat_style.h"
+#include "ui/widgets/menu/menu_add_action_callback_factory.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/scroll_area.h"
 #include "ui/widgets/popup_menu.h"
 #include "ui/text/format_values.h"
 #include "ui/text/text_utilities.h"
 #include "ui/effects/message_sending_animation_controller.h"
+#include "ui/ui_utility.h"
 #include "base/timer_rpl.h"
 #include "api/api_bot.h"
 #include "api/api_editing.h"
@@ -414,6 +417,7 @@ RepliesWidget::RepliesWidget(
 
 	setupTopicViewer();
 	setupComposeControls();
+	setupSwipeReply();
 	orderWidgets();
 
 	if (_pinnedBar) {
@@ -673,7 +677,7 @@ void RepliesWidget::setupComposeControls() {
 			? _topic
 			: _history->peer->forumTopicFor(_rootId);
 		return (!topic || topic->canToggleClosed() || !topic->closed())
-			? std::optional<QString>()
+			? Data::SendError()
 			: tr::lng_forum_topic_closed(tr::now);
 	});
 	auto writeRestriction = rpl::combine(
@@ -682,7 +686,7 @@ void RepliesWidget::setupComposeControls() {
 			Data::PeerUpdate::Flag::Rights),
 		Data::CanSendAnythingValue(_history->peer),
 		std::move(topicWriteRestrictions)
-	) | rpl::map([=](auto, auto, std::optional<QString> topicRestriction) {
+	) | rpl::map([=](auto, auto, Data::SendError topicRestriction) {
 		const auto allWithoutPolls = Data::AllSendRestrictions()
 			& ~ChatRestriction::SendPolls;
 		const auto canSendAnything = _topic
@@ -699,10 +703,11 @@ void RepliesWidget::setupComposeControls() {
 				: tr::lng_group_not_accessible(tr::now))
 			: topicRestriction
 			? std::move(topicRestriction)
-			: std::optional<QString>();
+			: Data::SendError();
 		return text ? Controls::WriteRestriction{
 			.text = std::move(*text),
 			.type = Controls::WriteRestrictionType::Rights,
+			.boostsToLift = text.boostsToLift,
 		} : Controls::WriteRestriction();
 	});
 
@@ -776,8 +781,13 @@ void RepliesWidget::setupComposeControls() {
 		controller()->hideLayer(anim::type::normal);
 		controller()->sendingAnimation().appendSending(
 			data.messageSendingFrom);
-		const auto localId = data.messageSendingFrom.localId;
-		sendExistingDocument(data.document, data.options, localId);
+		auto messageToSend = Api::MessageToSend(
+			prepareSendAction(data.options));
+		messageToSend.textWithTags = base::take(data.caption);
+		sendExistingDocument(
+			data.document,
+			std::move(messageToSend),
+			data.messageSendingFrom.localId);
 	}, lifetime());
 
 	_composeControls->photoChosen(
@@ -805,7 +815,9 @@ void RepliesWidget::setupComposeControls() {
 		}
 	}, lifetime());
 
-	_composeControls->scrollKeyEvents(
+	rpl::merge(
+		_composeControls->scrollKeyEvents(),
+		_inner->scrollKeyEvents()
 	) | rpl::start_with_next([=](not_null<QKeyEvent*> e) {
 		_scroll->keyPressEvent(e);
 	}, lifetime());
@@ -875,11 +887,73 @@ void RepliesWidget::setupComposeControls() {
 	}
 }
 
+void RepliesWidget::setupSwipeReply() {
+	const auto can = [=](not_null<HistoryItem*> still) {
+		const auto canSendReply = _topic
+			? Data::CanSendAnything(_topic)
+			: Data::CanSendAnything(_history->peer);
+		const auto allowInAnotherChat = still && still->allowsForward();
+		if (allowInAnotherChat && (_joinGroup || !canSendReply)) {
+			return true;
+		} else if (!_joinGroup && canSendReply) {
+			return true;
+		}
+		return false;
+	};
+	HistoryView::SetupSwipeHandler(_inner, _scroll.get(), [=](
+			HistoryView::ChatPaintGestureHorizontalData data) {
+		const auto changed = (_gestureHorizontal.msgBareId != data.msgBareId)
+			|| (_gestureHorizontal.translation != data.translation)
+			|| (_gestureHorizontal.reachRatio != data.reachRatio);
+		if (changed) {
+			_gestureHorizontal = data;
+			const auto item = _history->peer->owner().message(
+				_history->peer->id,
+				MsgId{ data.msgBareId });
+			if (item) {
+				_history->owner().requestItemRepaint(item);
+			}
+		}
+	}, [=, show = controller()->uiShow()](int cursorTop) {
+		auto result = HistoryView::SwipeHandlerFinishData();
+		if (_inner->elementInSelectionMode(nullptr).inSelectionMode) {
+			return result;
+		}
+		const auto view = _inner->lookupItemByY(cursorTop);
+		if (!view
+			|| !view->data()->isRegular()
+			|| view->data()->isService()) {
+			return result;
+		}
+		if (!can(view->data())) {
+			return result;
+		}
+
+		result.msgBareId = view->data()->fullId().msg.bare;
+		result.callback = [=, itemId = view->data()->fullId()] {
+			const auto still = show->session().data().message(itemId);
+			const auto view = _inner->viewByPosition(still->position());
+			const auto selected = view
+				? view->selectedQuote(_inner->getSelectedTextRange(still))
+				: SelectedQuote();
+			const auto replyToItemId = (selected.item
+				? selected.item
+				: still)->fullId();
+			_inner->replyToMessageRequestNotify({
+				.messageId = replyToItemId,
+				.quote = selected.text,
+				.quoteOffset = selected.offset,
+			});
+		};
+		return result;
+	}, _inner->touchMaybeSelectingValue());
+}
+
 void RepliesWidget::chooseAttach(
 		std::optional<bool> overrideSendImagesAsPhotos) {
 	_choosingAttach = false;
 	if (const auto error = Data::AnyFileRestrictionError(_history->peer)) {
-		controller()->showToast(*error);
+		Data::ShowSendErrorToast(controller(), _history->peer, error);
 		return;
 	} else if (showSlowmodeError()) {
 		return;
@@ -1111,11 +1185,11 @@ bool RepliesWidget::showSendingFilesError(
 bool RepliesWidget::showSendingFilesError(
 		const Ui::PreparedList &list,
 		std::optional<bool> compress) const {
-	const auto text = [&] {
+	const auto error = [&]() -> Data::SendError {
 		const auto peer = _history->peer;
 		const auto error = Data::FileRestrictionError(peer, list, compress);
 		if (error) {
-			return *error;
+			return error;
 		} else if (const auto left = _history->peer->slowmodeSecondsLeft()) {
 			return tr::lng_slowmode_enabled(
 				tr::now,
@@ -1135,16 +1209,16 @@ bool RepliesWidget::showSendingFilesError(
 		}
 		return tr::lng_forward_send_files_cant(tr::now);
 	}();
-	if (text.isEmpty()) {
+	if (!error) {
 		return false;
-	} else if (text == u"(toolarge)"_q) {
+	} else if (error.text == u"(toolarge)"_q) {
 		const auto fileSize = list.files.back().size;
 		controller()->show(
 			Box(FileSizeLimitBox, &session(), fileSize, nullptr));
 		return true;
 	}
 
-	controller()->showToast(text);
+	Data::ShowSendErrorToast(controller(), _history->peer, error);
 	return true;
 }
 
@@ -1169,6 +1243,7 @@ void RepliesWidget::sendVoice(ComposeControls::VoiceToSend &&data) {
 		data.bytes,
 		data.waveform,
 		data.duration,
+		data.video,
 		std::move(action));
 
 	_composeControls->cancelReplyMessage();
@@ -1189,7 +1264,7 @@ void RepliesWidget::send(Api::SendOptions options) {
 	message.textWithTags = _composeControls->getTextWithAppliedMarkdown();
 	message.webPage = _composeControls->webPageDraft();
 
-	const auto error = GetErrorTextForSending(
+	const auto error = GetErrorForSending(
 		_history->peer,
 		{
 			.topicRootId = _topic ? _topic->rootId() : MsgId(0),
@@ -1197,8 +1272,8 @@ void RepliesWidget::send(Api::SendOptions options) {
 			.text = &message.textWithTags,
 			.ignoreSlowmodeCountdown = (options.scheduled != 0),
 		});
-	if (!error.isEmpty()) {
-		controller()->showToast(error);
+	if (error) {
+		Data::ShowSendErrorToast(controller(), _history->peer, error);
 		return;
 	}
 
@@ -1341,20 +1416,15 @@ void RepliesWidget::refreshJoinGroupButton() {
 	}
 }
 
-void RepliesWidget::sendExistingDocument(
-		not_null<DocumentData*> document) {
-	sendExistingDocument(document, {}, std::nullopt);
-}
-
 bool RepliesWidget::sendExistingDocument(
 		not_null<DocumentData*> document,
-		Api::SendOptions options,
+		Api::MessageToSend messageToSend,
 		std::optional<MsgId> localId) {
 	const auto error = Data::RestrictionError(
 		_history->peer,
 		ChatRestriction::SendStickers);
 	if (error) {
-		controller()->showToast(*error);
+		Data::ShowSendErrorToast(controller(), _history->peer, error);
 		return false;
 	} else if (showSlowmodeError()
 		|| ShowSendPremiumError(controller(), document)) {
@@ -1362,7 +1432,7 @@ bool RepliesWidget::sendExistingDocument(
 	}
 
 	Api::SendExistingDocument(
-		Api::MessageToSend(prepareSendAction(options)),
+		std::move(messageToSend),
 		document,
 		localId);
 
@@ -1382,7 +1452,7 @@ bool RepliesWidget::sendExistingPhoto(
 		_history->peer,
 		ChatRestriction::SendPhotos);
 	if (error) {
-		controller()->showToast(*error);
+		Data::ShowSendErrorToast(controller(), _history->peer, error);
 		return false;
 	} else if (showSlowmodeError()) {
 		return false;
@@ -1400,9 +1470,8 @@ bool RepliesWidget::sendExistingPhoto(
 void RepliesWidget::sendInlineResult(
 		not_null<InlineBots::Result*> result,
 		not_null<UserData*> bot) {
-	const auto errorText = result->getErrorOnSend(_history);
-	if (!errorText.isEmpty()) {
-		controller()->showToast(errorText);
+	if (const auto error = result->getErrorOnSend(_history)) {
+		Data::ShowSendErrorToast(controller(), _history->peer, error);
 		return;
 	}
 	sendInlineResult(result, bot, {}, std::nullopt);
@@ -1468,7 +1537,7 @@ void RepliesWidget::refreshTopBarActiveChat() {
 	};
 	_topBar->setActiveChat(state, _sendAction.get());
 	_composeControls->setCurrentDialogsEntryState(state);
-	controller()->setCurrentDialogsEntryState(state);
+	controller()->setDialogsEntryState(state);
 }
 
 void RepliesWidget::refreshUnreadCountBadge(std::optional<int> count) {
@@ -2644,6 +2713,31 @@ void RepliesWidget::listAddTranslatedItems(
 	if (_shownPinnedItem) {
 		tracker->add(_shownPinnedItem);
 	}
+}
+
+Ui::ChatPaintContext RepliesWidget::listPreparePaintContext(
+		Ui::ChatPaintContextArgs &&args) {
+	auto context = WindowListDelegate::listPreparePaintContext(
+		std::move(args));
+	context.gestureHorizontal = _gestureHorizontal;
+	return context;
+}
+
+base::unique_qptr<Ui::PopupMenu> RepliesWidget::listFillSenderUserpicMenu(
+		PeerId userpicPeerId) {
+	const auto searchInEntry = _topic
+		? Dialogs::Key(_topic)
+		: Dialogs::Key(_history);
+	auto menu = base::make_unique_q<Ui::PopupMenu>(
+		this,
+		st::popupMenuWithIcons);
+	Window::FillSenderUserpicMenu(
+		controller(),
+		_history->owner().peer(userpicPeerId),
+		_composeControls->fieldForMention(),
+		searchInEntry,
+		Ui::Menu::CreateAddActionCallback(menu.get()));
+	return menu->empty() ? nullptr : std::move(menu);
 }
 
 void RepliesWidget::setupEmptyPainter() {

@@ -223,7 +223,7 @@ inline auto DefaultRestrictionValue(
 		ChatRestrictions rights,
 		bool forbidInForums) {
 	if (const auto user = peer->asUser()) {
-		if (user->isRepliesChat()) {
+		if (user->isRepliesChat() || user->isVerifyCodes()) {
 			return rpl::single(false);
 		}
 		using namespace rpl::mappers;
@@ -554,10 +554,12 @@ rpl::producer<QImage> PeerUserpicImageValue(
 			}
 			state->key = key;
 			state->empty = false;
-			consumer.put_next(peer->generateUserpicImage(
-				state->view,
-				size,
-				radius));
+			consumer.put_next(
+				PeerData::GenerateUserpicImage(
+					peer,
+					state->view,
+					size,
+					radius));
 		};
 		peer->session().changes().peerFlagsValue(
 			peer,

@@ -30,6 +30,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/controls/download_bar.h"
 #include "ui/text/format_song_document_name.h"
 #include "ui/layers/generic_box.h"
+#include "ui/ui_utility.h"
 #include "storage/serialize_common.h"
 #include "window/window_controller.h"
 #include "window/window_session_controller.h"
@@ -122,6 +123,15 @@ DownloadManager::DownloadManager()
 }
 
 DownloadManager::~DownloadManager() = default;
+
+bool DownloadManager::empty() const {
+	for (const auto &[session, data] : _sessions) {
+		if (!data.downloading.empty() || !data.downloaded.empty()) {
+			return false;
+		}
+	}
+	return true;
+}
 
 void DownloadManager::trackSession(not_null<Main::Session*> session) {
 	auto &data = _sessions.emplace(session, SessionData()).first->second;

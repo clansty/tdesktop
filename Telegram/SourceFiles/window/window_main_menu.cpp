@@ -170,10 +170,12 @@ void ShowCallsBox(not_null<Window::SessionController*> window) {
 				showSettings,
 				&st::menuIconSettings);
 			if (state->callsDelegate.peerListFullRowsCount() > 0) {
-				state->menu->addAction(
-					tr::lng_call_box_clear_all(tr::now),
-					clearAll,
-					&st::menuIconDelete);
+				Ui::Menu::CreateAddActionCallback(state->menu)({
+					.text = tr::lng_call_box_clear_all(tr::now),
+					.handler = clearAll,
+					.icon = &st::menuIconDeleteAttention,
+					.isAttention = true,
+				});
 			}
 			state->menu->popup(QCursor::pos());
 			return true;
@@ -203,7 +205,7 @@ void ShowCallsBox(not_null<Window::SessionController*> window) {
 
 class MainMenu::ToggleAccountsButton final : public Ui::AbstractButton {
 public:
-	explicit ToggleAccountsButton(QWidget *parent);
+	ToggleAccountsButton(QWidget *parent, not_null<Main::Account*> current);
 
 	[[nodiscard]] int rightSkip() const {
 		return _rightSkip.current();
@@ -219,6 +221,7 @@ private:
 	void validateUnreadBadge();
 	[[nodiscard]] QString computeUnreadBadge() const;
 
+	const not_null<Main::Account*> _current;
 	rpl::variable<int> _rightSkip = 0;
 	Ui::Animations::Simple _toggledAnimation;
 	bool _toggled = false;
@@ -239,8 +242,11 @@ protected:
 
 };
 
-MainMenu::ToggleAccountsButton::ToggleAccountsButton(QWidget *parent)
-: AbstractButton(parent) {
+MainMenu::ToggleAccountsButton::ToggleAccountsButton(
+	QWidget *parent,
+	not_null<Main::Account*> current)
+: AbstractButton(parent)
+, _current(current) {
 	rpl::single(rpl::empty) | rpl::then(
 		Core::App().unreadBadgeChanges()
 	) | rpl::start_with_next([=] {
@@ -329,7 +335,7 @@ void MainMenu::ToggleAccountsButton::validateUnreadBadge() {
 }
 
 QString MainMenu::ToggleAccountsButton::computeUnreadBadge() const {
-	const auto state = OtherAccountsUnreadStateCurrent();
+	const auto state = OtherAccountsUnreadStateCurrent(_current);
 	return state.allMuted
 		? QString()
 		: (state.count > 0)
@@ -390,7 +396,7 @@ MainMenu::MainMenu(
 	this,
 	_controller->session().user(),
 	st::mainMenuUserpic)
-, _toggleAccounts(this)
+, _toggleAccounts(this, &controller->session().account())
 , _setEmojiStatus(this, SetStatusLabel(&controller->session()))
 , _emojiStatusPanel(std::make_unique<Info::Profile::EmojiStatusPanel>())
 , _badge(std::make_unique<Info::Profile::Badge>(
@@ -729,6 +735,23 @@ void MainMenu::setupMenu() {
 			std::move(descriptor));
 	};
 	if (!_controller->session().supportMode()) {
+		_menu->add(
+			CreateButtonWithIcon(
+				_menu,
+				tr::lng_menu_my_profile(),
+				st::mainMenuButton,
+				{ &st::menuIconProfile })
+		)->setClickedCallback([=] {
+			controller->showSection(
+				Info::Stories::Make(controller->session().user()));
+		});
+
+		SetupMenuBots(_menu, controller);
+
+		_menu->add(
+			object_ptr<Ui::PlainShadow>(_menu),
+			{ 0, st::mainMenuSkip, 0, st::mainMenuSkip });
+
 		AddMyChannelsBox(addAction(
 			tr::lng_create_group_title(),
 			{ &st::menuIconGroups }
@@ -930,7 +953,7 @@ void MainMenu::setupMenu() {
 	}, _showPhoneToggle->lifetime());
 
 	_screenshotToggle = addAction(
-		rpl::single(u"Screenshot Mode"_q),
+		tr::lng_settings_screen_shot_mode(),
 		{ &st::menuIconLock }
 	)->toggleOn(rpl::single(GetEnhancedBool("screenshot_mode")));
 
@@ -1106,13 +1129,13 @@ void MainMenu::initResetScaleButton() {
 	}, lifetime());
 }
 
-OthersUnreadState OtherAccountsUnreadStateCurrent() {
+OthersUnreadState OtherAccountsUnreadStateCurrent(
+		not_null<Main::Account*> current) {
 	auto &domain = Core::App().domain();
-	const auto active = &domain.active();
 	auto counter = 0;
 	auto allMuted = true;
 	for (const auto &[index, account] : domain.accounts()) {
-		if (account.get() == active) {
+		if (account.get() == current) {
 			continue;
 		} else if (const auto session = account->maybeSession()) {
 			counter += session->data().unreadBadge();
@@ -1127,10 +1150,13 @@ OthersUnreadState OtherAccountsUnreadStateCurrent() {
 	};
 }
 
-rpl::producer<OthersUnreadState> OtherAccountsUnreadState() {
+rpl::producer<OthersUnreadState> OtherAccountsUnreadState(
+		not_null<Main::Account*> current) {
 	return rpl::single(rpl::empty) | rpl::then(
 		Core::App().unreadBadgeChanges()
-	) | rpl::map(OtherAccountsUnreadStateCurrent);
+	) | rpl::map([=] {
+		return OtherAccountsUnreadStateCurrent(current);
+	});
 }
 
 } // namespace Window

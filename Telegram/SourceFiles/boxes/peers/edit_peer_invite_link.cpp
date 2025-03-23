@@ -12,19 +12,21 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/unixtime.h"
 #include "boxes/gift_premium_box.h"
 #include "boxes/peer_list_box.h"
+#include "boxes/peer_list_controllers.h"
 #include "boxes/share_box.h"
 #include "core/application.h"
 #include "core/ui_integration.h" // Core::MarkedTextContext.
 #include "data/components/credits.h"
 #include "data/data_changes.h"
 #include "data/data_channel.h"
+#include "data/data_forum_topic.h"
 #include "data/data_histories.h"
 #include "data/data_peer.h"
 #include "data/data_session.h"
 #include "data/data_user.h"
 #include "data/stickers/data_custom_emoji.h"
 #include "history/history.h"
-#include "history/history_item_helpers.h" // GetErrorTextForSending.
+#include "history/history_item_helpers.h" // GetErrorForSending.
 #include "history/view/history_view_group_call_bar.h" // GenerateUserpics...
 #include "lang/lang_keys.h"
 #include "main/main_session.h"
@@ -33,6 +35,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/boxes/confirm_box.h"
 #include "ui/boxes/edit_invite_link.h"
 #include "ui/boxes/edit_invite_link_session.h"
+#include "ui/boxes/peer_qr_box.h"
 #include "ui/controls/invite_link_buttons.h"
 #include "ui/controls/invite_link_label.h"
 #include "ui/controls/userpic_button.h"
@@ -50,6 +53,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_session_controller.h"
 #include "styles/style_boxes.h"
 #include "styles/style_credits.h"
+#include "styles/style_dialogs.h"
 #include "styles/style_giveaway.h"
 #include "styles/style_info.h"
 #include "styles/style_layers.h" // st::boxDividerLabel.
@@ -64,8 +68,8 @@ namespace {
 
 constexpr auto kFirstPage = 20;
 constexpr auto kPerPage = 100;
-constexpr auto kShareQrSize = 768;
-constexpr auto kShareQrPadding = 16;
+// constexpr auto kShareQrSize = 768;
+// constexpr auto kShareQrPadding = 16;
 
 using LinkData = Api::InviteLink;
 
@@ -263,8 +267,9 @@ private:
 class SingleRowController final : public PeerListController {
 public:
 	SingleRowController(
-		not_null<PeerData*> peer,
-		rpl::producer<QString> status);
+		not_null<Data::Thread*> thread,
+		rpl::producer<QString> status,
+		Fn<void()> clicked);
 
 	void prepare() override;
 	void loadMoreRows() override;
@@ -272,8 +277,10 @@ public:
 	Main::Session &session() const override;
 
 private:
-	const not_null<PeerData*> _peer;
+	const not_null<Main::Session*> _session;
+	const base::weak_ptr<Data::Thread> _thread;
 	rpl::producer<QString> _status;
+	Fn<void()> _clicked;
 	rpl::lifetime _lifetime;
 
 };
@@ -281,6 +288,8 @@ private:
 [[nodiscard]] bool ClosingLinkBox(const LinkData &updated, bool revoked) {
 	return updated.link.isEmpty() || (!revoked && updated.revoked);
 }
+
+#if 0
 
 QImage QrExact(const Qr::Data &data, int pixel, QColor color) {
 	const auto image = [](int size) {
@@ -383,6 +392,8 @@ void QrBox(
 	box->addLeftButton(tr::lng_group_invite_context_copy(), copyCallback);
 }
 
+#endif
+
 Controller::Controller(
 	not_null<PeerData*> peer,
 	not_null<UserData*> admin,
@@ -421,6 +432,7 @@ void Controller::addHeaderBlock(not_null<Ui::VerticalLayout*> container) {
 	});
 	const auto getLinkQr = crl::guard(weak, [=] {
 		delegate()->peerListUiShow()->showBox(InviteLinkQrBox(
+			_peer,
 			link,
 			tr::lng_group_invite_qr_title(),
 			tr::lng_group_invite_qr_about()));
@@ -950,12 +962,11 @@ void Controller::rowClicked(not_null<PeerListRow*> row) {
 		Ui::AddSkip(content);
 		Ui::AddSkip(content);
 
-		const auto &stUser = st::boostReplaceUserpic;
+		const auto photoSize = st::boostReplaceUserpic.photoSize;
 		const auto session = &row->peer()->session();
 		content->add(object_ptr<Ui::CenterWrap<>>(
 			content,
-			object_ptr<Ui::UserpicButton>(content, channel, stUser))
-		)->setAttribute(Qt::WA_TransparentForMouseEvents);
+			Settings::SubscriptionUserpic(content, channel, photoSize)));
 
 		Ui::AddSkip(content);
 		Ui::AddSkip(content);
@@ -1139,36 +1150,59 @@ int Controller::descriptionTopSkipMin() const {
 }
 
 SingleRowController::SingleRowController(
-	not_null<PeerData*> peer,
-	rpl::producer<QString> status)
-: _peer(peer)
-, _status(std::move(status)) {
+	not_null<Data::Thread*> thread,
+	rpl::producer<QString> status,
+	Fn<void()> clicked)
+: _session(&thread->session())
+, _thread(thread)
+, _status(std::move(status))
+, _clicked(std::move(clicked)) {
 }
 
 void SingleRowController::prepare() {
-	auto row = std::make_unique<PeerListRow>(_peer);
-
+	const auto strong = _thread.get();
+	if (!strong) {
+		return;
+	}
+	const auto topic = strong->asTopic();
+	auto row = topic
+		? ChooseTopicBoxController::MakeRow(topic)
+		: std::make_unique<PeerListRow>(strong->peer());
 	const auto raw = row.get();
-	std::move(
-		_status
-	) | rpl::start_with_next([=](const QString &status) {
-		raw->setCustomStatus(status);
-		delegate()->peerListUpdateRow(raw);
-	}, _lifetime);
-
+	if (_status) {
+		std::move(
+			_status
+		) | rpl::start_with_next([=](const QString &status) {
+			raw->setCustomStatus(status);
+			delegate()->peerListUpdateRow(raw);
+		}, _lifetime);
+	}
 	delegate()->peerListAppendRow(std::move(row));
 	delegate()->peerListRefreshRows();
+
+	if (topic) {
+		topic->destroyed() | rpl::start_with_next([=] {
+			while (delegate()->peerListFullRowsCount()) {
+				delegate()->peerListRemoveRow(delegate()->peerListRowAt(0));
+			}
+			delegate()->peerListRefreshRows();
+		}, _lifetime);
+	}
 }
 
 void SingleRowController::loadMoreRows() {
 }
 
 void SingleRowController::rowClicked(not_null<PeerListRow*> row) {
-	ShowPeerInfoSync(row->peer());
+	if (const auto onstack = _clicked) {
+		onstack();
+	} else {
+		ShowPeerInfoSync(row->peer());
+	}
 }
 
 Main::Session &SingleRowController::session() const {
-	return _peer->session();
+	return *_session;
 }
 
 } // namespace
@@ -1181,14 +1215,29 @@ bool IsExpiredLink(const Api::InviteLink &data, TimeId now) {
 void AddSinglePeerRow(
 		not_null<Ui::VerticalLayout*> container,
 		not_null<PeerData*> peer,
-		rpl::producer<QString> status) {
+		rpl::producer<QString> status,
+		Fn<void()> clicked) {
+	AddSinglePeerRow(
+		container,
+		peer->owner().history(peer),
+		std::move(status),
+		std::move(clicked));
+}
+
+void AddSinglePeerRow(
+		not_null<Ui::VerticalLayout*> container,
+		not_null<Data::Thread*> thread,
+		rpl::producer<QString> status,
+		Fn<void()> clicked) {
 	const auto delegate = container->lifetime().make_state<
 		PeerListContentDelegateSimple
 	>();
 	const auto controller = container->lifetime().make_state<
 		SingleRowController
-	>(peer, std::move(status));
-	controller->setStyleOverrides(&st::peerListSingleRow);
+	>(thread, std::move(status), std::move(clicked));
+	controller->setStyleOverrides(thread->asTopic()
+		? &st::chooseTopicList
+		: &st::peerListSingleRow);
 	const auto content = container->add(object_ptr<PeerListContent>(
 		container,
 		controller));
@@ -1253,6 +1302,7 @@ void AddPermanentLinkBlock(
 	const auto getLinkQr = crl::guard(weak, [=] {
 		if (const auto current = value->current(); !current.link.isEmpty()) {
 			show->showBox(InviteLinkQrBox(
+				peer,
 				current.link,
 				tr::lng_group_invite_qr_title(),
 				tr::lng_group_invite_qr_about()));
@@ -1442,27 +1492,14 @@ object_ptr<Ui::BoxContent> ShareInviteLinkBox(
 			return;
 		}
 
-		const auto error = [&] {
-			for (const auto thread : result) {
-				const auto error = GetErrorTextForSending(
-					thread,
-					{ .text = &comment });
-				if (!error.isEmpty()) {
-					return std::make_pair(error, thread);
-				}
-			}
-			return std::make_pair(QString(), result.front());
-		}();
-		if (!error.first.isEmpty()) {
-			auto text = TextWithEntities();
-			if (result.size() > 1) {
-				text.append(
-					Ui::Text::Bold(error.second->chatListName())
-				).append("\n\n");
-			}
-			text.append(error.first);
+		const auto errorWithThread = GetErrorForSending(
+			result,
+			{ .text = &comment });
+		if (errorWithThread.error) {
 			if (*box) {
-				(*box)->uiShow()->showBox(Ui::MakeInformBox(text));
+				(*box)->uiShow()->showBox(MakeSendErrorBox(
+					errorWithThread,
+					result.size() > 1));
 			}
 			return;
 		}
@@ -1510,16 +1547,14 @@ object_ptr<Ui::BoxContent> ShareInviteLinkBox(
 }
 
 object_ptr<Ui::BoxContent> InviteLinkQrBox(
+		PeerData *peer,
 		const QString &link,
 		rpl::producer<QString> title,
 		rpl::producer<QString> about) {
-	return Box(QrBox, link, std::move(title), std::move(about), [=](
-			const QImage &image,
-			std::shared_ptr<Ui::Show> show) {
-		auto mime = std::make_unique<QMimeData>();
-		mime->setImageData(image);
-		QGuiApplication::clipboard()->setMimeData(mime.release());
-		show->showToast(tr::lng_group_invite_qr_copied(tr::now));
+	return Box([=, t = std::move(title), a = std::move(about)](
+			not_null<Ui::GenericBox*> box) {
+		Ui::FillPeerQrBox(box, peer, link, std::move(a));
+		box->setTitle(std::move(t));
 	});
 }
 

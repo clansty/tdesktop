@@ -91,7 +91,8 @@ public:
 	[[nodiscard]] static SubmitCallback DefaultForwardCallback(
 		std::shared_ptr<Ui::Show> show,
 		not_null<History*> history,
-		MessageIdsList msgIds);
+		MessageIdsList msgIds,
+		bool no_quote = false);
 
 	struct Descriptor {
 		not_null<Main::Session*> session;
@@ -174,6 +175,8 @@ private:
 	QString _peopleQuery;
 	bool _peopleFull = false;
 	mtpRequestId _peopleRequest = 0;
+
+	RpWidget *_chatsFilters = nullptr;
 
 	using PeopleCache = QMap<QString, MTPcontacts_Found>;
 	PeopleCache _peopleCache;

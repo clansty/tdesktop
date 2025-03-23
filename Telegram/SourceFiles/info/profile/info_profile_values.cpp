@@ -158,11 +158,11 @@ rpl::producer<TextWithEntities> PhoneOrHiddenValue(not_null<UserData*> user) {
 }
 
 rpl::producer<TextWithEntities> UsernameValue(
-		not_null<UserData*> user,
+		not_null<PeerData*> peer,
 		bool primary) {
 	return (primary
-		? PlainPrimaryUsernameValue(user)
-		: (PlainUsernameValue(user) | rpl::type_erased())
+		? PlainPrimaryUsernameValue(peer)
+		: (PlainUsernameValue(peer) | rpl::type_erased())
 	) | rpl::map([](QString &&username) {
 		return username.isEmpty()
 			? QString()
@@ -170,13 +170,21 @@ rpl::producer<TextWithEntities> UsernameValue(
 	}) | Ui::Text::ToWithEntities();
 }
 
-QString UsernameUrl(not_null<PeerData*> peer, const QString &username) {
-	return peer->isUsernameEditable(username)
-		? peer->session().createInternalLinkFull(username)
-		: (u"internal:collectible_username/"_q
-			+ username
-			+ "@"
-			+ QString::number(peer->id.value));
+QString UsernameUrl(
+		not_null<PeerData*> peer,
+		const QString &username,
+		bool link) {
+	const auto type = !peer->isUsernameEditable(username)
+		? u"collectible_username"_q
+		: link
+		? u"username_link"_q
+		: u"username_regular"_q;
+	return u"internal:"_q
+		+ type
+		+ u"/"_q
+		+ username
+		+ "@"
+		+ QString::number(peer->id.value);
 }
 
 rpl::producer<std::vector<TextWithEntities>> UsernamesValue(
@@ -211,15 +219,15 @@ TextWithEntities AboutWithEntities(
 	auto flags = TextParseLinks | TextParseMentions;
 	const auto user = peer->asUser();
 	const auto isBot = user && user->isBot();
-	const auto isPremium = user && user->isPremium();
+	//const auto isPremium = user && user->isPremium();
 	if (!user) {
 		flags |= TextParseHashtags;
 	} else if (isBot) {
 		flags |= TextParseHashtags | TextParseBotCommands;
 	}
-	const auto stripExternal = peer->isChat()
-		|| peer->isMegagroup()
-		|| (user && !isBot && !isPremium);
+	//const auto stripExternal = peer->isChat()
+	//	|| peer->isMegagroup()
+	//	|| (user && !isBot && !isPremium);
 	auto result = TextWithEntities{ value };
 	TextUtilities::ParseEntities(result, flags);
 //	if (stripExternal) {
@@ -247,7 +255,7 @@ rpl::producer<LinkWithUrl> LinkValue(not_null<PeerData*> peer, bool primary) {
 				: peer->session().createInternalLinkFull(username)),
 			.url = (username.isEmpty()
 				? QString()
-				: UsernameUrl(peer, username)),
+				: UsernameUrl(peer, username, true)),
 		};
 	});
 }
@@ -306,7 +314,10 @@ rpl::producer<bool> IsContactValue(not_null<UserData*> user) {
 
 [[nodiscard]] rpl::producer<QString> InviteToChatButton(
 		not_null<UserData*> user) {
-	if (!user->isBot() || user->isRepliesChat() || user->isSupport()) {
+	if (!user->isBot()
+		|| user->isRepliesChat()
+		|| user->isVerifyCodes()
+		|| user->isSupport()) {
 		return rpl::single(QString());
 	}
 	using Flag = Data::PeerUpdate::Flag;
@@ -327,7 +338,10 @@ rpl::producer<bool> IsContactValue(not_null<UserData*> user) {
 
 [[nodiscard]] rpl::producer<QString> InviteToChatAbout(
 		not_null<UserData*> user) {
-	if (!user->isBot() || user->isRepliesChat() || user->isSupport()) {
+	if (!user->isBot()
+		|| user->isRepliesChat()
+		|| user->isVerifyCodes()
+		|| user->isSupport()) {
 		return rpl::single(QString());
 	}
 	using Flag = Data::PeerUpdate::Flag;
@@ -583,6 +597,15 @@ rpl::producer<int> SavedSublistCountValue(
 		return rpl::single(0) | rpl::then(sublist->fullCountValue());
 	}
 	return sublist->fullCountValue();
+}
+
+rpl::producer<int> PeerGiftsCountValue(not_null<UserData*> user) {
+	return user->session().changes().peerFlagsValue(
+		user,
+		UpdateFlag::PeerGifts
+	) | rpl::map([=] {
+		return user->peerGiftsCount();
+	});
 }
 
 rpl::producer<bool> CanAddMemberValue(not_null<PeerData*> peer) {

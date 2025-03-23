@@ -22,6 +22,7 @@ struct ReactionId;
 
 namespace Ui {
 struct BubbleRounding;
+class RoundCheckbox;
 } // namespace Ui
 
 namespace HistoryView {
@@ -77,7 +78,7 @@ public:
 	[[nodiscard]] const HistoryMessageEdited *displayedEditBadge() const;
 	[[nodiscard]] HistoryMessageEdited *displayedEditBadge();
 
-	[[nodiscard]] bool embedReactionsInBubble() const;
+	bool embedReactionsInBubble() const override;
 
 	int marginTop() const override;
 	int marginBottom() const override;
@@ -159,10 +160,6 @@ public:
 		const base::flat_set<UserId> &changes) override;
 
 	void animateReaction(Ui::ReactionFlyAnimationArgs &&args) override;
-	auto takeReactionAnimations()
-	-> base::flat_map<
-		Data::ReactionId,
-		std::unique_ptr<Ui::ReactionFlyAnimation>> override;
 
 	void animateEffect(Ui::ReactionFlyAnimationArgs &&args) override;
 	auto takeEffectAnimation()
@@ -179,6 +176,8 @@ private:
 	struct CommentsButton;
 	struct FromNameStatus;
 	struct RightAction;
+
+	bool updateBottomInfo();
 
 	void initLogEntryOriginal();
 	void initPsa();
@@ -301,9 +300,7 @@ private:
 	[[nodiscard]] ClickHandlerPtr psaTooltipLink() const;
 	void psaTooltipToggled(bool shown) const;
 
-	void setReactions(std::unique_ptr<Reactions::InlineList> list);
 	void refreshRightBadge();
-	void refreshReactions();
 	void validateFromNameText(PeerData *from) const;
 	void validateForwardedNameText(HistoryItem *item) const;
 
@@ -311,12 +308,12 @@ private:
 	mutable ClickHandlerPtr _fastReplyLink;
 	mutable ClickHandlerPtr _fastForwardLink;
 	mutable std::unique_ptr<ViewButton> _viewButton;
-	std::unique_ptr<Reactions::InlineList> _reactions;
 	std::unique_ptr<TopicButton> _topicButton;
 	mutable std::unique_ptr<CommentsButton> _comments;
 
 	mutable Ui::Text::String _fromName;
 	mutable std::unique_ptr<FromNameStatus> _fromNameStatus;
+	mutable std::unique_ptr<Ui::RoundCheckbox> _selectionRoundCheckbox;
 	mutable bool _previousMode = false;
 	Ui::Text::String _rightBadge;
 	mutable int _fromNameVersion = 0;

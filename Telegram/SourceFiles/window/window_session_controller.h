@@ -8,10 +8,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "base/timer.h"
-#include "boxes/gift_premium_box.h" // GiftPremiumValidator.
 #include "chat_helpers/compose/compose_show.h"
 #include "data/data_chat_participant_status.h"
+#include "data/data_report.h"
 #include "dialogs/dialogs_key.h"
+#include "mtproto/sender.h"
 #include "settings/settings_type.h"
 #include "window/window_adaptive.h"
 
@@ -55,7 +56,6 @@ class FormController;
 
 namespace Ui {
 class LayerWidget;
-enum class ReportReason;
 class ChatStyle;
 class ChatTheme;
 struct ChatThemeKey;
@@ -247,10 +247,15 @@ public:
 		FullMsgId contextId,
 		const SectionShow &params = SectionShow());
 
-	void searchInChat(Dialogs::Key inChat);
-	void searchMessages(const QString &query, Dialogs::Key inChat);
+	void searchInChat(Dialogs::Key inChat, PeerData *searchFrom = nullptr);
+	void searchMessages(
+		const QString &query,
+		Dialogs::Key inChat,
+		PeerData *searchFrom = nullptr);
 
-	void resolveBoostState(not_null<ChannelData*> channel);
+	void resolveBoostState(
+		not_null<ChannelData*> channel,
+		int boostsToLift = 0);
 
 	void resolveCollectible(
 		PeerId ownerId,
@@ -277,7 +282,8 @@ private:
 		Fn<void(not_null<PeerData*> peer, TextWithEntities draft)> done);
 	void resolveUsername(
 		const QString &username,
-		Fn<void(not_null<PeerData*>)> done);
+		Fn<void(not_null<PeerData*>)> done,
+		const QString &starref = QString());
 	void resolveChannelById(
 		ChannelId channelId,
 		Fn<void(not_null<ChannelData*>)> done);
@@ -315,6 +321,7 @@ private:
 	mtpRequestId _showingRepliesRequestId = 0;
 
 	ChannelData *_boostStateResolving = nullptr;
+	int _boostsToLift = 0;
 
 	QString _collectibleEntity;
 	mtpRequestId _collectibleRequestId = 0;
@@ -390,8 +397,10 @@ public:
 	rpl::producer<Dialogs::Key> activeChatValue() const;
 	bool jumpToChatListEntry(Dialogs::RowDescriptor row);
 
-	void setCurrentDialogsEntryState(Dialogs::EntryState state);
-	[[nodiscard]] Dialogs::EntryState currentDialogsEntryState() const;
+	void setDialogsEntryState(Dialogs::EntryState state);
+	[[nodiscard]] Dialogs::EntryState dialogsEntryStateCurrent() const;
+	[[nodiscard]] auto dialogsEntryStateValue() const
+		-> rpl::producer<Dialogs::EntryState>;
 	bool switchInlineQuery(
 		Dialogs::EntryState to,
 		not_null<UserData*> bot,
@@ -407,11 +416,6 @@ public:
 		Dialogs::RowDescriptor from = {}) const;
 
 	void showEditPeerBox(PeerData *peer);
-	void showGiftPremiumBox(UserData *user);
-	void showGiftPremiumsBox(const QString &ref);
-
-	// Single user gift as if was selected in multiple recipients chooser.
-	void showGiftPremiumsBox(not_null<UserData*> user, const QString &ref);
 
 	void enableGifPauseReason(GifPauseReason reason);
 	void disableGifPauseReason(GifPauseReason reason);
@@ -510,8 +514,8 @@ public:
 
 	void showChooseReportMessages(
 		not_null<PeerData*> peer,
-		Ui::ReportReason reason,
-		Fn<void(MessageIdsList)> done) const;
+		Data::ReportInput reportInput,
+		Fn<void(std::vector<MsgId>)> done) const;
 	void clearChooseReportMessages() const;
 
 	void showInNewWindow(
@@ -549,6 +553,8 @@ public:
 	}
 
 	[[nodiscard]] int filtersWidth() const;
+	[[nodiscard]] bool enoughSpaceForFilters() const;
+	[[nodiscard]] rpl::producer<bool> enoughSpaceForFiltersValue() const;
 	[[nodiscard]] rpl::producer<FilterId> activeChatsFilter() const;
 	[[nodiscard]] FilterId activeChatsFilterCurrent() const;
 	void setActiveChatsFilter(
@@ -634,7 +640,6 @@ private:
 
 	void init();
 	void setupShortcuts();
-	void refreshFiltersMenu();
 	void checkOpenedFilter();
 	void suggestArchiveAndMute();
 	void activateFirstChatsFilter();
@@ -710,7 +715,7 @@ private:
 	int _chatEntryHistoryPosition = -1;
 	bool _filtersActivated = false;
 
-	Dialogs::EntryState _currentDialogsEntryState;
+	rpl::variable<Dialogs::EntryState> _dialogsEntryState;
 
 	base::Timer _invitePeekTimer;
 
@@ -736,8 +741,6 @@ private:
 	rpl::variable<PeerThemeOverride> _peerThemeOverride;
 
 	base::has_weak_ptr _storyOpenGuard;
-
-	GiftPremiumValidator _giftPremiumValidator;
 
 	QString _premiumRef;
 

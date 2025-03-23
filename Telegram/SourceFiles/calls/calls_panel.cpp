@@ -15,6 +15,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_cloud_file.h"
 #include "data/data_changes.h"
 #include "calls/group/calls_group_common.h"
+#include "calls/ui/calls_device_menu.h"
 #include "calls/calls_emoji_fingerprint.h"
 #include "calls/calls_signal_bars.h"
 #include "calls/calls_userpic.h"
@@ -24,6 +25,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/call_button.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/labels.h"
+#include "ui/widgets/popup_menu.h"
 #include "ui/widgets/shadow.h"
 #include "ui/widgets/rp_window.h"
 #include "ui/layers/layer_manager.h"
@@ -130,6 +132,7 @@ Panel::Panel(not_null<Call*> call)
 	initWidget();
 	initControls();
 	initLayout();
+	initMediaDeviceToggles();
 	showAndActivate();
 }
 
@@ -205,7 +208,9 @@ void Panel::initWindow() {
 			return Flag::None | Flag(0);
 		}
 #ifndef Q_OS_MAC
-		if (_controls->controls.geometry().contains(widgetPoint)) {
+		using Result = Ui::Platform::HitTestResult;
+		const auto windowPoint = widget()->mapTo(window(), widgetPoint);
+		if (_controls->controls.hitTest(windowPoint) != Result::None) {
 			return Flag::None | Flag(0);
 		}
 #endif // !Q_OS_MAC
@@ -746,6 +751,58 @@ void Panel::initGeometry() {
 	updateControlsGeometry();
 }
 
+void Panel::initMediaDeviceToggles() {
+	_cameraDeviceToggle = _camera->addCornerButton(
+		st::callCornerButton,
+		&st::callCornerButtonInactive);
+	_audioDeviceToggle = _mute->entity()->addCornerButton(
+		st::callCornerButton,
+		&st::callCornerButtonInactive);
+
+	_cameraDeviceToggle->setClickedCallback([=] {
+		showDevicesMenu(_cameraDeviceToggle, {
+			{ Webrtc::DeviceType::Camera, _call->cameraDeviceIdValue() },
+		});
+	});
+	_audioDeviceToggle->setClickedCallback([=] {
+		showDevicesMenu(_audioDeviceToggle, {
+			{ Webrtc::DeviceType::Playback, _call->playbackDeviceIdValue() },
+			{ Webrtc::DeviceType::Capture, _call->captureDeviceIdValue() },
+		});
+	});
+}
+
+void Panel::showDevicesMenu(
+		not_null<QWidget*> button,
+		std::vector<DeviceSelection> types) {
+	if (!_call || _devicesMenu) {
+		return;
+	}
+	const auto chosen = [=](Webrtc::DeviceType type, QString id) {
+		switch (type) {
+		case Webrtc::DeviceType::Playback:
+			Core::App().settings().setCallPlaybackDeviceId(id);
+			break;
+		case Webrtc::DeviceType::Capture:
+			Core::App().settings().setCallCaptureDeviceId(id);
+			break;
+		case Webrtc::DeviceType::Camera:
+			Core::App().settings().setCameraDeviceId(id);
+			break;
+		}
+		Core::App().saveSettingsDelayed();
+	};
+	_devicesMenu = MakeDeviceSelectionMenu(
+		widget(),
+		&Core::App().mediaDevices(),
+		std::move(types),
+		chosen);
+	_devicesMenu->setForcedVerticalOrigin(
+		Ui::PopupMenu::VerticalOrigin::Bottom);
+	_devicesMenu->popup(button->mapToGlobal(QPoint())
+		- QPoint(st::callDeviceSelectionMenu.menu.widthMin / 2, 0));
+}
+
 void Panel::refreshOutgoingPreviewInBody(State state) {
 	const auto inBody = (state != State::Established)
 		&& (_call->videoOutgoing()->state() != Webrtc::VideoState::Inactive)
@@ -946,7 +1003,12 @@ void Panel::paint(QRect clip) {
 
 bool Panel::handleClose() const {
 	if (_call) {
-		window()->hide();
+		if (_call->state() == Call::State::WaitingUserConfirmation
+			|| _call->state() == Call::State::Busy) {
+			_call->hangup();
+		} else {
+			window()->hide();
+		}
 		return true;
 	}
 	return false;
@@ -981,6 +1043,7 @@ void Panel::stateChanged(State state) {
 			_startVideo = base::make_unique_q<Ui::CallButton>(
 				widget(),
 				st::callStartVideo);
+			_startVideo->show();
 			_startVideo->setText(tr::lng_call_start_video());
 			_startVideo->clicks() | rpl::map_to(true) | rpl::start_to_stream(
 				_startOutgoingRequests,

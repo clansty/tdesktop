@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_authorizations.h"
 #include "api/api_user_names.h"
 #include "api/api_chat_participants.h"
+#include "api/api_global_privacy.h"
 #include "api/api_ringtones.h"
 #include "api/api_text_entities.h"
 #include "api/api_user_privacy.h"
@@ -319,6 +320,9 @@ void Updates::feedUpdateVector(
 	} else if (policy == SkipUpdatePolicy::SkipExceptGroupCallParticipants) {
 		return;
 	}
+	if (policy == SkipUpdatePolicy::SkipNone) {
+		applyConvertToScheduledOnSend(updates);
+	}
 	for (const auto &entry : std::as_const(list)) {
 		const auto type = entry.type();
 		if ((policy == SkipUpdatePolicy::SkipMessageIds
@@ -330,6 +334,15 @@ void Updates::feedUpdateVector(
 		feedUpdate(entry);
 	}
 	session().data().sendHistoryChangeNotifications();
+}
+
+void Updates::checkForSentToScheduled(const MTPUpdates &updates) {
+	updates.match([&](const MTPDupdates &data) {
+		applyConvertToScheduledOnSend(data.vupdates(), true);
+	}, [&](const MTPDupdatesCombined &data) {
+		applyConvertToScheduledOnSend(data.vupdates(), true);
+	}, [](const auto &) {
+	});
 }
 
 void Updates::feedMessageIds(const MTPVector<MTPUpdate> &updates) {
@@ -420,13 +433,12 @@ void Updates::channelDifferenceDone(
 			"{ good - after not final channelDifference was received }%1"
 			).arg(_session->mtp().isTestMode() ? " TESTMODE" : ""));
 		getChannelDifference(channel);
-	} else if (ranges::contains(
-			_activeChats,
-			channel,
-			[](const auto &pair) { return pair.second.peer; })) {
-		channel->ptsWaitingForShortPoll(timeout
+	} else if (inActiveChats(channel)) {
+		channel->ptsSetWaitingForShortPoll(timeout
 			? (timeout * crl::time(1000))
 			: kWaitForChannelGetDifference);
+	} else {
+		channel->ptsSetWaitingForShortPoll(-1);
 	}
 }
 
@@ -436,6 +448,7 @@ void Updates::feedChannelDifference(
 	session().data().processChats(data.vchats());
 
 	_handlingChannelDifference = true;
+	applyConvertToScheduledOnSend(data.vother_updates());
 	feedMessageIds(data.vother_updates());
 	session().data().processMessages(
 		data.vnew_messages(),
@@ -600,6 +613,7 @@ void Updates::feedDifference(
 	Core::App().checkAutoLock();
 	session().data().processUsers(users);
 	session().data().processChats(chats);
+	applyConvertToScheduledOnSend(other);
 	feedMessageIds(other);
 	session().data().processMessages(msgs, NewMessageType::Unread);
 	feedUpdateVector(other, SkipUpdatePolicy::SkipMessageIds);
@@ -658,6 +672,7 @@ void Updates::getDifferenceAfterFail() {
 			wait = wait ? std::min(wait, i->second - now) : (i->second - now);
 			++i;
 		} else {
+			i->first->ptsSetRequesting(false);
 			getChannelDifference(i->first, ChannelDifferenceRequest::AfterFail);
 			i = _whenGetDiffAfterFail.erase(i);
 		}
@@ -706,7 +721,9 @@ void Updates::getChannelDifference(
 		_whenGetDiffByPts.remove(channel);
 	}
 
-	if (!channel->ptsInited() || channel->ptsRequesting()) return;
+	if (!channel->ptsInited() || channel->ptsRequesting()) {
+		return;
+	}
 
 	if (from != ChannelDifferenceRequest::AfterFail) {
 		_whenGetDiffAfterFail.remove(channel);
@@ -743,14 +760,30 @@ void Updates::addActiveChat(rpl::producer<PeerData*> chat) {
 	std::move(
 		chat
 	) | rpl::start_with_next_done([=](PeerData *peer) {
-		_activeChats[key].peer = peer;
-		if (const auto channel = peer ? peer->asChannel() : nullptr) {
-			channel->ptsWaitingForShortPoll(
-				kWaitForChannelGetDifference);
+		auto &active = _activeChats[key];
+		const auto was = active.peer;
+		if (was != peer) {
+			active.peer = peer;
+			if (const auto channel = was ? was->asChannel() : nullptr) {
+				if (!inActiveChats(channel)) {
+					channel->ptsSetWaitingForShortPoll(-1);
+				}
+			}
+			if (const auto channel = peer ? peer->asChannel() : nullptr) {
+				channel->ptsSetWaitingForShortPoll(
+					kWaitForChannelGetDifference);
+			}
 		}
 	}, [=] {
 		_activeChats.erase(key);
 	}, _activeChats[key].lifetime);
+}
+
+bool Updates::inActiveChats(not_null<PeerData*> peer) const {
+	return ranges::contains(
+		_activeChats,
+		peer.get(),
+		[](const auto &pair) { return pair.second.peer; });
 }
 
 void Updates::requestChannelRangeDifference(not_null<History*> history) {
@@ -863,6 +896,51 @@ void Updates::mtpUpdateReceived(const MTPUpdates &updates) {
 		applyUpdates(updates);
 	} else {
 		applyGroupCallParticipantUpdates(updates);
+	}
+}
+
+void Updates::applyConvertToScheduledOnSend(
+		const MTPVector<MTPUpdate> &other,
+		bool skipScheduledCheck) {
+	for (const auto &update : other.v) {
+		update.match([&](const MTPDupdateNewScheduledMessage &data) {
+			const auto &message = data.vmessage();
+			const auto id = IdFromMessage(message);
+			const auto scheduledMessages = &_session->scheduledMessages();
+			const auto scheduledId = scheduledMessages->localMessageId(id);
+			for (const auto &updateId : other.v) {
+				updateId.match([&](const MTPDupdateMessageID &dataId) {
+					if (dataId.vid().v == id) {
+						auto &owner = session().data();
+						if (skipScheduledCheck) {
+							const auto peerId = PeerFromMessage(message);
+							const auto history = owner.historyLoaded(peerId);
+							if (history) {
+								_session->data().sentToScheduled({
+									.history = history,
+									.scheduledId = scheduledId,
+								});
+							}
+							return;
+						}
+						const auto rand = dataId.vrandom_id().v;
+						const auto localId = owner.messageIdByRandomId(rand);
+						if (const auto local = owner.message(localId)) {
+							if (!local->isScheduled()) {
+								_session->data().sentToScheduled({
+									.history = local->history(),
+									.scheduledId = scheduledId,
+								});
+
+								// We've sent a non-scheduled message,
+								// but it was converted to a scheduled.
+								local->destroy();
+							}
+						}
+					}
+				}, [](const auto &) {});
+			}
+		}, [](const auto &) {});
 	}
 }
 
@@ -1148,7 +1226,8 @@ void Updates::applyUpdatesNoPtsCheck(const MTPUpdates &updates) {
 				MTP_int(d.vttl_period().value_or_empty()),
 				MTPint(), // quick_reply_shortcut_id
 				MTPlong(), // effect
-				MTPFactCheck()),
+				MTPFactCheck(),
+				MTPint()), // report_delivery_until_date
 			MessageFlags(),
 			NewMessageType::Unread);
 	} break;
@@ -1185,7 +1264,8 @@ void Updates::applyUpdatesNoPtsCheck(const MTPUpdates &updates) {
 				MTP_int(d.vttl_period().value_or_empty()),
 				MTPint(), // quick_reply_shortcut_id
 				MTPlong(), // effect
-				MTPFactCheck()),
+				MTPFactCheck(),
+				MTPint()), // report_delivery_until_date
 			MessageFlags(),
 			NewMessageType::Unread);
 	} break;
@@ -1561,6 +1641,7 @@ void Updates::feedUpdate(const MTPUpdate &update) {
 		}
 		if (channel && !_handlingChannelDifference) {
 			if (channel->ptsRequesting()) { // skip global updates while getting channel difference
+				MTP_LOG(0, ("Skipping new channel message because getting the difference."));
 				return;
 			}
 			channel->ptsUpdateAndApply(d.vpts().v, d.vpts_count().v, update);
@@ -1653,6 +1734,7 @@ void Updates::feedUpdate(const MTPUpdate &update) {
 
 		if (channel && !_handlingChannelDifference) {
 			if (channel->ptsRequesting()) { // skip global updates while getting channel difference
+				MTP_LOG(0, ("Skipping channel message edit because getting the difference."));
 				return;
 			} else {
 				channel->ptsUpdateAndApply(d.vpts().v, d.vpts_count().v, update);
@@ -1668,6 +1750,7 @@ void Updates::feedUpdate(const MTPUpdate &update) {
 
 		if (channel && !_handlingChannelDifference) {
 			if (channel->ptsRequesting()) { // skip global updates while getting channel difference
+				MTP_LOG(0, ("Skipping pinned channel messages because getting the difference."));
 				return;
 			} else {
 				channel->ptsUpdateAndApply(d.vpts().v, d.vpts_count().v, update);
@@ -1782,6 +1865,7 @@ void Updates::feedUpdate(const MTPUpdate &update) {
 
 		if (channel && !_handlingChannelDifference) {
 			if (channel->ptsRequesting()) { // skip global updates while getting channel difference
+				MTP_LOG(0, ("Skipping delete channel messages because getting the difference."));
 				return;
 			}
 			channel->ptsUpdateAndApply(d.vpts().v, d.vpts_count().v, update);
@@ -1845,6 +1929,7 @@ void Updates::feedUpdate(const MTPUpdate &update) {
 		auto channel = session().data().channelLoaded(d.vchannel_id());
 		if (channel && !_handlingChannelDifference) {
 			if (channel->ptsRequesting()) { // skip global updates while getting channel difference
+				MTP_LOG(0, ("Skipping channel web page update because getting the difference."));
 				return;
 			} else {
 				channel->ptsUpdateAndApply(d.vpts().v, d.vpts_count().v, update);
@@ -2628,6 +2713,12 @@ void Updates::feedUpdate(const MTPUpdate &update) {
 	case mtpc_updateStarsBalance: {
 		const auto &data = update.c_updateStarsBalance();
 		_session->credits().apply(data);
+	} break;
+
+	case mtpc_updatePaidReactionPrivacy: {
+		const auto &data = update.c_updatePaidReactionPrivacy();
+		_session->api().globalPrivacy().updatePaidReactionAnonymous(
+			mtpIsTrue(data.vprivate()));
 	} break;
 
 	}

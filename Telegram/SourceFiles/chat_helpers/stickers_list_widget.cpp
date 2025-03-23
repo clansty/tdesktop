@@ -220,11 +220,14 @@ StickersListWidget::StickersListWidget(
 	st().pathBg,
 	st().pathFg,
 	[=] { update(); }))
-, _megagroupSetAbout(st::columnMinimalWidthThird - st::emojiScroll.width - st().headerLeft)
+, _megagroupSetAbout(st::columnMinimalWidthThird
+	- st::emojiScroll.width
+	- st().headerLeft)
 , _addText(tr::lng_stickers_featured_add(tr::now))
-, _addWidth(st::stickersTrendingAdd.font->width(_addText))
+, _addWidth(st::stickersTrendingAdd.style.font->width(_addText))
 , _installedText(tr::lng_stickers_featured_installed(tr::now))
-, _installedWidth(st::stickersTrendingInstalled.font->width(_installedText))
+, _installedWidth(
+	st::stickersTrendingInstalled.style.font->width(_installedText))
 , _settings(this, tr::lng_stickers_you_have(tr::now))
 , _previewTimer([=] { showPreview(); })
 , _premiumMark(std::make_unique<StickerPremiumMark>(
@@ -981,7 +984,7 @@ void StickersListWidget::paintStickers(Painter &p, QRect clip) {
 				const auto &st = installedSet
 					? st::stickersTrendingInstalled
 					: st::stickersTrendingAdd;
-				p.setFont(st.font);
+				p.setFont(st.style.font);
 				p.setPen(selected ? st.textFgOver : st.textFg);
 				p.drawTextLeft(
 					add.x() - (st.width / 2),
@@ -1245,7 +1248,7 @@ void StickersListWidget::paintMegagroupEmptySet(Painter &p, int y, bool buttonSe
 			_megagroupSetButtonRipple.reset();
 		}
 	}
-	p.setFont(st::stickerGroupCategoryAdd.font);
+	p.setFont(st::stickerGroupCategoryAdd.style.font);
 	p.setPen(buttonSelected ? st::stickerGroupCategoryAdd.textFgOver : st::stickerGroupCategoryAdd.textFg);
 	p.drawTextLeft(button.x() - (st::stickerGroupCategoryAdd.width / 2), button.y() + st::stickerGroupCategoryAdd.textTop, width(), _megagroupSetButtonText, _megagroupSetButtonTextWidth);
 }
@@ -1796,9 +1799,13 @@ base::unique_qptr<Ui::PopupMenu> StickersListWidget::fillContextMenu(
 		});
 	});
 	const auto icons = &st().icons;
+
+	// In case we're adding items after FillSendMenu we have
+	// to pass nullptr for showForEffect and attach selector later.
+	// Otherwise added items widths won't be respected in menu geometry.
 	SendMenu::FillSendMenu(
 		menu,
-		_show,
+		nullptr, // showForEffect
 		details,
 		SendMenu::DefaultCallback(_show, send),
 		icons);
@@ -1832,6 +1839,13 @@ base::unique_qptr<Ui::PopupMenu> StickersListWidget::fillContextMenu(
 				false);
 		}, &icons->menuRecentRemove);
 	}
+
+	SendMenu::AttachSendMenuEffect(
+		menu,
+		_show,
+		details,
+		SendMenu::DefaultCallback(_show, send));
+
 	return menu;
 }
 
@@ -2791,7 +2805,7 @@ void StickersListWidget::refreshMegagroupSetGeometry() {
 	auto left = megagroupSetInfoLeft();
 	auto availableWidth = (width() - left);
 	auto top = _megagroupSetAbout.countHeight(availableWidth) + st::stickerGroupCategoryAddMargin.top();
-	_megagroupSetButtonTextWidth = st::stickerGroupCategoryAdd.font->width(_megagroupSetButtonText);
+	_megagroupSetButtonTextWidth = st::stickerGroupCategoryAdd.style.font->width(_megagroupSetButtonText);
 	auto buttonWidth = _megagroupSetButtonTextWidth - st::stickerGroupCategoryAdd.width;
 	_megagroupSetButtonRect = QRect(left, top, buttonWidth, st::stickerGroupCategoryAdd.height);
 }

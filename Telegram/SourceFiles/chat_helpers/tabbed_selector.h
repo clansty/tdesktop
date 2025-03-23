@@ -62,6 +62,7 @@ struct FileChosen {
 	not_null<DocumentData*> document;
 	Api::SendOptions options;
 	Ui::MessageSendingAnimationFrom messageSendingFrom;
+	TextWithTags caption;
 };
 
 struct PhotoChosen {
@@ -308,6 +309,7 @@ private:
 	object_ptr<Ui::PlainShadow> _bottomShadow;
 	object_ptr<Ui::ScrollArea> _scroll;
 	object_ptr<Ui::FlatLabel> _restrictedLabel = { nullptr };
+	QString _restrictedLabelKey;
 	std::vector<Tab> _tabs;
 	SelectorTab _currentTabType = SelectorTab::Emoji;
 

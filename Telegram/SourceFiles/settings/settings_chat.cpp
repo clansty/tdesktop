@@ -881,7 +881,6 @@ void SetupMessages(
 	groupSend->setChangedCallback([=](SendByType value) {
 		Core::App().settings().setSendSubmitWay(value);
 		Core::App().saveSettingsDelayed();
-		controller->content()->ctrlEnterSubmitUpdated();
 	});
 
 	Ui::AddSkip(inner, st::settingsCheckboxesSkip);
@@ -903,24 +902,10 @@ void SetupMessages(
 		Quick::React,
 		tr::lng_settings_chat_quick_action_react(tr::now));
 
-	class EmptyButton final : public Ui::IconButton {
-	public:
-		EmptyButton(not_null<Ui::RpWidget*> p, const style::IconButton &st)
-		: Ui::IconButton(p, st)
-		, _rippleAreaPosition(st.rippleAreaPosition) {
-		}
-	protected:
-		void paintEvent(QPaintEvent *e) override {
-			auto p = QPainter(this);
-
-			paintRipple(p, _rippleAreaPosition, nullptr);
-		}
-	private:
-		const QPoint _rippleAreaPosition;
-	};
-	const auto buttonRight = Ui::CreateChild<EmptyButton>(
+	const auto buttonRight = Ui::CreateSimpleCircleButton(
 		inner,
-		st::stickersRemove);
+		st::stickersRemove.ripple);
+	buttonRight->resize(st::stickersRemove.width, st::stickersRemove.height);
 	const auto toggleButtonRight = [=](bool value) {
 		buttonRight->setAttribute(Qt::WA_TransparentForMouseEvents, !value);
 	};
@@ -1079,9 +1064,7 @@ void SetupLocalStorage(
 		tr::lng_settings_manage_local_storage(),
 		st::settingsButton,
 		{ &st::menuIconStorage }
-	)->addClickHandler([=] {
-		LocalStorageBox::Show(&controller->session());
-	});
+	)->addClickHandler([=] { LocalStorageBox::Show(controller); });
 }
 
 void SetupDataStorage(

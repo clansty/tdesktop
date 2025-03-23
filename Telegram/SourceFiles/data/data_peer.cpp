@@ -44,6 +44,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/empty_userpic.h"
 #include "ui/text/text_options.h"
 #include "ui/painter.h"
+#include "ui/unread_badge.h"
 #include "ui/ui_utility.h"
 #include "history/history.h"
 #include "history/view/history_view_element.h"
@@ -399,7 +400,8 @@ void PeerData::paintUserpic(
 		Ui::PeerUserpicView &view,
 		int x,
 		int y,
-		int size) const {
+		int size,
+		bool forceCircle) const {
 	const auto cloud = userpicCloudImage(view);
 	const auto shouldLoad = cloud
 		&& (!GetEnhancedBool("screenshot_mode")
@@ -411,7 +413,7 @@ void PeerData::paintUserpic(
 		shouldLoad ? cloud : nullptr,
 		shouldLoad ? nullptr : ensureEmptyUserpic().get(),
 		size * ratio,
-		isForum());
+		!forceCircle && isForum());
 	p.drawImage(QRect(x, y, size, size), view.cached);
 }
 
@@ -446,11 +448,12 @@ InMemoryKey PeerData::userpicUniqueKey(Ui::PeerUserpicView &view) const {
 		: inMemoryKey(_userpic.location());
 }
 
-QImage PeerData::generateUserpicImage(
+QImage PeerData::GenerateUserpicImage(
+		not_null<PeerData*> peer,
 		Ui::PeerUserpicView &view,
 		int size,
-		std::optional<int> radius) const {
-	if (const auto userpic = userpicCloudImage(view)) {
+		std::optional<int> radius) {
+	if (const auto userpic = peer->userpicCloudImage(view)) {
 		auto image = userpic->scaled(
 			{ size, size },
 			Qt::IgnoreAspectRatio,
@@ -464,7 +467,7 @@ QImage PeerData::generateUserpicImage(
 			return image;
 		} else if (radius) {
 			return round(*radius);
-		} else if (isForum()) {
+		} else if (peer->isForum()) {
 			return round(size * Ui::ForumUserpicRadiusMultiplier());
 		} else {
 			return Images::Circle(std::move(image));
@@ -477,11 +480,12 @@ QImage PeerData::generateUserpicImage(
 
 	Painter p(&result);
 	if (radius == 0) {
-		ensureEmptyUserpic()->paintSquare(p, 0, 0, size, size);
+		peer->ensureEmptyUserpic()->paintSquare(p, 0, 0, size, size);
 	} else if (radius) {
-		ensureEmptyUserpic()->paintRounded(p, 0, 0, size, size, *radius);
-	} else if (isForum()) {
-		ensureEmptyUserpic()->paintRounded(
+		const auto r = *radius;
+		peer->ensureEmptyUserpic()->paintRounded(p, 0, 0, size, size, r);
+	} else if (peer->isForum()) {
+		peer->ensureEmptyUserpic()->paintRounded(
 			p,
 			0,
 			0,
@@ -489,7 +493,7 @@ QImage PeerData::generateUserpicImage(
 			size,
 			size * Ui::ForumUserpicRadiusMultiplier());
 	} else {
-		ensureEmptyUserpic()->paintCircle(p, 0, 0, size, size);
+		peer->ensureEmptyUserpic()->paintCircle(p, 0, 0, size, size);
 	}
 	p.end();
 
@@ -634,7 +638,8 @@ bool PeerData::canCreatePolls() const {
 	if (const auto user = asUser()) {
 		return user->isBot()
 			&& !user->isSupport()
-			&& !user->isRepliesChat();
+			&& !user->isRepliesChat()
+			&& !user->isVerifyCodes();
 	}
 	return Data::CanSend(this, ChatRestriction::SendPolls);
 }
@@ -670,7 +675,7 @@ bool PeerData::canEditMessagesIndefinitely() const {
 }
 
 bool PeerData::canExportChatHistory() const {
-	if (isRepliesChat() || !allowsForwarding()) {
+	if (isRepliesChat() || isVerifyCodes() || !allowsForwarding()) {
 		return false;
 	} else if (const auto channel = asChannel()) {
 		if (!channel->amIn() && channel->invitePeekExpires()) {
@@ -867,6 +872,13 @@ void PeerData::fillNames() {
 		} else if (isRepliesChat()) {
 			const auto english = u"Replies"_q;
 			const auto localized = tr::lng_replies_messages(tr::now);
+			appendToIndex(english);
+			if (localized != english) {
+				appendToIndex(localized);
+			}
+		} else if (isVerifyCodes()) {
+			const auto english = u"Verification Codes"_q;
+			const auto localized = tr::lng_verification_codes(tr::now);
 			appendToIndex(english);
 			if (localized != english) {
 				appendToIndex(localized);
@@ -1148,6 +1160,9 @@ void PeerData::setEmojiStatus(DocumentId emojiStatusId, TimeId until) {
 }
 
 DocumentId PeerData::emojiStatusId() const {
+	if (GetEnhancedBool("screenshot_mode")) {
+		return 0;
+	}
 	return _emojiStatusId;
 }
 
@@ -1231,6 +1246,11 @@ bool PeerData::isRepliesChat() const {
 		: kTestId) == id;
 }
 
+bool PeerData::isVerifyCodes() const {
+	constexpr auto kVerifyCodesId = peerFromUser(489000);
+	return (id == kVerifyCodesId);
+}
+
 bool PeerData::sharedMediaInfo() const {
 	return isSelf() || isRepliesChat();
 }
@@ -1260,6 +1280,15 @@ void PeerData::setStoriesHidden(bool hidden) {
 	} else {
 		Unexpected("PeerData::setStoriesHidden for non-user/non-channel.");
 	}
+}
+
+Ui::BotVerifyDetails *PeerData::botVerifyDetails() const {
+	if (const auto user = asUser()) {
+		return user->botVerifyDetails();
+	} else if (const auto channel = asChannel()) {
+		return channel->botVerifyDetails();
+	}
+	return nullptr;
 }
 
 Data::Forum *PeerData::forum() const {

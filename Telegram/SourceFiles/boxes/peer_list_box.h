@@ -200,6 +200,9 @@ public:
 	void setIsRepliesMessagesChat(bool isRepliesMessagesChat) {
 		_isRepliesMessagesChat = isRepliesMessagesChat;
 	}
+	void setIsVerifyCodesChat(bool isVerifyCodesChat) {
+		_isVerifyCodesChat = isVerifyCodesChat;
+	}
 
 	template <typename UpdateCallback>
 	void setChecked(
@@ -251,6 +254,10 @@ public:
 		return _nameFirstLetters;
 	}
 
+	void setSkipPeerBadge(bool skip) {
+		_skipPeerBadge = skip;
+	}
+
 	virtual void lazyInitialize(const style::PeerListItem &st);
 	virtual void paintStatusText(
 		Painter &p,
@@ -288,7 +295,7 @@ private:
 	std::unique_ptr<Ui::RoundImageCheckbox> _checkbox;
 	Ui::Text::String _name;
 	Ui::Text::String _status;
-	Ui::PeerBadge _bagde;
+	Ui::PeerBadge _badge;
 	StatusType _statusType = StatusType::Online;
 	crl::time _statusValidTill = 0;
 	base::flat_set<QChar> _nameFirstLetters;
@@ -299,6 +306,8 @@ private:
 	bool _initialized : 1 = false;
 	bool _isSearchResult : 1 = false;
 	bool _isRepliesMessagesChat : 1 = false;
+	bool _isVerifyCodesChat : 1 = false;
+	bool _skipPeerBadge : 1 = false;
 
 };
 
@@ -347,6 +356,8 @@ public:
 	virtual void peerListSortRows(Fn<bool(const PeerListRow &a, const PeerListRow &b)> compare) = 0;
 	virtual int peerListPartitionRows(Fn<bool(const PeerListRow &a)> border) = 0;
 	virtual std::shared_ptr<Main::SessionShow> peerListUiShow() = 0;
+
+	virtual void peerListSelectSkip(int direction) = 0;
 
 	virtual void peerListPressLeftToContextMenu(bool shown) = 0;
 	virtual bool peerListTrackRowPressFromGlobal(QPoint globalPosition) = 0;
@@ -471,6 +482,8 @@ public:
 	}
 
 	virtual void rowClicked(not_null<PeerListRow*> row) = 0;
+	virtual void rowMiddleClicked(not_null<PeerListRow*> row) {
+	}
 	virtual void rowRightActionClicked(not_null<PeerListRow*> row) {
 	}
 
@@ -564,6 +577,13 @@ public:
 		Unexpected("PeerListController::customRowRippleMaskGenerator.");
 	}
 
+	virtual bool overrideKeyboardNavigation(
+			int direction,
+			int fromIndex,
+			int toIndex) {
+		return false;
+	}
+
 	[[nodiscard]] rpl::lifetime &lifetime() {
 		return _lifetime;
 	}
@@ -640,6 +660,8 @@ public:
 	PeerListRowId updateFromParentDrag(QPoint globalPosition);
 	void dragLeft();
 
+	void setIgnoreHiddenRowsOnSearch(bool value);
+
 	// Interface for the controller.
 	void appendRow(std::unique_ptr<PeerListRow> row);
 	void appendSearchRow(std::unique_ptr<PeerListRow> row);
@@ -692,7 +714,7 @@ public:
 		update();
 	}
 
-	std::unique_ptr<PeerListState> saveState() const;
+	[[nodiscard]] std::unique_ptr<PeerListState> saveState() const;
 	void restoreState(std::unique_ptr<PeerListState> state);
 
 	void showRowMenu(
@@ -700,8 +722,12 @@ public:
 		bool highlightRow,
 		Fn<void(not_null<Ui::PopupMenu*>)> destroyed);
 
-	auto scrollToRequests() const {
+	[[nodiscard]] auto scrollToRequests() const {
 		return _scrollToRequests.events();
+	}
+
+	[[nodiscard]] auto noSearchSubmits() const {
+		return _noSearchSubmits.events();
 	}
 
 	~PeerListContent();
@@ -861,6 +887,7 @@ private:
 	int _aboveHeight = 0;
 	int _belowHeight = 0;
 	bool _hideEmpty = false;
+	bool _ignoreHiddenRowsOnSearch = false;
 	object_ptr<Ui::RpWidget> _aboveWidget = { nullptr };
 	object_ptr<Ui::RpWidget> _aboveSearchWidget = { nullptr };
 	object_ptr<Ui::RpWidget> _belowWidget = { nullptr };
@@ -868,6 +895,8 @@ private:
 	object_ptr<Ui::FlatLabel> _searchNoResults = { nullptr };
 	object_ptr<Ui::FlatLabel> _searchLoading = { nullptr };
 	object_ptr<Ui::RpWidget> _loadingAnimation = { nullptr };
+
+	rpl::event_stream<> _noSearchSubmits;
 
 	std::vector<std::unique_ptr<PeerListRow>> _searchRows;
 	base::Timer _repaintByStatus;
@@ -1007,6 +1036,10 @@ public:
 		bool highlightRow,
 		Fn<void(not_null<Ui::PopupMenu*>)> destroyed = nullptr) override;
 
+	void peerListSelectSkip(int direction) override {
+		_content->selectSkip(direction);
+	}
+
 	void peerListPressLeftToContextMenu(bool shown) override {
 		_content->pressLeftToContextMenu(shown);
 	}
@@ -1080,6 +1113,8 @@ public:
 
 	[[nodiscard]] std::vector<PeerListRowId> collectSelectedIds();
 	[[nodiscard]] std::vector<not_null<PeerData*>> collectSelectedRows();
+	[[nodiscard]] rpl::producer<int> multiSelectHeightValue() const;
+	[[nodiscard]] rpl::producer<> noSearchSubmits() const;
 
 	void peerListSetTitle(rpl::producer<QString> title) override {
 		setTitle(std::move(title));
@@ -1103,6 +1138,8 @@ public:
 	void setAddedTopScrollSkip(int skip);
 
 	void showFinished() override;
+
+	void appendQueryChangedCallback(Fn<void(QString)>);
 
 protected:
 	void prepare() override;
@@ -1141,6 +1178,7 @@ private:
 	object_ptr<Ui::SlideWrap<Ui::MultiSelect>> _select = { nullptr };
 
 	const std::shared_ptr<Main::SessionShow> _show;
+	Fn<void(QString)> _customQueryChangedCallback;
 	std::unique_ptr<PeerListController> _controller;
 	Fn<void(PeerListBox*)> _init;
 	bool _scrollBottomFixed = false;

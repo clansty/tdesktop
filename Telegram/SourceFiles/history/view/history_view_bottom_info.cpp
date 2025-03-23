@@ -414,12 +414,14 @@ void BottomInfo::layoutDateText() {
 
 	const auto edited = (_data.flags & Data::Flag::Edited)
 							? (settings->editedMark + ' ')
-							: QString();
+							: (_data.flags & Data::Flag::EstimateDate)
+		? (tr::lng_approximate(tr::now) + ' ')
+		: QString();
 	const auto author = _data.author;
 	const auto prefix = !author.isEmpty() ? (author == settings->deletedMark ? u" "_q : u", "_q) : QString();
 	const auto date = edited + QLocale().toString(
 		_data.date.time(),
-		GetEnhancedBool("show_seconds") ? QLocale::system().timeFormat(QLocale::LongFormat).remove(" t") : QLocale::system().timeFormat(QLocale::ShortFormat)) + _data.msgId;
+		GetEnhancedBool("show_seconds") ? QLocale::system().timeFormat(QLocale::LongFormat).remove("t") : QLocale::system().timeFormat(QLocale::ShortFormat)) + _data.msgId;
 	const auto afterAuthor = prefix + date;
 	const auto afterAuthorWidth = st::msgDateFont->width(afterAuthor);
 	const auto authorWidth = st::msgDateFont->width(author);
@@ -607,6 +609,9 @@ BottomInfo::Data BottomInfoDataFromMessage(not_null<Message*> message) {
 	const auto forwarded = item->Get<HistoryMessageForwarded>();
 	if (forwarded && forwarded->imported) {
 		result.flags |= Flag::Imported;
+	}
+	if (item->awaitingVideoProcessing()) {
+		result.flags |= Flag::EstimateDate;
 	}
 	// We don't want to pass and update it in Data for now.
 	//if (item->unread()) {

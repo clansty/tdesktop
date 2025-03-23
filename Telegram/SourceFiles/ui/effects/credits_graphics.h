@@ -20,12 +20,10 @@ class Session;
 } // namespace Main
 
 namespace Ui {
+
 class MaskedInputField;
 class RpWidget;
 class VerticalLayout;
-} // namespace Ui
-
-namespace Ui {
 
 using PaintRoundImageCallback = Fn<void(
 	Painter &p,
@@ -42,7 +40,7 @@ using PaintRoundImageCallback = Fn<void(
 
 [[nodiscard]] not_null<Ui::MaskedInputField*> AddInputFieldForCredits(
 	not_null<Ui::VerticalLayout*> container,
-	rpl::producer<uint64> value);
+	rpl::producer<StarsAmount> value);
 
 PaintRoundImageCallback GenerateCreditsPaintUserpicCallback(
 	const Data::CreditsHistoryEntry &entry);
@@ -66,11 +64,22 @@ PaintRoundImageCallback GeneratePaidMediaPaintCallback(
 	int totalCount,
 	Fn<void()> update);
 
+PaintRoundImageCallback GenerateGiftStickerUserpicCallback(
+	not_null<Main::Session*> session,
+	uint64 stickerId,
+	Fn<void()> update);
+
 Fn<PaintRoundImageCallback(Fn<void()>)> PaintPreviewCallback(
 	not_null<Main::Session*> session,
 	const Data::CreditsHistoryEntry &entry);
 
 [[nodiscard]] TextWithEntities GenerateEntryName(
 	const Data::CreditsHistoryEntry &entry);
+
+Fn<void(QPainter &)> PaintOutlinedColoredCreditsIconCallback(
+	int size,
+	float64 outlineRatio);
+
+[[nodiscard]] QImage CreditsWhiteDoubledIcon(int size, float64 outlineRatio);
 
 } // namespace Ui

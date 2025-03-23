@@ -303,6 +303,7 @@ void Call::startOutgoing() {
 	_api.request(MTPphone_RequestCall(
 		MTP_flags(flags),
 		_user->inputUser,
+		MTPInputGroupCall(),
 		MTP_int(base::RandomValue<int32>()),
 		MTP_bytes(_gaHash),
 		MTP_phoneCallProtocol(
@@ -1308,6 +1309,19 @@ void Call::toggleScreenSharing(std::optional<QString> uniqueId) {
 		}
 	}
 	_videoOutgoing->setState(Webrtc::VideoState::Active);
+}
+
+auto Call::playbackDeviceIdValue() const
+-> rpl::producer<Webrtc::DeviceResolvedId> {
+	return _playbackDeviceId.value();
+}
+
+rpl::producer<Webrtc::DeviceResolvedId> Call::captureDeviceIdValue() const {
+	return _captureDeviceId.value();
+}
+
+rpl::producer<Webrtc::DeviceResolvedId> Call::cameraDeviceIdValue() const {
+	return _cameraDeviceId.value();
 }
 
 void Call::finish(FinishType type, const MTPPhoneCallDiscardReason &reason) {

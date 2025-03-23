@@ -377,6 +377,12 @@ public:
 	[[nodiscard]] bool canRestrictParticipant(
 		not_null<PeerData*> participant) const;
 
+	void setBotVerifyDetails(Ui::BotVerifyDetails details);
+	void setBotVerifyDetailsIcon(DocumentId iconId);
+	[[nodiscard]] Ui::BotVerifyDetails *botVerifyDetails() const {
+		return _botVerifyDetails.get();
+	}
+
 	void setInviteLink(const QString &newInviteLink);
 	[[nodiscard]] QString inviteLink() const {
 		return _inviteLink;
@@ -424,7 +430,7 @@ public:
 		return _ptsWaiter.setRequesting(isRequesting);
 	}
 	// < 0 - not waiting
-	void ptsWaitingForShortPoll(int32 ms) {
+	void ptsSetWaitingForShortPoll(int32 ms) {
 		return _ptsWaiter.setWaitingForShortPoll(this, ms);
 	}
 	[[nodiscard]] bool ptsWaitingForSkipped() const {
@@ -548,6 +554,8 @@ private:
 
 	std::unique_ptr<Data::GroupCall> _call;
 	PeerId _callDefaultJoinAs = 0;
+
+	std::unique_ptr<Ui::BotVerifyDetails> _botVerifyDetails;
 
 };
 

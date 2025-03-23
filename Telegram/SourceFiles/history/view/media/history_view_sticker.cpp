@@ -167,9 +167,9 @@ void Sticker::initSize(int customSize) {
 	
 	auto peerId = _parent->data()->from() ? _parent->data()->from()->id : PeerId(0);
 	auto user = _parent->history()->session().data().peerLoaded(_parent->data()->from() ? _parent->data()->from()->id : PeerId(0));
-	if (GetEnhancedBool("blocked_user_spoiler_mode") && blockExist(int64(peerId.value)) 
-		|| GetEnhancedBool("blocked_user_spoiler_mode") && user && user->isBlocked()
-		|| GetEnhancedBool("blocked_hana_spoiler_mode") && peerId.value == 2084559014) {
+	if ((GetEnhancedBool("blocked_user_spoiler_mode") && blockExist(peerId.value)) 
+		|| (GetEnhancedBool("blocked_user_spoiler_mode") && user && user->isBlocked()
+		|| GetEnhancedBool("blocked_hana_spoiler_mode") && peerId.value == 2084559014)) {
 		_size = DownscaledSize(_data->dimensions, {128,kMaxSizeFixed});
 	}
 }
@@ -263,8 +263,9 @@ DocumentData *Sticker::document() {
 }
 
 void Sticker::stickerClearLoopPlayed() {
-	_oncePlayed = false;
-	_premiumEffectPlayed = false;
+	if (!_playingOnce) {
+		_oncePlayed = false;
+	}
 	_premiumEffectSkipped = false;
 }
 
@@ -327,7 +328,7 @@ void Sticker::paintAnimationFrame(
 	_nextLastDiceFrame = !paused
 		&& (_diceIndex > 0)
 		&& (_frameIndex + 2 == count);
-	const auto playOnce = (_diceIndex > 0)
+	const auto playOnce = (_playingOnce || _diceIndex > 0)
 		? true
 		: (_diceIndex == 0)
 		? false
@@ -355,10 +356,10 @@ bool Sticker::paintPixmap(
 	if (pixmap.isNull()) {
 		return false;
 	}
-	const auto position = QPoint(
-		r.x() + (r.width() - _size.width()) / 2,
-		r.y() + (r.height() - _size.height()) / 2);
 	const auto size = pixmap.size() / pixmap.devicePixelRatio();
+	const auto position = QPoint(
+		r.x() + (r.width() - size.width()) / 2,
+		r.y() + (r.height() - size.height()) / 2);
 	const auto mirror = mirrorHorizontal();
 	if (mirror) {
 		p.save();
@@ -410,6 +411,14 @@ void Sticker::paintPath(
 QPixmap Sticker::paintedPixmap(const PaintContext &context) const {
 	const auto roundOptions = Images::RoundOptions(ImageRoundRadius::Large);
 	auto helper = std::optional<style::owned_color>();
+	const auto sticker = _data->sticker();
+	const auto ratio = style::DevicePixelRatio();
+	const auto adjust = [&](int side) {
+		return (((side * ratio) / 8) * 8) / ratio;
+	};
+	const auto useSize = (sticker && sticker->type == StickerType::Tgs)
+		? QSize(adjust(_size.width()), adjust(_size.height()))
+		: _size;
 	const auto colored = (customEmojiPart() && _data->emojiUsesTextColor())
 		? &helper.emplace(ComputeEmojiTextColor(context)).color()
 		: context.selected()
@@ -417,19 +426,19 @@ QPixmap Sticker::paintedPixmap(const PaintContext &context) const {
 		: nullptr;
 	const auto good = _dataMedia->goodThumbnail();
 	if (const auto image = _dataMedia->getStickerLarge()) {
-		return image->pix(_size, { .colored = colored, .options = roundOptions });
+		return image->pix(useSize, { .colored = colored, .options = roundOptions });
 	//
 	// Inline thumbnails can't have alpha channel.
 	//
 	//} else if (const auto blurred = _data->thumbnailInline()) {
 	//	return blurred->pix(
-	//		_size,
+	//		useSize,
 	//		{ .colored = colored, .options = Images::Option::Blur });
 	} else if (good) {
-		return good->pix(_size, { .colored = colored, .options = roundOptions });
+		return good->pix(useSize, { .colored = colored, .options = roundOptions });
 	} else if (const auto thumbnail = _dataMedia->thumbnail()) {
 		return thumbnail->pix(
-			_size,
+			useSize,
 			{ .colored = colored, .options = Images::Option::Blur | roundOptions });
 	}
 	return QPixmap();
@@ -533,6 +542,10 @@ void Sticker::dataMediaCreated() const {
 void Sticker::setDiceIndex(const QString &emoji, int index) {
 	_diceEmoji = emoji;
 	_diceIndex = index;
+}
+
+void Sticker::setPlayingOnce(bool once) {
+	_playingOnce = once;
 }
 
 void Sticker::setCustomCachingTag(ChatHelpers::StickerLottieSize tag) {

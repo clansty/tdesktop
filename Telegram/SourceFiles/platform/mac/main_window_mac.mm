@@ -8,7 +8,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "platform/mac/main_window_mac.h"
 
 #include "data/data_session.h"
-#include "mainwidget.h"
 #include "core/application.h"
 #include "core/sandbox.h"
 #include "main/main_session.h"
@@ -19,12 +18,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/player/media_player_instance.h"
 #include "media/audio/media_audio.h"
 #include "storage/localstorage.h"
-#include "window/window_session_controller.h"
+#include "ui/text/text_utilities.h"
 #include "window/window_controller.h"
+#include "window/window_session_controller.h"
 #include "platform/mac/touchbar/mac_touchbar_manager.h"
 #include "platform/platform_specific.h"
 #include "platform/platform_notifications_manager.h"
 #include "base/platform/base_platform_info.h"
+#include "base/options.h"
 #include "boxes/peer_list_controllers.h"
 #include "boxes/about_box.h"
 #include "lang/lang_keys.h"
@@ -300,7 +301,12 @@ void MainWindow::initHook() {
 	if (auto view = reinterpret_cast<NSView*>(winId())) {
 		if (auto window = [view window]) {
 			_private->setNativeWindow(window, view);
-			_private->initTouchBar(window, &controller());
+			if (!base::options::lookup<bool>(
+					Window::kOptionDisableTouchbar).value()) {
+				_private->initTouchBar(window, &controller());
+			} else {
+				LOG(("Touch Bar was disabled from Experimental Settings."));
+			}
 		}
 	}
 }
@@ -514,7 +520,9 @@ void MainWindow::createGlobalMenu() {
 
 	edit->addSeparator();
 	edit->addAction(
-		tr::lng_mac_menu_emoji_and_symbols(tr::now).replace('&', "&&"),
+		tr::lng_mac_menu_emoji_and_symbols(
+			tr::now,
+			Ui::Text::FixAmpersandInAction),
 		this,
 		[] { [NSApp orderFrontCharacterPalette:nil]; },
 		QKeySequence(Qt::MetaModifier | Qt::ControlModifier | Qt::Key_Space)

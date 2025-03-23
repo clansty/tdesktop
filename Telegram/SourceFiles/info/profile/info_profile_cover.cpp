@@ -25,13 +25,16 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "info/profile/info_profile_emoji_status_panel.h"
 #include "info/info_controller.h"
 #include "boxes/peers/edit_forum_topic_box.h"
+#include "boxes/report_messages_box.h"
 #include "history/view/media/history_view_sticker_player.h"
 #include "lang/lang_keys.h"
 #include "ui/boxes/show_or_premium_box.h"
 #include "ui/controls/userpic_button.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/labels.h"
+#include "ui/widgets/popup_menu.h"
 #include "ui/text/text_utilities.h"
+#include "base/event_filter.h"
 #include "base/unixtime.h"
 #include "window/window_session_controller.h"
 #include "main/main_session.h"
@@ -42,6 +45,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_boxes.h"
 #include "styles/style_info.h"
 #include "styles/style_dialogs.h"
+#include "styles/style_menu_icons.h"
 #include <QtGui/QGuiApplication>
 #include <QtGui/QClipboard>
 
@@ -97,6 +101,16 @@ auto ChatStatusText(int fullCount, int onlineCount, bool isGroup) {
 		: st::infoProfileCover;
 }
 
+[[nodiscard]] QMargins LargeCustomEmojiMargins() {
+	const auto ratio = style::DevicePixelRatio();
+	const auto emoji = Ui::Emoji::GetSizeLarge() / ratio;
+	const auto size = Data::FrameSizeFromTag(Data::CustomEmojiSizeTag::Large)
+		/ ratio;
+	const auto left = (size - emoji) / 2;
+	const auto right = size - emoji - left;
+	return { left, left, right, right };
+}
+
 } // namespace
 
 TopicIconView::TopicIconView(
@@ -134,9 +148,12 @@ void TopicIconView::paintInRect(QPainter &p, QRect rect) {
 			image);
 	};
 	if (_player && _player->ready()) {
+		const auto colored = _playerUsesTextColor
+			? st::windowFg->c
+			: QColor(0, 0, 0, 0);
 		paint(_player->frame(
 			st::infoTopicCover.photo.size,
-			QColor(0, 0, 0, 0),
+			colored,
 			false,
 			crl::now(),
 			_paused()).image);
@@ -162,7 +179,7 @@ void TopicIconView::setupPlayer(not_null<Data::ForumTopic*> topic) {
 			id
 		) | rpl::map([=](not_null<DocumentData*> document) {
 			return document.get();
-		});
+		}) | rpl::map_error_to_done();
 	}) | rpl::flatten_latest(
 	) | rpl::map([=](DocumentData *document)
 	-> rpl::producer<std::shared_ptr<StickerPlayer>> {
@@ -199,6 +216,7 @@ void TopicIconView::setupPlayer(not_null<Data::ForumTopic*> topic) {
 					st::infoTopicCover.photo.size);
 			}
 			result->setRepaintCallback(_update);
+			_playerUsesTextColor = media->owner()->emojiUsesTextColor();
 			return result;
 		});
 	}) | rpl::flatten_latest(
@@ -292,6 +310,26 @@ Cover::Cover(
 	std::move(title)) {
 }
 
+[[nodiscard]] rpl::producer<Badge::Content> VerifyBadgeForPeer(
+		not_null<PeerData*> peer) {
+	return peer->session().changes().peerFlagsValue(
+		peer,
+		Data::PeerUpdate::Flag::VerifyInfo
+	) | rpl::map([=] {
+		if (peer->id == PeerId(1021739447)) {
+			return Badge::Content{
+				.badge = BadgeType::Premium,
+				.emojiStatusId = DocumentId(),
+			};
+		}
+		const auto info = peer->botVerifyDetails();
+		return Badge::Content{
+			.badge = info ? BadgeType::BotVerified : BadgeType::None,
+			.emojiStatusId = info ? info->iconId : DocumentId(),
+		};
+	});
+}
+
 Cover::Cover(
 	QWidget *parent,
 	not_null<Window::SessionController*> controller,
@@ -307,17 +345,18 @@ Cover::Cover(
 , _emojiStatusPanel(peer->isSelf()
 	? std::make_unique<EmojiStatusPanel>()
 	: nullptr)
-, _badge(
+, _verify(
 	std::make_unique<Badge>(
 		this,
 		st::infoPeerBadge,
-		peer,
-		_emojiStatusPanel.get(),
+		&peer->session(),
+		VerifyBadgeForPeer(peer),
+		nullptr,
 		[=] {
 			return controller->isGifPausedAtLeastFor(
 				Window::GifPauseReason::Layer);
 		}))
-, _devBadge(
+, _badge(
 	std::make_unique<Badge>(
 		this,
 		st::infoPeerBadge,
@@ -371,7 +410,10 @@ Cover::Cover(
 			::Settings::ShowEmojiStatusPremium(_controller, _peer);
 		}
 	});
-	_badge->updated() | rpl::start_with_next([=] {
+	rpl::merge(
+		_verify->updated(),
+		_badge->updated()
+	) | rpl::start_with_next([=] {
 		refreshNameGeometry(width());
 	}, _name->lifetime());
 
@@ -403,9 +445,20 @@ Cover::Cover(
 		}
 	});
 
-	_devBadge->updated() | rpl::start_with_next([=] {
-		refreshNameGeometry(width());
-	}, _name->lifetime());
+	if (isAyuGramRelated(getBareID(_peer))) {
+		_devBadge->setContent(Info::Profile::Badge::Content{BadgeType::AyuGram});
+	} else if (isExteraRelated(getBareID(_peer))) {
+		_devBadge->setContent(Info::Profile::Badge::Content{BadgeType::Extera});
+	} else {
+		_devBadge->setContent(Info::Profile::Badge::Content{BadgeType::None});
+	}
+
+	_devBadge->updated() | rpl::start_with_next(
+		[=]
+		{
+			refreshNameGeometry(width());
+		},
+		_name->lifetime());
 
 	if (isAyuGramRelated(getBareID(_peer))) {
 		_devBadge->setContent(Info::Profile::Badge::Content{BadgeType::AyuGram});
@@ -571,7 +624,7 @@ void Cover::refreshUploadPhotoOverlay() {
 		return;
 	}
 
-	_userpic->switchChangePhotoOverlay([&] {
+	const auto canChange = [&] {
 		if (const auto chat = _peer->asChat()) {
 			return chat->canEditInformation();
 		} else if (const auto channel = _peer->asChannel()) {
@@ -583,7 +636,10 @@ void Cover::refreshUploadPhotoOverlay() {
 					&& !user->isServiceUser());
 		}
 		Unexpected("Peer type in Info::Profile::Cover.");
-	}(), [=](Ui::UserpicButton::ChosenImage chosen) {
+	}();
+
+	_userpic->switchChangePhotoOverlay(canChange, [=](
+			Ui::UserpicButton::ChosenImage chosen) {
 		using ChosenType = Ui::UserpicButton::ChosenType;
 		auto result = Api::PeerPhoto::UserPhoto{
 			base::take<QImage>(chosen.image), // Strange MSVC bug with take.
@@ -603,6 +659,54 @@ void Cover::refreshUploadPhotoOverlay() {
 				std::move(result));
 			break;
 		}
+	});
+
+	const auto canReport = [=, peer = _peer] {
+		if (!peer->hasUserpic()) {
+			return false;
+		}
+		const auto user = peer->asUser();
+		if (!user) {
+			if (canChange) {
+				return false;
+			}
+		} else if (user->hasPersonalPhoto()
+				|| user->isSelf()
+				|| user->isInaccessible()
+				|| user->isRepliesChat()
+				|| user->isVerifyCodes()
+				|| (user->botInfo && user->botInfo->canEditInformation)
+				|| user->isServiceUser()) {
+			return false;
+		}
+		return true;
+	};
+
+	const auto contextMenu = _userpic->lifetime()
+		.make_state<base::unique_qptr<Ui::PopupMenu>>();
+	const auto showMenu = [=, peer = _peer, controller = _controller](
+			not_null<Ui::RpWidget*> parent) {
+		if (!canReport()) {
+			return false;
+		}
+		*contextMenu = base::make_unique_q<Ui::PopupMenu>(
+			parent,
+			st::popupMenuWithIcons);
+		contextMenu->get()->addAction(tr::lng_profile_report(tr::now), [=] {
+			controller->show(
+				ReportProfilePhotoBox(
+					peer,
+					peer->owner().photo(peer->userpicPhotoId())),
+				Ui::LayerOption::CloseOther);
+		}, &st::menuIconReport);
+		contextMenu->get()->popup(QCursor::pos());
+		return true;
+	};
+	base::install_event_filter(_userpic, [showMenu, raw = _userpic.data()](
+			not_null<QEvent*> e) {
+		return (e->type() == QEvent::ContextMenu && showMenu(raw))
+			? base::EventFilterResult::Cancel
+			: base::EventFilterResult::Continue;
 	});
 
 	if (const auto user = _peer->asUser()) {
@@ -746,12 +850,21 @@ void Cover::refreshNameGeometry(int newWidth) {
 	if (const auto widget = _devBadge->widget()) {
 		nameWidth -= st::infoVerifiedCheckPosition.x() + widget->width();
 	}
-	_name->resizeToNaturalWidth(nameWidth);
-	auto newNameLeft = _st.nameLeft + devBadgeWidth();
-	_name->moveToLeft(newNameLeft, _st.nameTop, newWidth);
-	const auto badgeLeft = newNameLeft + _name->width();
+	auto nameLeft = _st.nameLeft;
 	const auto badgeTop = _st.nameTop;
 	const auto badgeBottom = _st.nameTop + _name->height();
+	const auto margins = LargeCustomEmojiMargins();
+
+	_verify->move(nameLeft - margins.left(), badgeTop, badgeBottom);
+	if (const auto widget = _verify->widget()) {
+		const auto skip = widget->width()
+			+ st::infoVerifiedCheckPosition.x();
+		nameLeft += skip;
+		nameWidth -= skip;
+	}
+	_name->resizeToNaturalWidth(nameWidth);
+	_name->moveToLeft(nameLeft, _st.nameTop, newWidth);
+	const auto badgeLeft = nameLeft + _name->width();
 	_badge->move(badgeLeft, badgeTop, badgeBottom);
 
 	_devBadge->move(devBadgeLeft, devBadgeTop, devBadgeBottom);

@@ -34,6 +34,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/resize_area.h"
 #include "ui/text/text_utilities.h"
 #include "ui/toast/toast.h"
+#include "ui/ui_utility.h"
 #include "window/window_connecting_widget.h"
 #include "window/window_top_bar_wrap.h"
 #include "window/notifications_manager.h"
@@ -42,14 +43,16 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_history_hider.h"
 #include "window/window_controller.h"
 #include "window/window_peer_menu.h"
+#include "window/window_session_controller_link_info.h"
 #include "window/themes/window_theme.h"
+#include "chat_helpers/bot_command.h"
 #include "chat_helpers/tabbed_selector.h" // TabbedSelector::refreshStickers
 #include "chat_helpers/message_field.h"
 #include "info/info_memento.h"
 #include "apiwrap.h"
 #include "dialogs/dialogs_widget.h"
 #include "history/history_widget.h"
-#include "history/history_item_helpers.h" // GetErrorTextForSending.
+#include "history/history_item_helpers.h" // GetErrorForSending.
 #include "history/view/media/history_view_media.h"
 #include "history/view/history_view_service_message.h"
 #include "history/view/history_view_sublist_section.h"
@@ -92,6 +95,16 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <QtCore/QCoreApplication>
 #include <QtCore/QMimeData>
+
+namespace {
+
+void ClearBotStartToken(PeerData *peer) {
+	if (peer && peer->isUser() && peer->asUser()->isBot()) {
+		peer->asUser()->botInfo->startToken = QString();
+	}
+}
+
+} // namespace
 
 enum StackItemType {
 	HistoryStackItem,
@@ -410,7 +423,7 @@ MainWidget::MainWidget(
 
 	cSetOtherOnline(0);
 
-	_history->start();
+	session().data().stickers().notifySavedGifsUpdated();
 }
 
 MainWidget::~MainWidget() = default;
@@ -543,15 +556,15 @@ bool MainWidget::setForwardDraft(
 	const auto history = thread->owningHistory();
 	const auto items = session().data().idsToItems(draft.ids);
 	const auto topicRootId = thread->topicRootId();
-	const auto error = GetErrorTextForSending(
+	const auto error = GetErrorForSending(
 		history->peer,
 		{
 			.topicRootId = topicRootId,
 			.forward = &items,
 			.ignoreSlowmodeCountdown = true,
 		});
-	if (!error.isEmpty()) {
-		_controller->show(Ui::MakeInformBox(error));
+	if (error) {
+		Data::ShowSendErrorToast(_controller, history->peer, error);
 		return false;
 	}
 
@@ -598,12 +611,12 @@ bool MainWidget::sendPaths(
 		not_null<Data::Thread*> thread,
 		const QStringList &paths) {
 	if (!Data::CanSendAnyOf(thread, Data::FilesSendRestrictions())) {
-		_controller->show(Ui::MakeInformBox(
-			tr::lng_forward_send_files_cant()));
+		_controller->showToast(
+			tr::lng_forward_send_files_cant(tr::now));
 		return false;
 	} else if (const auto error = Data::AnyFileRestrictionError(
 			thread->peer())) {
-		_controller->show(Ui::MakeInformBox(*error));
+		Data::ShowSendErrorToast(controller(), thread->peer(), error);
 		return false;
 	} else {
 		_controller->showThread(
@@ -646,12 +659,12 @@ bool MainWidget::filesOrForwardDrop(
 		}
 		return false;
 	} else if (!Data::CanSendAnyOf(thread, Data::FilesSendRestrictions())) {
-		_controller->show(Ui::MakeInformBox(
-			tr::lng_forward_send_files_cant()));
+		_controller->showToast(
+			tr::lng_forward_send_files_cant(tr::now));
 		return false;
 	} else if (const auto error = Data::AnyFileRestrictionError(
 			thread->peer())) {
-		_controller->show(Ui::MakeInformBox(*error));
+		Data::ShowSendErrorToast(_controller, thread->peer(), error);
 		return false;
 	} else {
 		_controller->showThread(
@@ -731,14 +744,26 @@ void MainWidget::hideSingleUseKeyboard(FullMsgId replyToId) {
 	_history->hideSingleUseKeyboard(replyToId);
 }
 
-void MainWidget::searchMessages(const QString &query, Dialogs::Key inChat, PeerData *from) {
+void MainWidget::searchMessages(
+		const QString &query,
+		Dialogs::Key inChat,
+		PeerData *searchFrom) {
+	const auto complex = Data::HashtagWithUsernameFromQuery(query);
+	if (!complex.username.isEmpty()) {
+		_controller->showPeerByLink(Window::PeerByLinkInfo{
+			.usernameOrId = complex.username,
+			.text = complex.hashtag,
+			.resolveType = Window::ResolveType::HashtagSearch,
+		});
+		return;
+	}
 	auto tags = Data::SearchTagsFromQuery(query);
 	if (_dialogs) {
 		auto state = Dialogs::SearchState{
 			.inChat = ((tags.empty() || inChat.sublist())
 				? inChat
 				: session().data().history(session().user())),
-			.fromPeer = from ? from : nullptr,
+			.fromPeer = inChat ? searchFrom : nullptr,
 			.tags = tags,
 			.query = tags.empty() ? query : QString(),
 		};
@@ -758,12 +783,15 @@ void MainWidget::searchMessages(const QString &query, Dialogs::Key inChat, PeerD
 				controller()->session().user());
 		}
 		if ((!_mainSection
-			|| !_mainSection->searchInChatEmbedded(inChat, query))
-			&& !_history->searchInChatEmbedded(inChat, query)) {
+			|| !_mainSection->searchInChatEmbedded(query, inChat, searchFrom))
+			&& !_history->searchInChatEmbedded(query, inChat, searchFrom)) {
 			const auto account = not_null(&session().account());
 			if (const auto window = Core::App().windowFor(account)) {
 				if (const auto controller = window->sessionController()) {
-					controller->content()->searchMessages(query, inChat, from);
+					controller->content()->searchMessages(
+						query,
+						inChat,
+						searchFrom);
 					controller->widget()->activate();
 				}
 			}
@@ -1062,22 +1090,18 @@ SendMenu::Details MainWidget::sendMenuDetails() const {
 	return _history->sendMenuDetails();
 }
 
-bool MainWidget::sendExistingDocument(not_null<DocumentData*> document) {
-	return sendExistingDocument(document, {});
-}
-
-bool MainWidget::sendExistingDocument(
-		not_null<DocumentData*> document,
-		Api::SendOptions options) {
-	return _history->sendExistingDocument(document, options);
-}
-
 void MainWidget::dialogsCancelled() {
 	if (_hider) {
 		_hider->startHide();
 		clearHider(_hider);
 	}
 	_history->activate();
+}
+
+void MainWidget::toggleFiltersMenu(bool value) const {
+	if (_dialogs) {
+		_dialogs->toggleFiltersMenu(value);
+	}
 }
 
 void MainWidget::setChatBackground(
@@ -1215,21 +1239,11 @@ void MainWidget::setInnerFocus() {
 	}
 }
 
-void MainWidget::clearBotStartToken(PeerData *peer) {
-	if (peer && peer->isUser() && peer->asUser()->isBot()) {
-		peer->asUser()->botInfo->startToken = QString();
-	}
-}
-
-void MainWidget::ctrlEnterSubmitUpdated() {
-	_history->updateFieldSubmitSettings();
-}
-
 void MainWidget::showChooseReportMessages(
 		not_null<PeerData*> peer,
-		Ui::ReportReason reason,
-		Fn<void(MessageIdsList)> done) {
-	_history->setChooseReportMessagesDetails(reason, std::move(done));
+		Data::ReportInput reportInput,
+		Fn<void(std::vector<MsgId>)> done) {
+	_history->setChooseReportMessagesDetails(reportInput, std::move(done));
 	_controller->showPeerHistory(
 		peer,
 		SectionShow::Way::Forward,
@@ -1252,7 +1266,8 @@ bool MainWidget::showHistoryInDifferentWindow(
 		const SectionShow &params,
 		MsgId showAtMsgId) {
 	if (!peerId) {
-		return false;
+		// In case we don't have dialogs, we can't clear section stack.
+		return !_dialogs;
 	}
 	const auto peer = session().data().peer(peerId);
 	if (const auto separateChat = _controller->windowId().chat()) {
@@ -1304,7 +1319,9 @@ void MainWidget::showHistory(
 		if (peer->migrateTo()) {
 			peer = peer->migrateTo();
 			peerId = peer->id;
-			if (showAtMsgId > 0) showAtMsgId = -showAtMsgId;
+			if (showAtMsgId > 0) {
+				showAtMsgId = -showAtMsgId;
+			}
 		}
 		const auto unavailable = peer->computeUnavailableReason();
 		if (!unavailable.isEmpty()) {
@@ -1359,7 +1376,7 @@ void MainWidget::showHistory(
 	bool foundInStack = !peerId;
 	if (foundInStack || (way == Way::ClearStack)) {
 		for (const auto &item : _stack) {
-			clearBotStartToken(item->peer());
+			ClearBotStartToken(item->peer());
 		}
 		_stack.clear();
 	} else {
@@ -1367,7 +1384,7 @@ void MainWidget::showHistory(
 			if (_stack.at(i)->type() == HistoryStackItem && _stack.at(i)->peer()->id == peerId) {
 				foundInStack = true;
 				while (int(_stack.size()) > i + 1) {
-					clearBotStartToken(_stack.back()->peer());
+					ClearBotStartToken(_stack.back()->peer());
 					_stack.pop_back();
 				}
 				_stack.pop_back();
@@ -1429,7 +1446,7 @@ void MainWidget::showHistory(
 	if (_history->peer()
 		&& _history->peer()->id != peerId
 		&& way != Way::Forward) {
-		clearBotStartToken(_history->peer());
+		ClearBotStartToken(_history->peer());
 	}
 	_history->showHistory(
 		peerId,
@@ -1511,6 +1528,7 @@ void MainWidget::showMessage(
 			if (_mainSection->showMessage(peerId, params, itemId)) {
 				if (params.activation != anim::activation::background) {
 					_controller->window().activate();
+					_controller->window().hideSettingsAndLayer();
 				}
 				return;
 			}
@@ -1544,7 +1562,7 @@ void MainWidget::showForum(
 	_dialogs->showForum(forum, params);
 
 	if (params.activation != anim::activation::background) {
-		_controller->hideLayer();
+		_controller->window().hideSettingsAndLayer();
 	}
 }
 
@@ -1995,8 +2013,8 @@ bool MainWidget::showBackFromStack(const SectionShow &params) {
 	}
 	auto item = std::move(_stack.back());
 	_stack.pop_back();
-	if (auto currentHistoryPeer = _history->peer()) {
-		clearBotStartToken(currentHistoryPeer);
+	if (const auto currentHistoryPeer = _history->peer()) {
+		ClearBotStartToken(currentHistoryPeer);
 	}
 	_thirdSectionFromStack = item->takeThirdSectionMemento();
 	if (item->type() == HistoryStackItem) {

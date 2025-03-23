@@ -12,7 +12,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/platform/base_platform_info.h"
 #include "base/platform/linux/base_linux_dbus_utilities.h"
 #include "base/platform/linux/base_linux_xdp_utilities.h"
-#include "ui/platform/ui_platform_window_title.h"
 #include "lang/lang_keys.h"
 #include "mainwindow.h"
 #include "storage/localstorage.h"
@@ -534,13 +533,7 @@ QString SingleInstanceLocalServerName(const QString &hash) {
 
 #if QT_VERSION < QT_VERSION_CHECK(6, 5, 0)
 std::optional<bool> IsDarkMode() {
-	auto result = base::Platform::XDP::ReadSetting(
-		"org.freedesktop.appearance",
-		"color-scheme");
-
-	return result.has_value()
-		? std::make_optional(result->get_uint32() == 1)
-		: std::nullopt;
+	return std::nullopt;
 }
 #endif // Qt < 6.5.0
 
@@ -599,12 +592,7 @@ bool SkipTaskbarSupported() {
 }
 
 bool RunInBackground() {
-	using Ui::Platform::TitleControl;
-	const auto layout = Ui::Platform::TitleControlsLayout();
-	return (ranges::contains(layout.left, TitleControl::Close)
-		|| ranges::contains(layout.right, TitleControl::Close))
-		&& !ranges::contains(layout.left, TitleControl::Minimize)
-		&& !ranges::contains(layout.right, TitleControl::Minimize);
+	return true;
 }
 
 QString ExecutablePathForShortcuts() {

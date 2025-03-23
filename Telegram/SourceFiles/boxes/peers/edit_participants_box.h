@@ -106,14 +106,19 @@ public:
 		not_null<PeerData*> participant) const;
 	[[nodiscard]] std::optional<ChatAdminRightsInfo> adminRights(
 		not_null<UserData*> user) const;
-	QString adminRank(not_null<UserData*> user) const;
+	[[nodiscard]] QString adminRank(not_null<UserData*> user) const;
 	[[nodiscard]] std::optional<ChatRestrictionsInfo> restrictedRights(
 		not_null<PeerData*> participant) const;
 	[[nodiscard]] bool isCreator(not_null<UserData*> user) const;
 	[[nodiscard]] bool isExternal(not_null<PeerData*> participant) const;
 	[[nodiscard]] bool isKicked(not_null<PeerData*> participant) const;
 	[[nodiscard]] UserData *adminPromotedBy(not_null<UserData*> user) const;
-	[[nodiscard]] UserData *restrictedBy(not_null<PeerData*> participant) const;
+	[[nodiscard]] UserData *restrictedBy(
+		not_null<PeerData*> participant) const;
+
+	[[nodiscard]] TimeId adminPromotedSince(not_null<UserData*>) const;
+	[[nodiscard]] TimeId restrictedSince(not_null<PeerData*>) const;
+	[[nodiscard]] TimeId memberSince(not_null<UserData*>) const;
 
 	void migrate(not_null<ChatData*> chat, not_null<ChannelData*> channel);
 
@@ -128,7 +133,7 @@ public:
 private:
 	UserData *applyCreator(const Api::ChatParticipant &data);
 	UserData *applyAdmin(const Api::ChatParticipant &data);
-	UserData *applyRegular(UserId userId);
+	UserData *applyRegular(const Api::ChatParticipant &data);
 	PeerData *applyBanned(const Api::ChatParticipant &data);
 	void fillFromChat(not_null<ChatData*> chat);
 	void fillFromChannel(not_null<ChannelData*> channel);
@@ -144,6 +149,9 @@ private:
 	// Data for channels.
 	base::flat_map<not_null<UserData*>, ChatAdminRightsInfo> _adminRights;
 	base::flat_map<not_null<UserData*>, QString> _adminRanks;
+	base::flat_map<not_null<UserData*>, TimeId> _adminPromotedSince;
+	base::flat_map<not_null<PeerData*>, TimeId> _restrictedSince;
+	base::flat_map<not_null<UserData*>, TimeId> _memberSince;
 	base::flat_set<not_null<UserData*>> _adminCanEdit;
 	base::flat_map<not_null<UserData*>, not_null<UserData*>> _adminPromotedBy;
 	std::map<not_null<PeerData*>, ChatRestrictionsInfo> _restrictedRights;

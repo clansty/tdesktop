@@ -7,12 +7,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+#include "media/streaming/media_streaming_common.h"
+
 namespace Storage {
 class StreamedFileDownloader;
 } // namespace Storage
 
-namespace Media {
-namespace Streaming {
+namespace Media::Streaming {
 
 struct LoadedPart {
 	int64 offset = 0;
@@ -25,7 +26,7 @@ struct LoadedPart {
 
 class Loader {
 public:
-	static constexpr auto kPartSize = int64(1024 * 1024);
+	static constexpr auto kPartSize = int64(128 * 1024);
 
 	[[nodiscard]] virtual Storage::Cache::Key baseCacheKey() const = 0;
 	[[nodiscard]] virtual int64 size() const = 0;
@@ -41,6 +42,8 @@ public:
 
 	// Parts will be sent from the main thread.
 	[[nodiscard]] virtual rpl::producer<LoadedPart> parts() const = 0;
+	[[nodiscard]] virtual auto speedEstimate() const
+		-> rpl::producer<SpeedEstimate> = 0;
 
 	virtual void attachDownloader(
 		not_null<Storage::StreamedFileDownloader*> downloader) = 0;
@@ -74,5 +77,4 @@ private:
 
 };
 
-} // namespace Streaming
-} // namespace Media
+} // namespace Media::Streaming

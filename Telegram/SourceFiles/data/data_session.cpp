@@ -15,6 +15,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_bot.h"
 #include "api/api_text_entities.h"
 #include "api/api_user_names.h"
+#include "chat_helpers/stickers_lottie.h"
 #include "core/application.h"
 #include "core/core_settings.h"
 #include "core/mime_type.h" // Core::IsMimeSticker
@@ -577,6 +578,8 @@ not_null<UserData*> Session::processUser(const MTPUser &data) {
 				| (data.is_stories_hidden() ? Flag::StoriesHidden : Flag())
 				: Flag());
 		result->setFlags((result->flags() & ~flagsMask) | flagsSet);
+		result->setBotVerifyDetailsIcon(
+			data.vbot_verification_icon().value_or_empty());
 		if (minimal) {
 			if (result->input.type() == mtpc_inputPeerEmpty) {
 				result->input = MTP_inputPeerUser(
@@ -610,8 +613,10 @@ not_null<UserData*> Session::processUser(const MTPUser &data) {
 				result->setUnavailableReasons(Data::UnavailableReason::Extract(
 					data.vrestriction_reason()));
 				QString reason;
-				for (const auto v : restriction->v) {
-					reason += QString("%1-%2: %3\n").arg(v.c_restrictionReason().vreason().v.constData()).arg(v.c_restrictionReason().vplatform().v.constData()).arg(v.c_restrictionReason().vtext().v.constData());
+				for (const auto &v : restriction->v) {
+					reason += QString("%1-%2: %3\n").arg(v.c_restrictionReason().vreason().v.constData(),
+														 v.c_restrictionReason().vplatform().v.constData(),
+														 v.c_restrictionReason().vtext().v.constData());
 				}
 				result->restriction_reason = reason;
 			}
@@ -926,8 +931,10 @@ not_null<PeerData*> Session::processChat(const MTPChat &data) {
 				channel->setUnavailableReasons(Data::UnavailableReason::Extract(
 					data.vrestriction_reason()));
 				QString reason;
-				for (const auto v : restriction->v) {
-					reason += QString("%1-%2: %3\n").arg(v.c_restrictionReason().vreason().v.constData()).arg(v.c_restrictionReason().vplatform().v.constData()).arg(v.c_restrictionReason().vtext().v.constData());
+				for (const auto &v : restriction->v) {
+					reason += QString("%1-%2: %3\n").arg(v.c_restrictionReason().vreason().v.constData(),
+														 v.c_restrictionReason().vplatform().v.constData(),
+														 v.c_restrictionReason().vtext().v.constData());
 				}
 				channel->restriction_reason = reason;
 			}
@@ -1014,6 +1021,8 @@ not_null<PeerData*> Session::processChat(const MTPChat &data) {
 				? Flag::StoriesHidden
 				: Flag());
 		channel->setFlags((channel->flags() & ~flagsMask) | flagsSet);
+		channel->setBotVerifyDetailsIcon(
+			data.vbot_verification_icon().value_or_empty());
 		if (!minimal && storiesState) {
 			result->setStoriesState(!storiesState->maxId
 				? UserData::StoriesState::None
@@ -1434,10 +1443,6 @@ void Session::forgetPassportCredentials() {
 	_passportCredentials = nullptr;
 }
 
-QString Session::nameSortKey(const QString &name) const {
-	return TextUtilities::RemoveAccents(name).toLower();
-}
-
 void Session::setupMigrationViewer() {
 	session().changes().peerUpdates(
 		PeerUpdate::Flag::Migration
@@ -1673,6 +1678,14 @@ void Session::notifyNewItemAdded(not_null<HistoryItem*> item) {
 
 rpl::producer<not_null<HistoryItem*>> Session::newItemAdded() const {
 	return _newItemAdded.events();
+}
+
+void Session::notifyGiftUpdate(GiftUpdate &&update) {
+	_giftUpdates.fire(std::move(update));
+}
+
+rpl::producer<GiftUpdate> Session::giftUpdates() const {
+	return _giftUpdates.events();
 }
 
 HistoryItem *Session::changeMessageId(PeerId peerId, MsgId wasId, MsgId nowId) {
@@ -1977,6 +1990,19 @@ void Session::notifyPinnedDialogsOrderUpdated() {
 
 rpl::producer<> Session::pinnedDialogsOrderUpdated() const {
 	return _pinnedDialogsOrderUpdated.events();
+}
+
+Session::CreditsSubsRebuilderPtr Session::createCreditsSubsRebuilder() {
+	if (auto result = activeCreditsSubsRebuilder()) {
+		return result;
+	}
+	auto result = std::make_shared<CreditsSubsRebuilder>();
+	_creditsSubsRebuilder = result;
+	return result;
+}
+
+Session::CreditsSubsRebuilderPtr Session::activeCreditsSubsRebuilder() const {
+	return _creditsSubsRebuilder.lock();
 }
 
 void Session::registerHeavyViewPart(not_null<ViewElement*> view) {
@@ -2785,7 +2811,7 @@ HistoryItem *Session::addNewMessage(
 		MessageFlags localFlags,
 		NewMessageType type) {
 	const auto peerId = PeerFromMessage(data);
-	if (!peerId) {
+	if (!peerId || data.type() == mtpc_messageEmpty) {
 		return nullptr;
 	}
 
@@ -3213,17 +3239,24 @@ not_null<DocumentData*> Session::document(DocumentId id) {
 	return i->second.get();
 }
 
-not_null<DocumentData*> Session::processDocument(const MTPDocument &data) {
+not_null<DocumentData*> Session::processDocument(
+		const MTPDocument &data,
+		const MTPVector<MTPDocument> *qualities) {
 	return data.match([&](const MTPDdocument &data) {
-		return processDocument(data);
+		return processDocument(data, qualities);
 	}, [&](const MTPDdocumentEmpty &data) {
 		return document(data.vid().v);
 	});
 }
 
-not_null<DocumentData*> Session::processDocument(const MTPDdocument &data) {
+not_null<DocumentData*> Session::processDocument(
+		const MTPDdocument &data,
+		const MTPVector<MTPDocument> *qualities) {
 	const auto result = document(data.vid().v);
 	documentApplyFields(result, data);
+	if (qualities) {
+		result->setVideoQualities(qualities->v);
+	}
 	return result;
 }
 
@@ -4652,7 +4685,8 @@ void Session::serviceNotification(
 			MTPint(), // stories_max_id
 			MTPPeerColor(), // color
 			MTPPeerColor(), // profile_color
-			MTPint())); // bot_active_users
+			MTPint(), // bot_active_users
+			MTPlong())); // bot_verification_icon
 	}
 	const auto history = this->history(PeerData::kServiceNotificationsId);
 	const auto insert = [=] {
@@ -4710,7 +4744,8 @@ void Session::insertCheckedServiceNotification(
 				MTPint(), // ttl_period
 				MTPint(), // quick_reply_shortcut_id
 				MTPlong(), // effect
-				MTPFactCheck()),
+				MTPFactCheck(),
+				MTPint()), // report_delivery_until_date
 			localFlags,
 			NewMessageType::Unread);
 	}
@@ -4881,6 +4916,22 @@ void Session::viewTagsChanged(
 			_viewsByTag.erase(i);
 		}
 	}
+}
+
+void Session::sentToScheduled(SentToScheduled value) {
+	_sentToScheduled.fire(std::move(value));
+}
+
+rpl::producer<SentToScheduled> Session::sentToScheduled() const {
+	return _sentToScheduled.events();
+}
+
+void Session::sentFromScheduled(SentFromScheduled value) {
+	_sentFromScheduled.fire(std::move(value));
+}
+
+rpl::producer<SentFromScheduled> Session::sentFromScheduled() const {
+	return _sentFromScheduled.events();
 }
 
 void Session::clearLocalStorage() {

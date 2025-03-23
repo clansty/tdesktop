@@ -19,16 +19,19 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/update_checker.h"
 #include "core/application.h"
 #include "core/click_handler_types.h"
+#include "dialogs/ui/dialogs_suggestions.h"
 #include "boxes/background_preview_box.h"
 #include "ui/boxes/confirm_box.h"
 #include "ui/boxes/edit_birthday_box.h"
+#include "ui/integration.h"
 #include "payments/payments_non_panel_process.h"
 #include "boxes/share_box.h"
 #include "boxes/connection_box.h"
+#include "boxes/gift_premium_box.h"
 #include "boxes/edit_privacy_box.h"
 #include "boxes/premium_preview_box.h"
 #include "boxes/sticker_set_box.h"
-#include "boxes/sessions_box.h"
+#include "boxes/star_gift_box.h"
 #include "boxes/language_box.h"
 #include "passport/passport_form_controller.h"
 #include "ui/text/text_utilities.h"
@@ -47,6 +50,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_peer_menu.h"
 #include "window/themes/window_theme_editor_box.h" // GenerateSlug.
 #include "payments/payments_checkout_process.h"
+#include "settings/settings_active_sessions.h"
 #include "settings/settings_credits.h"
 #include "settings/settings_credits_graphics.h"
 #include "settings/settings_information.h"
@@ -59,6 +63,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "settings/settings_premium.h"
 #include "mainwidget.h"
 #include "main/main_account.h"
+#include "main/main_app_config.h"
 #include "main/main_domain.h"
 #include "main/main_session.h"
 #include "main/main_session_settings.h"
@@ -175,6 +180,34 @@ void PersonalChannelController::rowClicked(not_null<PeerListRow*> row) {
 auto PersonalChannelController::chosen() const
 -> rpl::producer<not_null<ChannelData*>> {
 	return _chosen.events();
+}
+
+Window::SessionController *ApplyAccountIndex(
+		not_null<Window::SessionController*> controller,
+		int accountIndex) {
+	if (accountIndex <= 0) {
+		return nullptr;
+	}
+	const auto list = Core::App().domain().orderedAccounts();
+	if (accountIndex > int(list.size())) {
+		return nullptr;
+	}
+	const auto account = list[accountIndex - 1];
+	if (account == &controller->session().account()) {
+		return controller;
+	} else if (const auto window = Core::App().windowFor({ account })) {
+		if (&window->account() != account) {
+			Core::App().domain().maybeActivate(account);
+			if (&window->account() != account) {
+				return nullptr;
+			}
+		}
+		const auto session = window->sessionController();
+		if (session) {
+			return session;
+		}
+	}
+	return nullptr;
 }
 
 void SavePersonalChannel(
@@ -473,6 +506,20 @@ bool ResolveUsernameOrPhone(
 	const auto params = url_parse_params(
 		match->captured(1),
 		qthelp::UrlParamNameTransform::ToLower);
+
+	if (params.contains(u"acc"_q)) {
+		const auto switched = ApplyAccountIndex(
+			controller,
+			params.value(u"acc"_q).toInt());
+		if (switched) {
+			controller = switched;
+		} else {
+			controller->showToast(u"Could not activate account %1."_q.arg(
+				params.value(u"acc"_q)));
+			return false;
+		}
+	}
+
 	const auto domainParam = params.value(u"domain"_q);
 	const auto appnameParam = params.value(u"appname"_q);
 	const auto myContext = context.value<ClickHandlerContext>();
@@ -516,8 +563,19 @@ bool ResolveUsernameOrPhone(
 		? ResolveType::Profile
 		: ResolveType::Default;
 	auto startToken = params.value(u"start"_q);
+	auto referral = params.value(u"ref"_q);
 	if (!startToken.isEmpty()) {
 		resolveType = ResolveType::BotStart;
+		if (referral.isEmpty()) {
+			const auto appConfig = &controller->session().appConfig();
+			const auto &prefixes = appConfig->startRefPrefixes();
+			for (const auto &prefix : prefixes) {
+				if (startToken.startsWith(prefix)) {
+					referral = startToken.mid(prefix.size());
+					break;
+				}
+			}
+		}
 	} else if (params.contains(u"startgroup"_q)) {
 		resolveType = ResolveType::AddToGroup;
 		startToken = params.value(u"startgroup"_q);
@@ -573,11 +631,13 @@ bool ResolveUsernameOrPhone(
 			}
 			: Window::RepliesByLinkInfo{ v::null },
 		.resolveType = resolveType,
+		.referral = referral,
 		.startToken = startToken,
 		.startAdminRights = adminRights,
 		.startAutoSubmit = myContext.botStartAutoSubmit,
 		.botAppName = (appname.isEmpty() ? postParam : appname),
 		.botAppForceConfirmation = myContext.mayShowConfirmation,
+		.botAppFullScreen = (params.value(u"mode"_q) == u"fullscreen"_q),
 		.attachBotUsername = params.value(u"attach"_q),
 		.attachBotToggleCommand = (params.contains(u"startattach"_q)
 			? params.value(u"startattach"_q)
@@ -839,9 +899,9 @@ bool CopyPeerId(
 		Window::SessionController *controller,
 		const Match &match,
 		const QVariant &context) {
-	TextUtilities::SetClipboardText(TextForMimeData{ match->captured(1) });
+	TextUtilities::SetClipboardText({ match->captured(1) });
 	if (controller) {
-		controller->showToast(tr::lng_text_copied(tr::now));
+		controller->showToast(u"ID copied to clipboard."_q);
 	}
 	return true;
 }
@@ -977,6 +1037,56 @@ bool ShowCollectibleUsername(
 	const auto username = match->captured(1);
 	const auto peerId = PeerId(match->captured(2).toULongLong());
 	controller->resolveCollectible(peerId, username);
+	return true;
+}
+
+bool CopyUsernameLink(
+		Window::SessionController *controller,
+		const Match &match,
+		const QVariant &context) {
+	if (!controller) {
+		return false;
+	}
+	const auto username = match->captured(1);
+	TextUtilities::SetClipboardText({
+		controller->session().createInternalLinkFull(username)
+	});
+	controller->showToast(tr::lng_username_copied(tr::now));
+	return true;
+}
+
+bool CopyUsername(
+		Window::SessionController *controller,
+		const Match &match,
+		const QVariant &context) {
+	if (!controller) {
+		return false;
+	}
+	const auto username = match->captured(1);
+	TextUtilities::SetClipboardText({ '@' + username });
+	controller->showToast(tr::lng_username_text_copied(tr::now));
+	return true;
+}
+
+bool ShowStarsExamples(
+		Window::SessionController *controller,
+		const Match &match,
+		const QVariant &context) {
+	if (!controller) {
+		return false;
+	}
+	controller->show(Dialogs::StarsExamplesBox(controller));
+	return true;
+}
+
+bool ShowPopularAppsAbout(
+		Window::SessionController *controller,
+		const Match &match,
+		const QVariant &context) {
+	if (!controller) {
+		return false;
+	}
+	controller->show(Dialogs::PopularAppsAboutBox(controller));
 	return true;
 }
 
@@ -1176,10 +1286,7 @@ bool ResolvePremiumMultigift(
 	if (!controller) {
 		return false;
 	}
-	const auto params = url_parse_params(
-		match->captured(1).mid(1),
-		qthelp::UrlParamNameTransform::ToLower);
-	controller->showGiftPremiumsBox(params.value(u"ref"_q, u"gift_url"_q));
+	Ui::ChooseStarGiftRecipient(controller);
 	controller->window().activate();
 	return true;
 }
@@ -1452,6 +1559,22 @@ const std::vector<LocalUrlHandler> &InternalUrlHandlers() {
 		{
 			u"^collectible_username/([a-zA-Z0-9\\-\\_\\.]+)@([0-9]+)$"_q,
 			ShowCollectibleUsername,
+		},
+		{
+			u"^username_link/([a-zA-Z0-9\\-\\_\\.]+)@([0-9]+)$"_q,
+			CopyUsernameLink,
+		},
+		{
+			u"^username_regular/([a-zA-Z0-9\\-\\_\\.]+)@([0-9]+)$"_q,
+			CopyUsername,
+		},
+		{
+			u"^stars_examples$"_q,
+			ShowStarsExamples,
+		},
+		{
+			u"^about_popular_apps$"_q,
+			ShowPopularAppsAbout,
 		},
 	};
 	return Result;

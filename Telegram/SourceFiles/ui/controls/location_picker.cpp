@@ -379,7 +379,7 @@ void VenuesController::rowPaintIcon(
 	static const auto phrases = base::flat_map<QByteArray, tr::phrase<>>{
 		{ "maps-places-in-area", tr::lng_maps_places_in_area },
 	};
-	return Ui::ComputeStyles(map, phrases, Window::Theme::IsNightMode());
+	return Ui::ComputeStyles(map, phrases, 100, Window::Theme::IsNightMode());
 }
 
 [[nodiscard]] QByteArray ReadResource(const QString &name) {
@@ -1155,7 +1155,9 @@ void LocationPicker::venuesRequest(
 	}
 	const auto username = _session->serverConfig().venueSearchUsername;
 	_venuesBotRequestId = _api.request(MTPcontacts_ResolveUsername(
-		MTP_string(username)
+		MTP_flags(0),
+		MTP_string(username),
+		MTP_string()
 	)).done([=](const MTPcontacts_ResolvedPeer &result) {
 		auto &data = result.data();
 		_session->data().processUsers(data.vusers());

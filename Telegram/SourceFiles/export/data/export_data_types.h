@@ -119,6 +119,7 @@ uint8 ContactColorIndex(const ContactInfo &data);
 struct Photo {
 	uint64 id = 0;
 	TimeId date = 0;
+	bool spoilered = false;
 
 	Image image;
 };
@@ -146,6 +147,7 @@ struct Document {
 	bool isVoiceMessage = false;
 	bool isVideoFile = false;
 	bool isAudioFile = false;
+	bool spoilered = false;
 };
 
 struct SharedContact {
@@ -210,10 +212,29 @@ struct Poll {
 };
 
 struct GiveawayStart {
+	std::vector<QString> countries;
 	std::vector<ChannelId> channels;
+	QString additionalPrize;
 	TimeId untilDate = 0;
+	uint64 credits = 0;
 	int quantity = 0;
 	int months = 0;
+	bool all = false;
+};
+
+struct GiveawayResults {
+	ChannelId channel = 0;
+	std::vector<PeerId> winners;
+	QString additionalPrize;
+	TimeId untilDate = 0;
+	int32 launchId = 0;
+	int additionalPeersCount = 0;
+	int winnersCount = 0;
+	int unclaimedCount = 0;
+	int months = 0;
+	uint64 credits = 0;
+	bool refunded = false;
+	bool all = false;
 };
 
 struct UserpicsSlice {
@@ -234,6 +255,7 @@ struct User {
 	bool isBot = false;
 	bool isSelf = false;
 	bool isReplies = false;
+	bool isVerifyCodes = false;
 
 	MTPInputUser input = MTP_inputUserEmpty();
 
@@ -349,6 +371,7 @@ struct Media {
 		Invoice,
 		Poll,
 		GiveawayStart,
+		GiveawayResults,
 		PaidMedia,
 		UnsupportedMedia> content;
 	TimeId ttl = 0;
@@ -380,6 +403,39 @@ Media ParseMedia(
 	const MTPMessageMedia &data,
 	const QString &folder,
 	TimeId date);
+
+struct TextPart {
+	enum class Type {
+		Text,
+		Unknown,
+		Mention,
+		Hashtag,
+		BotCommand,
+		Url,
+		Email,
+		Bold,
+		Italic,
+		Code,
+		Pre,
+		TextUrl,
+		MentionName,
+		Phone,
+		Cashtag,
+		Underline,
+		Strike,
+		Blockquote,
+		BankCard,
+		Spoiler,
+		CustomEmoji,
+	};
+	Type type = Type::Text;
+	Utf8String text;
+	Utf8String additional;
+
+	[[nodiscard]] static Utf8String UnavailableEmoji() {
+		return "(unavailable)";
+	}
+};
 
 struct ActionChatCreate {
 	Utf8String title;
@@ -447,6 +503,7 @@ struct ActionPhoneCall {
 		Disconnect,
 		Hangup,
 		Busy,
+		AllowGroupCall,
 	};
 	DiscardReason discardReason = DiscardReason::Unknown;
 	int duration = 0;
@@ -570,6 +627,7 @@ struct ActionGiveawayLaunch {
 struct ActionGiveawayResults {
 	int winners = 0;
 	int unclaimed = 0;
+	bool credits = false;
 };
 
 struct ActionBoostApply {
@@ -585,7 +643,23 @@ struct ActionPaymentRefunded {
 
 struct ActionGiftStars {
 	Utf8String cost;
-	int stars = 0;
+	int credits = 0;
+};
+
+struct ActionPrizeStars {
+	PeerId peerId = 0;
+	uint64 amount = 0;
+	Utf8String transactionId;
+	int32 giveawayMsgId = 0;
+	bool isUnclaimed = false;
+};
+
+struct ActionStarGift {
+	uint64 giftId = 0;
+	int64 stars = 0;
+	std::vector<TextPart> text;
+	bool anonymous = false;
+	bool limited = false;
 };
 
 struct ServiceAction {
@@ -631,7 +705,9 @@ struct ServiceAction {
 		ActionGiveawayResults,
 		ActionBoostApply,
 		ActionPaymentRefunded,
-		ActionGiftStars> content;
+		ActionGiftStars,
+		ActionPrizeStars,
+		ActionStarGift> content;
 };
 
 ServiceAction ParseServiceAction(
@@ -639,37 +715,28 @@ ServiceAction ParseServiceAction(
 	const MTPMessageAction &data,
 	const QString &mediaFolder);
 
-struct TextPart {
+struct Reaction {
 	enum class Type {
-		Text,
-		Unknown,
-		Mention,
-		Hashtag,
-		BotCommand,
-		Url,
-		Email,
-		Bold,
-		Italic,
-		Code,
-		Pre,
-		TextUrl,
-		MentionName,
-		Phone,
-		Cashtag,
-		Underline,
-		Strike,
-		Blockquote,
-		BankCard,
-		Spoiler,
+		Empty,
+		Emoji,
 		CustomEmoji,
+		Paid,
 	};
-	Type type = Type::Text;
-	Utf8String text;
-	Utf8String additional;
 
-	[[nodiscard]] static Utf8String UnavailableEmoji() {
-		return "(unavailable)";
-	}
+	[[nodiscard]] static Utf8String TypeToString(const Reaction &);
+
+	[[nodiscard]] static Utf8String Id(const Reaction &);
+
+	struct Recent {
+		PeerId peerId = 0;
+		TimeId date = 0;
+	};
+
+	Type type;
+	QString emoji;
+	Utf8String documentId;
+	uint32 count = 0;
+	std::vector<Recent> recent;
 };
 
 struct MessageId {
@@ -715,6 +782,7 @@ struct HistoryMessageMarkupButton {
 		UserProfile,
 		WebView,
 		SimpleWebView,
+		CopyText,
 	};
 
 	static QByteArray TypeToString(const HistoryMessageMarkupButton &);
@@ -744,6 +812,7 @@ struct Message {
 	int32 replyToMsgId = 0;
 	PeerId replyToPeerId = 0;
 	std::vector<TextPart> text;
+	std::vector<Reaction> reactions;
 	Media media;
 	int64 media_group_id;
 	ServiceAction action;
@@ -802,6 +871,7 @@ struct DialogInfo {
 		Unknown,
 		Self,
 		Replies,
+		VerifyCodes,
 		Personal,
 		Bot,
 		PrivateGroup,

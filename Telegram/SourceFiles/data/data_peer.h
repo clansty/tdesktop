@@ -23,6 +23,7 @@ enum class ChatRestriction;
 
 namespace Ui {
 class EmptyUserpic;
+struct BotVerifyDetails;
 } // namespace Ui
 
 namespace Main {
@@ -227,10 +228,13 @@ public:
 	[[nodiscard]] bool isForum() const;
 	[[nodiscard]] bool isGigagroup() const;
 	[[nodiscard]] bool isRepliesChat() const;
+	[[nodiscard]] bool isVerifyCodes() const;
 	[[nodiscard]] bool sharedMediaInfo() const;
 	[[nodiscard]] bool savedSublistsInfo() const;
 	[[nodiscard]] bool hasStoriesHidden() const;
 	void setStoriesHidden(bool hidden);
+
+	[[nodiscard]] Ui::BotVerifyDetails *botVerifyDetails() const;
 
 	[[nodiscard]] bool isNotificationsUser() const {
 		return (id == peerFromUser(333000))
@@ -317,15 +321,23 @@ public:
 		Ui::PeerUserpicView &view,
 		int x,
 		int y,
-		int size) const;
+		int size,
+		bool forceCircle = false) const;
 	void paintUserpicLeft(
 			Painter &p,
 			Ui::PeerUserpicView &view,
 			int x,
 			int y,
 			int w,
-			int size) const {
-		paintUserpic(p, view, rtl() ? (w - x - size) : x, y, size);
+			int size,
+			bool forceCircle = false) const {
+		paintUserpic(
+			p,
+			view,
+			rtl() ? (w - x - size) : x,
+			y,
+			size,
+			forceCircle);
 	}
 	void loadUserpic();
 	[[nodiscard]] bool hasUserpic() const;
@@ -333,10 +345,11 @@ public:
 	[[nodiscard]] Ui::PeerUserpicView createUserpicView();
 	[[nodiscard]] bool useEmptyUserpic(Ui::PeerUserpicView &view) const;
 	[[nodiscard]] InMemoryKey userpicUniqueKey(Ui::PeerUserpicView &view) const;
-	[[nodiscard]] QImage generateUserpicImage(
+	[[nodiscard]] static QImage GenerateUserpicImage(
+		not_null<PeerData*> peer,
 		Ui::PeerUserpicView &view,
 		int size,
-		std::optional<int> radius = {}) const;
+		std::optional<int> radius = {});
 	[[nodiscard]] ImageLocation userpicLocation() const;
 
 	static constexpr auto kUnknownPhotoId = PhotoId(0xFFFFFFFFFFFFFFFFULL);
@@ -511,7 +524,7 @@ private:
 	base::flat_set<QChar> _nameFirstLetters;
 
 	DocumentId _emojiStatusId = 0;
-	uint64 _backgroundEmojiId = 0;
+	DocumentId _backgroundEmojiId = 0;
 	crl::time _lastFullUpdate = 0;
 
 	QString _name;

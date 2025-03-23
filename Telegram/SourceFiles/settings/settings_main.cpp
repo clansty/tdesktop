@@ -27,6 +27,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/language_box.h"
 #include "boxes/username_box.h"
 #include "boxes/about_box.h"
+#include "boxes/star_gift_box.h"
 #include "ui/basic_click_handlers.h"
 #include "ui/boxes/confirm_box.h"
 #include "ui/controls/userpic_button.h"
@@ -35,6 +36,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/wrap/slide_wrap.h"
 #include "ui/widgets/menu/menu_add_action_callback.h"
 #include "ui/widgets/continuous_sliders.h"
+#include "ui/widgets/popup_menu.h"
 #include "ui/text/text_utilities.h"
 #include "ui/toast/toast.h"
 #include "ui/new_badges.h"
@@ -149,6 +151,20 @@ Cover::Cover(
 
 	_phone->setSelectable(true);
 	_phone->setContextCopyText(tr::lng_profile_copy_phone(tr::now));
+	const auto hook = [=](Ui::FlatLabel::ContextMenuRequest request) {
+		if (request.selection.empty()) {
+			const auto c = [=] {
+				auto phone = rpl::variable<TextWithEntities>(
+					Info::Profile::PhoneValue(_user)).current().text;
+				phone.replace(' ', QString()).replace('-', QString());
+				TextUtilities::SetClipboardText({ phone });
+			};
+			request.menu->addAction(tr::lng_profile_copy_phone(tr::now), c);
+		} else {
+			_phone->fillContextMenu(request);
+		}
+	};
+	_phone->setContextMenuHook(hook);
 
 	initViewers();
 	setupChildGeometry();
@@ -524,22 +540,15 @@ void SetupPremium(
 	});
 	{
 		controller->session().credits().load();
-
-		const auto wrap = container->add(
-			object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
-				container,
-				object_ptr<Ui::VerticalLayout>(container)));
-		wrap->toggleOn(
-			controller->session().credits().balanceValue(
-			) | rpl::map(rpl::mappers::_1 > 0));
-		wrap->finishAnimating();
 		AddPremiumStar(
 			AddButtonWithLabel(
-				wrap->entity(),
+				container,
 				tr::lng_settings_credits(),
 				controller->session().credits().balanceValue(
-				) | rpl::map([=](uint64 c) {
-					return c ? Lang::FormatCountToShort(c).string : QString{};
+				) | rpl::map([=](StarsAmount c) {
+					return c
+						? Lang::FormatStarsAmountToShort(c).string
+						: QString();
 				}),
 				st::settingsButton),
 			true
@@ -566,7 +575,7 @@ void SetupPremium(
 			{ .icon = &st::menuIconGiftPremium }
 		);
 		button->addClickHandler([=] {
-			controller->showGiftPremiumsBox(u"gift"_q);
+			Ui::ChooseStarGiftRecipient(controller);
 		});
 	}
 	Ui::AddSkip(container);
@@ -628,7 +637,8 @@ void SetupInterfaceScale(
 		st::settingsScale,
 		st::settingsScaleLabel,
 		st::normalFont->spacew * 2,
-		st::settingsScaleLabel.style.font->width("300%"));
+		st::settingsScaleLabel.style.font->width("300%"),
+		true);
 	container->add(
 		std::move(sliderWithLabel.widget),
 		icon ? st::settingsScalePadding : st::settingsBigScalePadding);
@@ -820,7 +830,7 @@ void Main::fillTopBarMenu(const Ui::Menu::MenuCallback &addAction) {
 		addAction(
 			tr::lng_settings_information(tr::now),
 			[=] { showOther(Information::Id()); },
-			&st::menuIconInfo);
+			&st::menuIconEdit);
 	}
 	const auto window = &_controller->window();
 	addAction({

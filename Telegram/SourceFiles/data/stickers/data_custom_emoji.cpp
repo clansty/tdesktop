@@ -27,6 +27,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ffmpeg/ffmpeg_frame_generator.h"
 #include "chat_helpers/stickers_lottie.h"
 #include "storage/file_download.h" // kMaxFileInMemory
+#include "ui/chat/chats_filter_tag.h"
 #include "ui/effects/credits_graphics.h"
 #include "ui/widgets/fields/input_field.h"
 #include "ui/text/custom_emoji_instance.h"
@@ -102,6 +103,18 @@ private:
 
 [[nodiscard]] QString UserpicEmojiPrefix() {
 	return u"userpic:"_q;
+}
+
+[[nodiscard]] QString ScaledSimplePrefix() {
+	return u"scaled-simple:"_q;
+}
+
+[[nodiscard]] QString ScaledCustomPrefix() {
+	return u"scaled-custom:"_q;
+}
+
+[[nodiscard]] QString ForceStaticPrefix() {
+	return u"force-static:"_q;
 }
 
 [[nodiscard]] QString InternalPadding(QMargins value) {
@@ -536,7 +549,20 @@ std::unique_ptr<Ui::Text::CustomEmoji> CustomEmojiManager::create(
 		Fn<void()> update,
 		SizeTag tag,
 		int sizeOverride) {
-	if (data.startsWith(InternalPrefix())) {
+	if (data.startsWith(ScaledSimplePrefix())) {
+		const auto text = data.mid(ScaledSimplePrefix().size());
+		const auto emoji = Ui::Emoji::Find(text);
+		Assert(emoji != nullptr);
+		return Ui::MakeScaledSimpleEmoji(emoji);
+	} else if (data.startsWith(ScaledCustomPrefix())) {
+		const auto original = data.mid(ScaledCustomPrefix().size());
+		return Ui::MakeScaledCustomEmoji(
+			create(original, std::move(update), SizeTag::Large));
+	} else if (data.startsWith(ForceStaticPrefix())) {
+		const auto original = data.mid(ForceStaticPrefix().size());
+		return std::make_unique<Ui::Text::FirstFrameEmoji>(
+			create(original, std::move(update), tag, sizeOverride));
+	} else if (data.startsWith(InternalPrefix())) {
 		return internal(data);
 	} else if (data.startsWith(UserpicEmojiPrefix())) {
 		const auto ratio = style::DevicePixelRatio();
@@ -652,22 +678,27 @@ void CustomEmojiManager::unregisterListener(not_null<Listener*> listener) {
 	}
 }
 
-rpl::producer<not_null<DocumentData*>> CustomEmojiManager::resolve(
-		DocumentId documentId) {
+auto CustomEmojiManager::resolve(DocumentId documentId)
+-> rpl::producer<not_null<DocumentData*>, rpl::empty_error> {
 	return [=](auto consumer) {
 		auto result = rpl::lifetime();
-		const auto put = [=](not_null<DocumentData*> document) {
+		const auto put = [=](
+				not_null<DocumentData*> document,
+				bool resolved = true) {
 			if (!document->sticker()) {
+				if (resolved) {
+					consumer.put_error({});
+				}
 				return false;
 			}
 			consumer.put_next_copy(document);
 			return true;
 		};
-		if (!put(owner().document(documentId))) {
-			const auto listener = new CallbackListener(put);
+		if (!put(owner().document(documentId), false)) {
+			const auto listener = result.make_state<CallbackListener>(put);
+			resolve(documentId, listener);
 			result.add([=] {
 				unregisterListener(listener);
-				delete listener;
 			});
 		}
 		return result;
@@ -763,6 +794,9 @@ void CustomEmojiManager::request() {
 		requestFinished();
 	}).fail([=] {
 		LOG(("API Error: Failed to get documents for emoji."));
+		for (const auto &id : ids) {
+			processListeners(_owner->document(id.v));
+		}
 		requestFinished();
 	}).send();
 }
@@ -792,7 +826,8 @@ void CustomEmojiManager::processLoaders(not_null<DocumentData*> document) {
 	}
 }
 
-void CustomEmojiManager::processListeners(not_null<DocumentData*> document) {
+void CustomEmojiManager::processListeners(
+		not_null<DocumentData*> document) {
 	const auto id = document->id;
 	if (const auto listeners = _resolvers.take(id)) {
 		for (const auto &listener : *listeners) {

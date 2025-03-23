@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_channel.h"
 
+#include "api/api_global_privacy.h"
 #include "data/data_peer_values.h"
 #include "data/data_changes.h"
 #include "data/data_channel_admins.h"
@@ -31,6 +32,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_chat_invite.h"
 #include "api/api_invite_links.h"
 #include "apiwrap.h"
+#include "ui/unread_badge.h"
 #include "window/notifications_manager.h"
 
 namespace {
@@ -735,6 +737,33 @@ bool ChannelData::canRestrictParticipant(
 	return adminRights() & AdminRight::BanUsers;
 }
 
+void ChannelData::setBotVerifyDetails(Ui::BotVerifyDetails details) {
+	if (!details) {
+		if (_botVerifyDetails) {
+			_botVerifyDetails = nullptr;
+			session().changes().peerUpdated(this, UpdateFlag::VerifyInfo);
+		}
+	} else if (!_botVerifyDetails) {
+		_botVerifyDetails = std::make_unique<Ui::BotVerifyDetails>(details);
+		session().changes().peerUpdated(this, UpdateFlag::VerifyInfo);
+	} else if (*_botVerifyDetails != details) {
+		*_botVerifyDetails = details;
+		session().changes().peerUpdated(this, UpdateFlag::VerifyInfo);
+	}
+}
+
+void ChannelData::setBotVerifyDetailsIcon(DocumentId iconId) {
+	if (!iconId) {
+		setBotVerifyDetails({});
+	} else {
+		auto info = _botVerifyDetails
+			? *_botVerifyDetails
+			: Ui::BotVerifyDetails();
+		info.iconId = iconId;
+		setBotVerifyDetails(info);
+	}
+}
+
 void ChannelData::setAdminRights(ChatAdminRights rights) {
 	if (rights == adminRights()) {
 		return;
@@ -994,6 +1023,9 @@ PeerId ChannelData::groupCallDefaultJoinAs() const {
 
 void ChannelData::setAllowedReactions(Data::AllowedReactions value) {
 	if (_allowedReactions != value) {
+		if (value.paidEnabled) {
+			session().api().globalPrivacy().loadPaidReactionAnonymous();
+		}
 		const auto enabled = [](const Data::AllowedReactions &allowed) {
 			return (allowed.type != Data::AllowedReactionsType::Some)
 				|| !allowed.some.empty()
@@ -1270,6 +1302,8 @@ void ApplyChannelUpdate(
 			.paidEnabled = update.is_paid_reactions_available(),
 		});
 	}
+	channel->setBotVerifyDetails(
+		ParseBotVerifyDetails(update.vbot_verification()));
 	channel->owner().stories().apply(channel, update.vstories());
 	channel->fullUpdated();
 	channel->setPendingRequestsCount(

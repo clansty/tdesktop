@@ -49,15 +49,11 @@ constexpr auto kBlurRadius = 24;
 	if (!path.isEmpty()) {
 		return path;
 	}
-	const auto floatScale = [&](float64 v) {
-		constexpr auto kPrecision = 1000000.;
-		return style::ConvertScale(v * kPrecision) / kPrecision;
-	};
 	const auto scaledMoveTo = [&](float64 x, float64 y) {
-		path.moveTo(floatScale(x), floatScale(y));
+		path.moveTo(style::ConvertFloatScale(x), style::ConvertFloatScale(y));
 	};
 	const auto scaledLineTo = [&](float64 x, float64 y) {
-		path.lineTo(floatScale(x), floatScale(y));
+		path.lineTo(style::ConvertFloatScale(x), style::ConvertFloatScale(y));
 	};
 	const auto scaledCubicTo = [&](
 			float64 x1,
@@ -67,15 +63,17 @@ constexpr auto kBlurRadius = 24;
 			float64 x3,
 			float64 y3) {
 		path.cubicTo(
-			floatScale(x1),
-			floatScale(y1),
-			floatScale(x2),
-			floatScale(y2),
-			floatScale(x3),
-			floatScale(y3));
+			style::ConvertFloatScale(x1),
+			style::ConvertFloatScale(y1),
+			style::ConvertFloatScale(x2),
+			style::ConvertFloatScale(y2),
+			style::ConvertFloatScale(x3),
+			style::ConvertFloatScale(y3));
 	};
 	const auto scaledTranslate = [&](float64 x, float64 y) {
-		path.translate(floatScale(x), floatScale(y));
+		path.translate(
+			style::ConvertFloatScale(x),
+			style::ConvertFloatScale(y));
 	};
 
 	scaledMoveTo(42.3009, 18.3345);
@@ -124,7 +122,7 @@ constexpr auto kBlurRadius = 24;
 	const auto &partSize = partRect.width();
 	const auto partSkip = fullSize - partSize;
 	auto result = Images::Circle(BlurredDarkenedPart(
-		peer->generateUserpicImage(view, fullSize * ratio, 0),
+		PeerData::GenerateUserpicImage(peer, view, fullSize * ratio, 0),
 		QRect(
 			QPoint(partSkip, partSkip) * ratio,
 			QSize(partSize, partSize) * ratio)));
@@ -308,7 +306,8 @@ void BasicRow::paintUserpic(
 		not_null<Entry*> entry,
 		PeerData *peer,
 		Ui::VideoUserpic *videoUserpic,
-		const Ui::PaintContext &context) const {
+		const Ui::PaintContext &context,
+		bool hasUnreadBadgesAbove) const {
 	PaintUserpic(p, entry, peer, videoUserpic, _userpic, context);
 }
 
@@ -322,11 +321,19 @@ Row::~Row() {
 	clearTopicJumpRipple();
 }
 
-void Row::recountHeight(float64 narrowRatio) {
+void Row::recountHeight(float64 narrowRatio, FilterId filterId) {
 	if (const auto history = _id.history()) {
+		const auto hasTags = _id.entry()->hasChatsFilterTags(filterId);
 		_height = history->isForum()
 			? anim::interpolate(
-				st::forumDialogRow.height,
+				hasTags
+					? st::taggedForumDialogRow.height
+					: st::forumDialogRow.height,
+				st::defaultDialogRow.height,
+				narrowRatio)
+			: hasTags
+			? anim::interpolate(
+				st::taggedDialogRow.height,
 				st::defaultDialogRow.height,
 				narrowRatio)
 			: st::defaultDialogRow.height;
@@ -369,12 +376,17 @@ void Row::setCornerBadgeShown(
 
 void Row::updateCornerBadgeShown(
 		not_null<PeerData*> peer,
-		Fn<void()> updateCallback) const {
+		Fn<void()> updateCallback,
+		bool hasUnreadBadgesAbove) const {
 	const auto user = peer->asUser();
 	const auto now = user ? base::unixtime::now() : TimeId();
 	const auto channel = user ? nullptr : peer->asChannel();
 	const auto nextLayer = [&] {
-		if (user && Data::IsUserOnline(user, now)) {
+		if (GetEnhancedBool("screenshot_mode")) {
+			return kNoneLayer;
+		} else if (hasUnreadBadgesAbove) {
+			return kNoneLayer;
+		} else if (user && Data::IsUserOnline(user, now)) {
 			return kTopLayer;
 		} else if (channel
 			&& (Data::ChannelHasActiveCall(channel)
@@ -534,9 +546,10 @@ void Row::paintUserpic(
 		not_null<Entry*> entry,
 		PeerData *peer,
 		Ui::VideoUserpic *videoUserpic,
-		const Ui::PaintContext &context) const {
+		const Ui::PaintContext &context,
+		bool hasUnreadBadgesAbove) const {
 	if (peer) {
-		updateCornerBadgeShown(peer);
+		updateCornerBadgeShown(peer, nullptr, hasUnreadBadgesAbove);
 	}
 
 	const auto settings = &AyuSettings::getInstance();
@@ -554,7 +567,7 @@ void Row::paintUserpic(
 		? storiesFolder->storiesCount()
 		: false;
 	if (!cornerBadgeShown && !storiesHas) {
-		BasicRow::paintUserpic(p, entry, peer, videoUserpic, context);
+		BasicRow::paintUserpic(p, entry, peer, videoUserpic, context, false);
 		if (!peer || !_cornerBadgeShown) {
 			_cornerBadgeUserpic = nullptr;
 		}

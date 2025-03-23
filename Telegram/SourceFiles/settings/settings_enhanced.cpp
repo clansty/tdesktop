@@ -65,23 +65,6 @@ namespace Settings {
 			Ui::show(Box<NetBoostBox>());
 		});
 
-		auto donwloadBoostBtn = AddButtonWithIcon(
-				inner,
-				tr::lng_settings_net_download_speed_boost(),
-				st::settingsButtonNoIcon
-		);
-		donwloadBoostBtn->setColorOverride(QColor(255, 0, 0));
-		donwloadBoostBtn->toggleOn(
-				rpl::single(GetEnhancedBool("net_dl_speed_boost"))
-		)->toggledChanges(
-		) | rpl::filter([=](bool toggled) {
-			return (toggled != GetEnhancedBool("net_dl_speed_boost"));
-		}) | rpl::start_with_next([=](bool toggled) {
-			SetEnhancedValue("net_dl_speed_boost", toggled);
-			EnhancedSettings::Write();
-			Core::Restart();
-		}, container->lifetime());
-
 		AddSkip(container);
 	}
 
@@ -513,12 +496,6 @@ namespace Settings {
 		AddDivider(container);
 		AddSkip(container);
 		AddSubsectionTitle(container, tr::lng_settings_other());
-
-		const auto wrap = container->add(
-				object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
-						container,
-						object_ptr<Ui::VerticalLayout>(container)));
-		const auto inner = wrap->entity();
 
 		auto hideBtn = AddButtonWithIcon(
 			container,

@@ -39,6 +39,7 @@ namespace Data {
 class CloudImage;
 class WallPaper;
 class Session;
+struct UniqueGift;
 
 enum class CallFinishReason : char {
 	Missed,
@@ -108,6 +109,7 @@ struct GiveawayStart {
 	TimeId untilDate = 0;
 	int quantity = 0;
 	int months = 0;
+	uint64 credits = 0;
 	bool all = false;
 };
 
@@ -121,22 +123,43 @@ struct GiveawayResults {
 	int winnersCount = 0;
 	int unclaimedCount = 0;
 	int months = 0;
+	uint64 credits = 0;
 	bool refunded = false;
 	bool all = false;
 };
 
 enum class GiftType : uchar {
 	Premium, // count - months
-	Stars, // count - stars
+	Credits, // count - credits
+	StarGift, // count - stars
 };
 
 struct GiftCode {
 	QString slug;
+	uint64 stargiftId = 0;
+	DocumentData *document = nullptr;
+	std::shared_ptr<UniqueGift> unique;
+	TextWithEntities message;
 	ChannelData *channel = nullptr;
+	MsgId giveawayMsgId = 0;
+	MsgId upgradeMsgId = 0;
+	int starsConverted = 0;
+	int starsToUpgrade = 0;
+	int starsUpgradedBySender = 0;
+	int limitedCount = 0;
+	int limitedLeft = 0;
 	int count = 0;
 	GiftType type = GiftType::Premium;
-	bool viaGiveaway = false;
-	bool unclaimed = false;
+	bool viaGiveaway : 1 = false;
+	bool transferred : 1 = false;
+	bool upgradable : 1 = false;
+	bool unclaimed : 1 = false;
+	bool anonymous : 1 = false;
+	bool converted : 1 = false;
+	bool upgraded : 1 = false;
+	bool refunded : 1 = false;
+	bool upgrade : 1 = false;
+	bool saved : 1 = false;
 };
 
 class Media {
@@ -153,6 +176,7 @@ public:
 	virtual std::unique_ptr<Media> clone(not_null<HistoryItem*> parent) = 0;
 
 	virtual DocumentData *document() const;
+	virtual bool hasQualitiesList() const;
 	virtual PhotoData *photo() const;
 	virtual WebPageData *webpage() const;
 	virtual MediaWebPageFlags webpageFlags() const;
@@ -160,6 +184,7 @@ public:
 	virtual const Call *call() const;
 	virtual GameData *game() const;
 	virtual const Invoice *invoice() const;
+	virtual const GiftCode *gift() const;
 	virtual CloudImage *location() const;
 	virtual PollData *poll() const;
 	virtual const WallPaper *paper() const;
@@ -274,6 +299,7 @@ public:
 		not_null<HistoryItem*> parent,
 		not_null<DocumentData*> document,
 		bool skipPremiumEffect,
+		bool hasQualitiesList,
 		bool spoiler,
 		crl::time ttlSeconds);
 	~MediaFile();
@@ -281,6 +307,7 @@ public:
 	std::unique_ptr<Media> clone(not_null<HistoryItem*> parent) override;
 
 	DocumentData *document() const override;
+	bool hasQualitiesList() const override;
 
 	bool uploading() const override;
 	Storage::SharedMediaTypesMask sharedMediaTypes() const override;
@@ -311,6 +338,7 @@ private:
 	not_null<DocumentData*> _document;
 	QString _emoji;
 	bool _skipPremiumEffect = false;
+	bool _hasQualitiesList = false;
 	bool _spoiler = false;
 
 	// Video (unsupported) / Voice / Round.
@@ -442,6 +470,8 @@ public:
 	PhotoData *photo() const override;
 	WebPageData *webpage() const override;
 	MediaWebPageFlags webpageFlags() const override;
+
+	Storage::SharedMediaTypesMask sharedMediaTypes() const override;
 
 	bool hasReplyPreview() const override;
 	Image *replyPreview() const override;
@@ -607,7 +637,7 @@ public:
 	std::unique_ptr<Media> clone(not_null<HistoryItem*> parent) override;
 
 	[[nodiscard]] not_null<PeerData*> from() const;
-	[[nodiscard]] const GiftCode &data() const;
+	[[nodiscard]] const GiftCode *gift() const override;
 
 	TextWithEntities notificationText() const override;
 	QString pinnedTextSubstring() const override;
