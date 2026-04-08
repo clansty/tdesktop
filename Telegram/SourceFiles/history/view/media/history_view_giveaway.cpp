@@ -32,8 +32,12 @@ constexpr auto kOutlineRatio = 0.85;
 auto GenerateGiveawayStart(
 	not_null<Element*> parent,
 	not_null<Data::GiveawayStart*> data)
--> Fn<void(Fn<void(std::unique_ptr<MediaGenericPart>)>)> {
-	return [=](Fn<void(std::unique_ptr<MediaGenericPart>)> push) {
+-> Fn<void(
+		not_null<MediaGeneric*>,
+		Fn<void(std::unique_ptr<MediaGenericPart>)>)> {
+	return [=](
+			not_null<MediaGeneric*> media,
+			Fn<void(std::unique_ptr<MediaGenericPart>)> push) {
 		const auto months = data->months;
 		const auto quantity = data->quantity;
 
@@ -44,7 +48,7 @@ auto GenerateGiveawayStart(
 			return Data{
 				.sticker = packs.lookup(months),
 				.size = st::msgServiceGiftBoxStickerSize,
-				.singleTimePlayback = true,
+				.stopOnLastFrame = true,
 			};
 		};
 		push(std::make_unique<StickerWithBadgePart>(
@@ -78,7 +82,7 @@ auto GenerateGiveawayStart(
 				links));
 		};
 		pushText(
-			Ui::Text::Bold(
+			tr::bold(
 				tr::lng_prizes_title(tr::now, lt_count, quantity)),
 			st::chatGiveawayPrizesTitleMargin);
 
@@ -90,7 +94,7 @@ auto GenerateGiveawayStart(
 					quantity,
 					lt_prize,
 					TextWithEntities{ data->additionalPrize },
-					Ui::Text::RichLangValue),
+					tr::rich),
 				st::chatGiveawayPrizesMargin);
 			push(std::make_unique<TextDelimeterPart>(
 				tr::lng_prizes_additional_with(tr::now),
@@ -105,8 +109,8 @@ auto GenerateGiveawayStart(
 					tr::now,
 					lt_count,
 					data->credits,
-					Ui::Text::RichLangValue),
-				Ui::Text::RichLangValue)
+					tr::rich),
+				tr::rich)
 			: (data->credits && (quantity > 1))
 			? tr::lng_prizes_credits_about(
 				tr::now,
@@ -117,18 +121,18 @@ auto GenerateGiveawayStart(
 					tr::now,
 					lt_count,
 					data->credits,
-					Ui::Text::RichLangValue),
-				Ui::Text::RichLangValue)
+					tr::rich),
+				tr::rich)
 			: tr::lng_prizes_about(
 				tr::now,
 				lt_count,
 				quantity,
 				lt_duration,
-				Ui::Text::Bold(GiftDuration(months)),
-				Ui::Text::RichLangValue),
+				tr::bold(GiftDuration(months * 30)),
+				tr::rich),
 			st::chatGiveawayPrizesMargin);
 		pushText(
-			Ui::Text::Bold(tr::lng_prizes_participants(tr::now)),
+			tr::bold(tr::lng_prizes_participants(tr::now)),
 			st::chatGiveawayPrizesTitleMargin);
 
 		const auto hasChannel = ranges::any_of(
@@ -188,7 +192,7 @@ auto GenerateGiveawayStart(
 		}
 
 		pushText(
-			Ui::Text::Bold(tr::lng_prizes_date(tr::now)),
+			tr::bold(tr::lng_prizes_date(tr::now)),
 			(countries.empty()
 				? st::chatGiveawayNoCountriesTitleMargin
 				: st::chatGiveawayPrizesMargin));
@@ -201,8 +205,12 @@ auto GenerateGiveawayStart(
 auto GenerateGiveawayResults(
 	not_null<Element*> parent,
 	not_null<Data::GiveawayResults*> data)
--> Fn<void(Fn<void(std::unique_ptr<MediaGenericPart>)>)> {
-	return [=](Fn<void(std::unique_ptr<MediaGenericPart>)> push) {
+-> Fn<void(
+		not_null<MediaGeneric*>,
+		Fn<void(std::unique_ptr<MediaGenericPart>)>)> {
+	return [=](
+			not_null<MediaGeneric*> media,
+			Fn<void(std::unique_ptr<MediaGenericPart>)> push) {
 		const auto quantity = data->winnersCount;
 
 		using Data = StickerWithBadgePart::Data;
@@ -213,7 +221,8 @@ auto GenerateGiveawayResults(
 			return Data{
 				.sticker = packs.lookup(emoji, 0),
 				.skipTop = st::chatGiveawayWinnersTopSkip,
-				.singleTimePlayback = true,
+				.size = st::maxAnimatedEmojiSize,
+				.stopOnLastFrame = true,
 			};
 		};
 		push(std::make_unique<StickerWithBadgePart>(
@@ -250,7 +259,7 @@ auto GenerateGiveawayResults(
 		pushText(
 			(isSingleWinner
 				? tr::lng_prizes_results_title_one
-				: tr::lng_prizes_results_title)(tr::now, Ui::Text::Bold),
+				: tr::lng_prizes_results_title)(tr::now, tr::bold),
 			st::chatGiveawayPrizesTitleMargin);
 		const auto showGiveawayHandler = JumpToMessageClickHandler(
 			data->channel,
@@ -262,14 +271,14 @@ auto GenerateGiveawayResults(
 				lt_count,
 				quantity,
 				lt_link,
-				Ui::Text::Link(tr::lng_prizes_results_link(tr::now)),
-				Ui::Text::RichLangValue),
+				tr::link(tr::lng_prizes_results_link(tr::now)),
+				tr::rich),
 			st::chatGiveawayPrizesMargin,
 			{ { 1, showGiveawayHandler } });
 		pushText(
 			(isSingleWinner
 				? tr::lng_prizes_results_winner
-				: tr::lng_prizes_results_winners)(tr::now, Ui::Text::Bold),
+				: tr::lng_prizes_results_winners)(tr::now, tr::bold),
 			st::chatGiveawayPrizesTitleMargin);
 
 		push(std::make_unique<PeerBubbleListPart>(
@@ -277,7 +286,7 @@ auto GenerateGiveawayResults(
 			data->winners));
 		if (data->winnersCount > data->winners.size()) {
 			pushText(
-				Ui::Text::Bold(tr::lng_prizes_results_more(
+				tr::bold(tr::lng_prizes_results_more(
 					tr::now,
 					lt_count,
 					data->winnersCount - data->winners.size())),

@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "chat_helpers/stickers_list_widget.h"
 #include "chat_helpers/gifs_list_widget.h"
 #include "menu/menu_send.h"
+#include "ui/controls/swipe_handler.h"
 #include "ui/controls/tabbed_search.h"
 #include "ui/text/text_utilities.h"
 #include "ui/widgets/buttons.h"
@@ -344,7 +345,7 @@ std::unique_ptr<Ui::TabbedSearch> MakeSearch(
 	});
 
 	result->queryValue(
-	) | rpl::skip(1) | rpl::start_with_next(
+	) | rpl::skip(1) | rpl::on_next(
 		std::move(callback),
 		parent->lifetime());
 
@@ -438,7 +439,7 @@ TabbedSelector::TabbedSelector(
 		const auto widget = tab.widget();
 
 		widget->scrollToRequests(
-		) | rpl::start_with_next([=, tab = &tab](int y) {
+		) | rpl::on_next([=, tab = &tab](int y) {
 			if (tab == currentTab()) {
 				scrollToY(y);
 			} else {
@@ -447,7 +448,7 @@ TabbedSelector::TabbedSelector(
 		}, widget->lifetime());
 
 		widget->disableScrollRequests(
-		) | rpl::start_with_next([=, tab = &tab](bool disabled) {
+		) | rpl::on_next([=, tab = &tab](bool disabled) {
 			if (tab == currentTab()) {
 				_scroll->disableScroll(disabled);
 			}
@@ -457,9 +458,9 @@ TabbedSelector::TabbedSelector(
 	rpl::merge(
 		(hasStickersTab()
 			? stickers()->scrollUpdated() | rpl::map_to(0)
-			: rpl::never<int>() | rpl::type_erased()),
+			: rpl::never<int>() | rpl::type_erased),
 		_scroll->scrollTopChanges()
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		handleScroll();
 	}, lifetime());
 
@@ -478,17 +479,22 @@ TabbedSelector::TabbedSelector(
 			Data::PeerUpdate::Flag::Rights
 		) | rpl::filter([=](const Data::PeerUpdate &update) {
 			return (update.peer.get() == _currentPeer);
-		}) | rpl::start_with_next([=] {
+		}) | rpl::on_next([=] {
 			checkRestrictedPeer();
 		}, lifetime());
 	}
 
 	if (hasStickersTab()) {
 		session().data().stickers().stickerSetInstalled(
-		) | rpl::start_with_next([=](uint64 setId) {
+		) | rpl::on_next([=](uint64 setId) {
 			_tabsSlider->setActiveSection(indexByType(SelectorTab::Stickers));
 			stickers()->showStickerSet(setId);
-			_showRequests.fire({});
+			if (_currentPeer
+				&& Data::CanSend(
+					_currentPeer,
+					ChatRestriction::SendStickers)) {
+				_showRequests.fire({});
+			}
 		}, lifetime());
 
 		rpl::merge(
@@ -496,13 +502,13 @@ TabbedSelector::TabbedSelector(
 			session().data().stickers().updated(hasMasksTab()
 				? Data::StickersType::Masks
 				: Data::StickersType::Stickers)
-		) | rpl::start_with_next([=] {
+		) | rpl::on_next([=] {
 			refreshStickers();
 		}, lifetime());
 	}
 
 	style::PaletteChanged(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		_panelRounding = Ui::PrepareCornerPixmaps(
 			st::emojiPanRadius,
 			_st.bg);
@@ -513,22 +519,77 @@ TabbedSelector::TabbedSelector(
 
 	if (hasEmojiTab() && _mode == Mode::Full) {
 		session().data().stickers().emojiSetInstalled(
-		) | rpl::start_with_next([=](uint64 setId) {
+		) | rpl::on_next([=](uint64 setId) {
 			_tabsSlider->setActiveSection(indexByType(SelectorTab::Emoji));
 			emoji()->showSet(setId);
-			_showRequests.fire({});
+			if (_currentPeer && Data::CanSendTexts(_currentPeer)) {
+				_showRequests.fire({});
+			}
 		}, lifetime());
 	}
 	if (hasEmojiTab()) {
 		emoji()->refreshEmoji();
 	}
-	//setAttribute(Qt::WA_AcceptTouchEvents);
 	setAttribute(Qt::WA_OpaquePaintEvent, false);
 	showAll();
 	hide();
 }
 
 TabbedSelector::~TabbedSelector() = default;
+
+void TabbedSelector::reinstallSwipe(not_null<Ui::RpWidget*> widget) {
+	_swipeLifetime.destroy();
+
+	auto update = [=](Ui::Controls::SwipeContextData data) {
+		if (data.translation != 0) {
+			if (!_swipeBackData.callback) {
+				_swipeBackData = Ui::Controls::SetupSwipeBack(
+					this,
+					[=]() -> std::pair<QColor, QColor> {
+						return {
+							st::historyForwardChooseBg->c,
+							st::historyForwardChooseFg->c,
+						};
+					},
+					data.translation < 0);
+			}
+			_swipeBackData.callback(data);
+			return;
+		} else if (_swipeBackData.lifetime) {
+			_swipeBackData = {};
+		}
+	};
+
+	auto init = [=](int, Qt::LayoutDirection direction) {
+		if (!_tabsSlider) {
+			return Ui::Controls::SwipeHandlerFinishData();
+		}
+		const auto activeSection = _tabsSlider->activeSection();
+		const auto isToLeft = direction == Qt::RightToLeft;
+		if ((isToLeft && activeSection > 0)
+			|| (!isToLeft && activeSection < _tabs.size() - 1)) {
+			return Ui::Controls::DefaultSwipeBackHandlerFinishData([=] {
+				if (_tabsSlider
+					&& _tabsSlider->activeSection() == activeSection) {
+					_swipeBackData = {};
+					_tabsSlider->setActiveSection(isToLeft
+						? activeSection - 1
+						: activeSection + 1);
+				}
+			});
+		}
+		return Ui::Controls::SwipeHandlerFinishData();
+	};
+
+	Ui::Controls::SetupSwipeHandler({
+		.widget = widget,
+		.scroll = _scroll.data(),
+		.update = std::move(update),
+		.init = std::move(init),
+		.dontStart = nullptr,
+		.onLifetime = &_swipeLifetime,
+	});
+}
 
 const style::EmojiPan &TabbedSelector::st() const {
 	return _st;
@@ -648,7 +709,7 @@ rpl::producer<FileChosen> TabbedSelector::customEmojiChosen() const {
 
 rpl::producer<FileChosen> TabbedSelector::fileChosen() const {
 	auto never = rpl::never<FileChosen>(
-	) | rpl::type_erased();
+	) | rpl::type_erased;
 	return rpl::merge(
 		hasStickersTab() ? stickers()->chosen() : never,
 		hasGifsTab() ? gifs()->fileChosen() : never,
@@ -1017,7 +1078,7 @@ void TabbedSelector::setCurrentPeer(PeerData *peer) {
 }
 
 void TabbedSelector::provideRecentEmoji(
-		const std::vector<DocumentId> &customRecentList) {
+		const std::vector<EmojiStatusId> &customRecentList) {
 	for (const auto &tab : _tabs) {
 		if (tab.type() == SelectorTab::Emoji) {
 			const auto emoji = static_cast<EmojiListWidget*>(tab.widget());
@@ -1056,13 +1117,12 @@ void TabbedSelector::checkRestrictedPeer() {
 			_restrictedLabel.create(
 				this,
 				rpl::single(error.boostsToLift
-					? Ui::Text::Link(error.text)
+					? tr::link(error.text)
 					: TextWithEntities{ error.text }),
 				st::stickersRestrictedLabel);
 			const auto lifting = error.boostsToLift;
 			_restrictedLabel->setClickHandlerFilter([=](auto...) {
-				const auto window = show->resolveWindow(
-					ChatHelpers::WindowUsage::PremiumPromo);
+				const auto window = show->resolveWindow();
 				window->resolveBoostState(peer->asChannel(), lifting);
 				return false;
 			});
@@ -1151,7 +1211,7 @@ void TabbedSelector::createTabsSlider() {
 
 	_tabsSlider->setActiveSectionFast(indexByType(_currentTabType));
 	_tabsSlider->sectionActivated(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		switchTab();
 	}, lifetime());
 }
@@ -1302,6 +1362,10 @@ void TabbedSelector::setWidgetToScrollArea() {
 	inner->moveToLeft(0, 0);
 	inner->show();
 
+	if (_tabs.size() > 1) {
+		reinstallSwipe(inner);
+	}
+
 	_scroll->disableScroll(false);
 	scrollToY(currentTab()->getScrollTop());
 	handleScroll();
@@ -1414,13 +1478,13 @@ void TabbedSelector::Inner::disableScroll(bool disabled) {
 
 void TabbedSelector::Inner::checkHideWithBox(
 		object_ptr<Ui::BoxContent> box) {
-	const auto raw = QPointer<Ui::BoxContent>(box.data());
+	const auto raw = base::make_weak(box.data());
 	_show->showBox(std::move(box));
 	if (!raw) {
 		return;
 	}
 	_preventHideWithBox = true;
-	connect(raw, &QObject::destroyed, this, [=] {
+	connect(raw.get(), &QObject::destroyed, this, [=] {
 		_preventHideWithBox = false;
 		_checkForHide.fire({});
 	});
@@ -1429,12 +1493,15 @@ void TabbedSelector::Inner::checkHideWithBox(
 void TabbedSelector::Inner::paintEmptySearchResults(
 		Painter &p,
 		const style::icon &icon,
-		const QString &text) const {
+		const QString &text,
+		bool skipIcon) const {
 	const auto iconLeft = (width() - icon.width()) / 2;
 	const auto iconTop = std::max(
 		(height() / 3) - (icon.height() / 2),
 		st::normalFont->height);
-	icon.paint(p, iconLeft, iconTop, width());
+	if (!skipIcon) {
+		icon.paint(p, iconLeft, iconTop, width());
+	}
 
 	const auto textWidth = st::normalFont->width(text);
 	const auto textTop = std::min(

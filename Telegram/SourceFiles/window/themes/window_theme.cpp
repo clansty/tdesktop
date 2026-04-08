@@ -74,7 +74,8 @@ inline bool AreTestingTheme() {
 	return Ui::ReadBackgroundImage(
 		u":/gui/art/background.tgv"_q,
 		QByteArray(),
-		true);
+		true
+	).image;
 }
 
 [[nodiscard]] bool GoodImageFormatAndSize(const QImage &image) {
@@ -494,7 +495,11 @@ void ChatBackground::setThemeData(QImage &&themeImage, bool themeTile) {
 void ChatBackground::initialRead() {
 	if (started()) {
 		return;
-	} else if (!Local::readBackground()) {
+	}
+	if (_themeObject.pathAbsolute.isEmpty() && !nightMode()) {
+		applyDefaultThemeAccentColorizer();
+	}
+	if (!Local::readBackground()) {
 		set(Data::ThemeWallPaper());
 	}
 	if (_localStoredTileDayValue) {
@@ -509,7 +514,7 @@ void ChatBackground::start() {
 	saveAdjustableColors();
 
 	_updates.events(
-	) | rpl::start_with_next([=](const BackgroundUpdate &update) {
+	) | rpl::on_next([=](const BackgroundUpdate &update) {
 		refreshThemeWatcher();
 		if (update.paletteChanged()) {
 			style::NotifyPaletteChanged();
@@ -521,33 +526,68 @@ void ChatBackground::start() {
 	Core::App().domain().activeSessionValue(
 	) | rpl::filter([=](Main::Session *session) {
 		return session != _session;
-	}) | rpl::start_with_next([=](Main::Session *session) {
+	}) | rpl::on_next([=](Main::Session *session) {
 		_session = session;
 		checkUploadWallPaper();
 	}, _lifetime);
 
+	rpl::combine(
 #if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
-	rpl::single(
-		QGuiApplication::styleHints()->colorScheme()
-	) | rpl::filter(
-		rpl::mappers::_1 != Qt::ColorScheme::Unknown
-	) | rpl::then(
-		base::qt_signal_producer(
-			QGuiApplication::styleHints(),
-			&QStyleHints::colorSchemeChanged
+		rpl::single(
+			QGuiApplication::styleHints()->colorScheme()
+		) | rpl::then(
+			base::qt_signal_producer(
+				QGuiApplication::styleHints(),
+				&QStyleHints::colorSchemeChanged
+			)
+		),
+#endif // Qt >= 6.5.0
+		rpl::single(
+			QGuiApplication::palette()
+		) | rpl::then(
+			base::qt_signal_producer(
+				qApp,
+				&QGuiApplication::paletteChanged
+			)
 		)
-	) | rpl::map([](Qt::ColorScheme colorScheme) {
-		return colorScheme == Qt::ColorScheme::Unknown
-			? std::nullopt
-			: std::make_optional(colorScheme == Qt::ColorScheme::Dark);
-	}) | rpl::start_with_next([](std::optional<bool> dark) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+	) | rpl::map([](Qt::ColorScheme colorScheme, const QPalette &palette) {
+		return colorScheme != Qt::ColorScheme::Unknown
+			? colorScheme == Qt::ColorScheme::Dark
+#else // Qt >= 6.5.0
+	) | rpl::map([](const QPalette &palette) {
+		const auto dark = Platform::IsDarkMode();
+		return dark
+			? *dark
+#endif // Qt < 6.5.0
+			: palette.windowText().color().lightness()
+				> palette.window().color().lightness();
+	}) | rpl::distinct_until_changed(
+	) | rpl::on_next([](bool dark) {
 		Core::App().settings().setSystemDarkMode(dark);
 	}, _lifetime);
-#else // Qt >= 6.5.0
-	if (const auto dark = Platform::IsDarkMode()) {
-		Core::App().settings().setSystemDarkMode(dark);
-	}
-#endif // Qt < 6.5.0
+
+	rpl::single(
+		QGuiApplication::palette()
+	) | rpl::then(
+		base::qt_signal_producer(
+			qApp,
+			&QGuiApplication::paletteChanged
+		)
+	) | rpl::on_next([=] {
+		const auto &settings = Core::App().settings();
+		if (!settings.systemAccentColorEnabled()
+			|| _themeObject.cloud.id
+			|| editingTheme()) {
+			return;
+		}
+		const auto path = _themeObject.pathAbsolute;
+		if (!IsEmbeddedTheme(path)) {
+			return;
+		}
+		ApplyDefaultWithPath(path);
+		KeepApplied();
+	}, _lifetime);
 }
 
 void ChatBackground::refreshThemeWatcher() {
@@ -598,7 +638,7 @@ void ChatBackground::checkUploadWallPaper() {
 		return;
 	}
 	_wallPaperUploadLifetime = _session->uploader().documentReady(
-	) | rpl::start_with_next([=](const Storage::UploadedMedia &data) {
+	) | rpl::on_next([=](const Storage::UploadedMedia &data) {
 		if (data.fullId != _wallPaperUploadId) {
 			return;
 		}
@@ -1050,13 +1090,17 @@ void ChatBackground::setTestingTheme(Instance &&theme) {
 }
 
 void ChatBackground::setTestingDefaultTheme() {
-	style::main_palette::reset(ColorizerForTheme(QString()));
-	saveAdjustableColors();
+	applyDefaultThemeAccentColorizer();
 
 	saveForRevert();
 	set(Data::details::TestingDefaultWallPaper());
 	setTile(false);
 	_updates.fire({ BackgroundUpdate::Type::TestingTheme, tile() });
+}
+
+void ChatBackground::applyDefaultThemeAccentColorizer() {
+	style::main_palette::reset(ColorizerForTheme(QString()));
+	saveAdjustableColors();
 }
 
 void ChatBackground::keepApplied(const Object &object, bool write) {
@@ -1635,7 +1679,7 @@ std::unique_ptr<Ui::ChatTheme> DefaultChatThemeOn(rpl::lifetime &lifetime) {
 
 	push();
 	Background()->updates(
-	) | rpl::start_with_next([=](const BackgroundUpdate &update) {
+	) | rpl::on_next([=](const BackgroundUpdate &update) {
 		if (update.type == BackgroundUpdate::Type::New
 			|| update.type == BackgroundUpdate::Type::Changed) {
 			push();

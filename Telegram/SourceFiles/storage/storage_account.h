@@ -53,6 +53,7 @@ enum class StartResult : uchar;
 
 struct MessageDraft {
 	FullReplyTo reply;
+	SuggestOptions suggest;
 	TextWithTags textWithTags;
 	Data::WebPageDraft webpage;
 };
@@ -76,6 +77,7 @@ public:
 	}
 
 	[[nodiscard]] QString tempDirectory() const;
+	[[nodiscard]] QString supportModePath() const;
 
 	[[nodiscard]] MTP::AuthKeyPtr peekLegacyLocalKey() const {
 		return _localKey;
@@ -149,6 +151,9 @@ public:
 	void writeExportSettings(const Export::Settings &settings);
 	[[nodiscard]] Export::Settings readExportSettings();
 
+	void setMediaLastPlaybackPosition(DocumentId id, crl::time time);
+	[[nodiscard]] crl::time mediaLastPlaybackPosition(DocumentId id) const;
+
 	void writeSearchSuggestionsDelayed();
 	void writeSearchSuggestionsIfNeeded();
 	void writeSearchSuggestions();
@@ -163,12 +168,32 @@ public:
 		const QByteArray& serialized,
 		int32 streamVersion);
 
-	void markBotTrustedOpenGame(PeerId botId);
-	[[nodiscard]] bool isBotTrustedOpenGame(PeerId botId);
-	void markBotTrustedPayment(PeerId botId);
-	[[nodiscard]] bool isBotTrustedPayment(PeerId botId);
-	void markBotTrustedOpenWebView(PeerId botId);
-	[[nodiscard]] bool isBotTrustedOpenWebView(PeerId botId);
+	void markPeerTrustedOpenGame(PeerId peerId);
+	[[nodiscard]] bool isPeerTrustedOpenGame(PeerId peerId);
+	void markPeerTrustedPayment(PeerId peerId);
+	[[nodiscard]] bool isPeerTrustedPayment(PeerId peerId);
+	void markPeerTrustedOpenWebView(PeerId peerId);
+	[[nodiscard]] bool isPeerTrustedOpenWebView(PeerId peerId);
+	void markPeerTrustedPayForMessage(PeerId peerId, int starsPerMessage);
+	[[nodiscard]] bool isPeerTrustedPayForMessage(
+		PeerId peerId,
+		int starsPerMessage);
+	[[nodiscard]] bool peerTrustedPayForMessageRead() const;
+	[[nodiscard]] bool hasPeerTrustedPayForMessageEntry(PeerId peerId) const;
+	void clearPeerTrustedPayForMessage(PeerId peerId);
+
+	template <typename Type, typename Other>
+	void writePref(std::string_view key, Other &&value) {
+		writePrefImpl<Type>(key, std::forward<Other>(value));
+	}
+	void clearPref(std::string_view key);
+
+	template <typename Type, typename Other = Type>
+	[[nodiscard]] Type readPref(
+			std::string_view key,
+			Other &&fallback = Type()) {
+		return readPrefImpl<Type>(key).value_or(std::forward<Other>(fallback));
+	}
 
 	void enforceModernStorageIdBots();
 	[[nodiscard]] Webview::StorageId resolveStorageIdBots();
@@ -179,6 +204,9 @@ public:
 
 	[[nodiscard]] QByteArray readInlineBotsDownloads();
 	void writeInlineBotsDownloads(const QByteArray &bytes);
+
+	void writeBotStorage(PeerId botId, const QByteArray &serialized);
+	[[nodiscard]] QByteArray readBotStorage(PeerId botId);
 
 	[[nodiscard]] bool encrypt(
 		const void *src,
@@ -199,12 +227,12 @@ private:
 		IncorrectPasscode,
 		Failed,
 	};
-	enum class BotTrustFlag : uchar {
+	enum class PeerTrustFlag : uchar {
 		NoOpenGame        = (1 << 0),
 		Payment           = (1 << 1),
 		OpenWebView       = (1 << 2),
 	};
-	friend inline constexpr bool is_flag_type(BotTrustFlag) { return true; };
+	friend inline constexpr bool is_flag_type(PeerTrustFlag) { return true; };
 
 	[[nodiscard]] base::flat_set<QString> collectGoodNames() const;
 	[[nodiscard]] auto prepareReadSettingsContext() const
@@ -222,6 +250,10 @@ private:
 	void writeLocations();
 	void writeLocationsQueued();
 	void writeLocationsDelayed();
+
+	void readPrefs();
+	void writePrefs();
+	void writePrefsDelayed();
 
 	std::unique_ptr<Main::SessionSettings> readSessionSettings();
 	void writeSessionSettings(Main::SessionSettings *stored);
@@ -257,12 +289,25 @@ private:
 		Data::StickersSetFlags readingFlags = 0);
 	void importOldRecentStickers();
 
-	void readTrustedBots();
-	void writeTrustedBots();
+	void readTrustedPeers();
+	void writeTrustedPeers();
+
+	void readMediaLastPlaybackPositions();
+	void writeMediaLastPlaybackPositions();
 
 	std::optional<RecentHashtagPack> saveRecentHashtags(
 		Fn<RecentHashtagPack()> getPack,
 		const QString &text);
+
+	template <typename Type>
+	void writePrefImpl(std::string_view key, Type value);
+
+	template <typename Type>
+	[[nodiscard]] std::optional<Type> readPrefImpl(std::string_view key);
+
+	void writePrefGeneric(std::string_view key, const QByteArray &value);
+	[[nodiscard]] std::optional<QByteArray> readPrefGeneric(
+		std::string_view key);
 
 	const not_null<Main::Account*> _owner;
 	const QString _dataName;
@@ -279,6 +324,8 @@ private:
 	base::flat_map<
 		not_null<History*>,
 		base::flat_map<Data::DraftKey, MessageDraftSource>> _draftSources;
+	base::flat_map<PeerId, FileKey> _botStoragesMap;
+	base::flat_map<PeerId, bool> _botStoragesNotReadMap;
 
 	QMultiMap<MediaKey, Core::FileLocation> _fileLocations;
 	QMap<QString, QPair<MediaKey, Core::FileLocation>> _fileLocationPairs;
@@ -287,8 +334,9 @@ private:
 	QByteArray _downloadsSerialized;
 	Fn<std::optional<QByteArray>()> _downloadsSerialize;
 
+	FileKey _prefsKey = 0;
 	FileKey _locationsKey = 0;
-	FileKey _trustedBotsKey = 0;
+	FileKey _trustedPeersKey = 0;
 	FileKey _installedStickersKey = 0;
 	FileKey _featuredStickersKey = 0;
 	FileKey _recentStickersKey = 0;
@@ -310,28 +358,37 @@ private:
 	FileKey _searchSuggestionsKey = 0;
 	FileKey _roundPlaceholderKey = 0;
 	FileKey _inlineBotsDownloadsKey = 0;
+	FileKey _mediaLastPlaybackPositionsKey = 0;
 
 	qint64 _cacheTotalSizeLimit = 0;
 	qint64 _cacheBigFileTotalSizeLimit = 0;
 	qint32 _cacheTotalTimeLimit = 0;
 	qint32 _cacheBigFileTotalTimeLimit = 0;
 
-	base::flat_map<PeerId, base::flags<BotTrustFlag>> _trustedBots;
-	bool _trustedBotsRead = false;
+	base::flat_map<PeerId, base::flags<PeerTrustFlag>> _trustedPeers;
+	base::flat_map<PeerId, int> _trustedPayPerMessage;
+	bool _trustedPeersRead = false;
 	bool _readingUserSettings = false;
 	bool _recentHashtagsAndBotsWereRead = false;
 	bool _searchSuggestionsRead = false;
 	bool _inlineBotsDownloadsRead = false;
+	bool _mediaLastPlaybackPositionsRead = false;
+
+	std::vector<std::pair<DocumentId, crl::time>> _mediaLastPlaybackPosition;
 
 	Webview::StorageId _webviewStorageIdBots;
 	Webview::StorageId _webviewStorageIdOther;
 
+	base::flat_map<QByteArray, QByteArray> _prefs;
+
 	int _oldMapVersion = 0;
 
 	base::Timer _writeMapTimer;
+	base::Timer _writePrefsTimer;
 	base::Timer _writeLocationsTimer;
 	base::Timer _writeSearchSuggestionsTimer;
 	bool _mapChanged = false;
+	bool _prefsChanged = false;
 	bool _locationsChanged = false;
 
 	QImage _roundPlaceholder;

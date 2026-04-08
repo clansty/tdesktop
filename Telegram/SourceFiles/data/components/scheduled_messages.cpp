@@ -59,6 +59,7 @@ constexpr auto kRequestTimeLimit = 60 * crl::time(1000);
 			data.vid(),
 			data.vfrom_id() ? *data.vfrom_id() : MTPPeer(),
 			data.vpeer_id(),
+			data.vsaved_peer_id() ? *data.vsaved_peer_id() : MTPPeer(),
 			data.vreply_to() ? *data.vreply_to() : MTPMessageReplyHeader(),
 			data.vdate(),
 			data.vaction(),
@@ -70,6 +71,7 @@ constexpr auto kRequestTimeLimit = 60 * crl::time(1000);
 			data.vid(),
 			data.vfrom_id() ? *data.vfrom_id() : MTPPeer(),
 			MTPint(), // from_boosts_applied
+			MTPstring(), // from_rank
 			data.vpeer_id(),
 			data.vsaved_peer_id() ? *data.vsaved_peer_id() : MTPPeer(),
 			data.vfwd_from() ? *data.vfwd_from() : MTPMessageFwdHeader(),
@@ -95,7 +97,13 @@ constexpr auto kRequestTimeLimit = 60 * crl::time(1000);
 			MTPint(), // quick_reply_shortcut_id
 			MTP_long(data.veffect().value_or_empty()), // effect
 			data.vfactcheck() ? *data.vfactcheck() : MTPFactCheck(),
-			MTP_int(data.vreport_delivery_until_date().value_or_empty()));
+			MTP_int(data.vreport_delivery_until_date().value_or_empty()),
+			MTP_long(data.vpaid_message_stars().value_or_empty()),
+			(data.vsuggested_post()
+				? *data.vsuggested_post()
+				: MTPSuggestedPost()),
+			MTP_int(data.vschedule_repeat_period().value_or_empty()),
+			MTP_string(qs(data.vsummary_from_language().value_or_empty())));
 	});
 }
 
@@ -111,7 +119,7 @@ ScheduledMessages::ScheduledMessages(not_null<Main::Session*> session)
 	_session->data().itemRemoved(
 	) | rpl::filter([](not_null<const HistoryItem*> item) {
 		return item->isScheduled();
-	}) | rpl::start_with_next([=](not_null<const HistoryItem*> item) {
+	}) | rpl::on_next([=](not_null<const HistoryItem*> item) {
 		remove(item);
 	}, _lifetime);
 }
@@ -244,6 +252,7 @@ void ScheduledMessages::sendNowSimpleMessage(
 			update.vid(),
 			peerToMTP(local->from()->id),
 			MTPint(), // from_boosts_applied
+			MTPstring(), // from_rank
 			peerToMTP(history->peer->id),
 			MTPPeer(), // saved_peer_id
 			MTPMessageFwdHeader(),
@@ -269,7 +278,11 @@ void ScheduledMessages::sendNowSimpleMessage(
 			MTPint(), // quick_reply_shortcut_id
 			MTP_long(local->effectId()), // effect
 			MTPFactCheck(),
-			MTPint()), // report_delivery_until_date
+			MTPint(), // report_delivery_until_date
+			MTPlong(), // paid_message_stars
+			MTPSuggestedPost(),
+			MTPint(), // schedule_repeat_period
+			MTPstring()), // summary_from_language
 		localFlags,
 		NewMessageType::Unread);
 
@@ -476,7 +489,7 @@ void ScheduledMessages::request(not_null<History*> history) {
 		? countListHash(i->second)
 		: uint64(0);
 	request.requestId = _session->api().request(
-		MTPmessages_GetScheduledHistory(peer->input, MTP_long(hash))
+		MTPmessages_GetScheduledHistory(peer->input(), MTP_long(hash))
 	).done([=](const MTPmessages_Messages &result) {
 		parse(history, result);
 	}).fail([=] {

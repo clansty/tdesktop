@@ -112,6 +112,10 @@ void ChatCreateDone(
 					show,
 					chat,
 					CollectForbiddenUsers(&chat->session(), result));
+				chat->owner().addRecentJoinChat({
+					.fromPeerId = chat->id,
+					.joinedPeerId = chat->id,
+				});
 			}
 		};
 	if (!success) {
@@ -123,7 +127,7 @@ void ChatCreateDone(
 void MustBePublicDestroy(not_null<ChannelData*> channel) {
 	const auto session = &channel->session();
 	session->api().request(MTPchannels_DeleteChannel(
-		channel->inputChannel
+		channel->inputChannel()
 	)).done([=](const MTPUpdates &result) {
 		session->api().applyUpdates(result);
 	}).send();
@@ -157,7 +161,7 @@ void MustBePublicFailed(
 TextWithEntities PeerFloodErrorText(
 		not_null<Main::Session*> session,
 		PeerFloodType type) {
-	const auto link = Ui::Text::Link(
+	const auto link = tr::link(
 		tr::lng_cant_more_info(tr::now),
 		session->createInternalLinkFull(u"spambot"_q));
 	return ((type == PeerFloodType::InviteGroup)
@@ -166,7 +170,7 @@ TextWithEntities PeerFloodErrorText(
 			tr::now,
 			lt_more_info,
 			link,
-			Ui::Text::WithEntities);
+			tr::marked);
 }
 
 void ShowAddParticipantsError(
@@ -195,16 +199,16 @@ void ShowAddParticipantsError(
 			&& channel->canAddAdmins()) {
 			const auto makeAdmin = [=](Fn<void()> close) {
 				const auto user = forbidden.users.front();
-				const auto weak = std::make_shared<QPointer<EditAdminBox>>();
+				const auto weak = std::make_shared<base::weak_qptr<EditAdminBox>>();
 				const auto done = [=](auto&&...) {
-					if (const auto strong = weak->data()) {
+					if (const auto strong = weak->get()) {
 						strong->uiShow()->showToast(
 							tr::lng_box_done(tr::now));
 						strong->closeBox();
 					}
 				};
 				const auto fail = [=] {
-					if (const auto strong = weak->data()) {
+					if (const auto strong = weak->get()) {
 						strong->closeBox();
 					}
 				};
@@ -321,9 +325,9 @@ void AddContactBox::prepare() {
 
 	const auto submitted = [=] { submit(); };
 	_first->submits(
-	) | rpl::start_with_next(submitted, _first->lifetime());
+	) | rpl::on_next(submitted, _first->lifetime());
 	_last->submits(
-	) | rpl::start_with_next(submitted, _last->lifetime());
+	) | rpl::on_next(submitted, _last->lifetime());
 	connect(_phone, &Ui::PhoneInput::submitted, [=] { submit(); });
 
 	setDimensions(
@@ -447,7 +451,7 @@ void AddContactBox::save() {
 		firstName = lastName;
 		lastName = QString();
 	}
-	const auto weak = Ui::MakeWeak(this);
+	const auto weak = base::make_weak(this);
 	const auto session = _session;
 	_sentName = firstName;
 	_contactId = base::RandomValue<uint64>();
@@ -455,10 +459,12 @@ void AddContactBox::save() {
 		MTP_vector<MTPInputContact>(
 			1,
 			MTP_inputPhoneContact(
+				MTP_flags(0),
 				MTP_long(_contactId),
 				MTP_string(phone),
 				MTP_string(firstName),
-				MTP_string(lastName)))
+				MTP_string(lastName),
+				MTPTextWithEntities())) // note
 	)).done(crl::guard(weak, [=](
 			const MTPcontacts_ImportedContacts &result) {
 		const auto &data = result.data();
@@ -560,7 +566,7 @@ void GroupInfoBox::prepare() {
 		&_navigation->parentController()->window(),
 		Ui::UserpicButton::Role::ChoosePhoto,
 		st::defaultUserpicButton,
-		(_type == Type::Forum));
+		(_type == Type::Forum) ? Ui::PeerUserpicShape::Forum : Ui::PeerUserpicShape::Auto);
 	_photo->showCustomOnChosen();
 	_title.create(
 		this,
@@ -572,7 +578,8 @@ void GroupInfoBox::prepare() {
 	_title->setMaxLength(Ui::EditPeer::kMaxGroupChannelTitle);
 	_title->setInstantReplaces(Ui::InstantReplaces::Default());
 	_title->setInstantReplacesEnabled(
-		Core::App().settings().replaceEmojiValue());
+		Core::App().settings().replaceEmojiValue(),
+		Core::App().settings().systemTextReplaceValue());
 	Ui::Emoji::SuggestionsController::Init(
 		getDelegate()->outerContainer(),
 		_title,
@@ -588,18 +595,19 @@ void GroupInfoBox::prepare() {
 		_description->setMaxLength(Ui::EditPeer::kMaxChannelDescription);
 		_description->setInstantReplaces(Ui::InstantReplaces::Default());
 		_description->setInstantReplacesEnabled(
-			Core::App().settings().replaceEmojiValue());
+			Core::App().settings().replaceEmojiValue(),
+			Core::App().settings().systemTextReplaceValue());
 		_description->setSubmitSettings(
 			Core::App().settings().sendSubmitWay());
 
 		_description->heightChanges(
-		) | rpl::start_with_next([=] {
+		) | rpl::on_next([=] {
 			descriptionResized();
 		}, _description->lifetime());
 		_description->submits(
-		) | rpl::start_with_next([=] { submit(); }, _description->lifetime());
+		) | rpl::on_next([=] { submit(); }, _description->lifetime());
 		_description->cancelled(
-		) | rpl::start_with_next([=] {
+		) | rpl::on_next([=] {
 			closeBox();
 		}, _description->lifetime());
 
@@ -609,7 +617,7 @@ void GroupInfoBox::prepare() {
 			&_navigation->session());
 	}
 	_title->submits(
-	) | rpl::start_with_next([=] { submitName(); }, _title->lifetime());
+	) | rpl::on_next([=] { submitName(); }, _title->lifetime());
 
 	addButton(
 		((_type != Type::Group || _canAddBot)
@@ -717,7 +725,7 @@ TimeId GroupInfoBox::ttlPeriod() const {
 }
 
 void GroupInfoBox::createGroup(
-		QPointer<Ui::BoxContent> selectUsersBox,
+		base::weak_qptr<Ui::BoxContent> selectUsersBox,
 		const QString &title,
 		const std::vector<not_null<PeerData*>> &users) {
 	if (_creationRequestId) {
@@ -730,7 +738,7 @@ void GroupInfoBox::createGroup(
 		auto user = peer->asUser();
 		Assert(user != nullptr);
 		if (!user->isSelf()) {
-			inputs.push_back(user->inputUser);
+			inputs.push_back(user->inputUser());
 		}
 	}
 	_creationRequestId = _api.request(MTPmessages_CreateChat(
@@ -751,8 +759,8 @@ void GroupInfoBox::createGroup(
 		_creationRequestId = 0;
 		const auto controller = _navigation->parentController();
 		if (type == u"NO_CHAT_TITLE"_q) {
-			const auto weak = Ui::MakeWeak(this);
-			if (const auto strong = selectUsersBox.data()) {
+			const auto weak = base::make_weak(this);
+			if (const auto strong = selectUsersBox.get()) {
 				strong->closeBox();
 			}
 			if (weak) {
@@ -793,10 +801,10 @@ void GroupInfoBox::submit() {
 	} else if (_canAddBot) {
 		createGroup(nullptr, title, { not_null<PeerData*>(_canAddBot) });
 	} else {
-		auto initBox = [title, weak = Ui::MakeWeak(this)](
+		auto initBox = [title, weak = base::make_weak(this)](
 				not_null<PeerListBox*> box) {
 			auto create = [box, title, weak] {
-				if (const auto strong = weak.data()) {
+				if (const auto strong = weak.get()) {
 					strong->createGroup(
 						box.get(),
 						title,
@@ -915,7 +923,7 @@ void GroupInfoBox::checkInviteLink() {
 		_createdChannel->session().changes().peerUpdates(
 			_createdChannel,
 			Data::PeerUpdate::Flag::FullInfo
-		) | rpl::take(1) | rpl::start_with_next([=] {
+		) | rpl::take(1) | rpl::on_next([=] {
 			checkInviteLink();
 		}, lifetime());
 	}
@@ -1029,7 +1037,7 @@ void SetupChannelBox::prepare() {
 	setMouseTracking(true);
 
 	_checkRequestId = _api.request(MTPchannels_CheckUsername(
-		_channel->inputChannel,
+		_channel->inputChannel(),
 		MTP_string("preston")
 	)).fail([=](const MTP::Error &error) {
 		_checkRequestId = 0;
@@ -1058,11 +1066,11 @@ void SetupChannelBox::prepare() {
 	_channel->session().changes().peerUpdates(
 		_channel,
 		Data::PeerUpdate::Flag::InviteLinks
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		rtlupdate(_invitationLink);
 	}, lifetime());
 
-	boxClosing() | rpl::start_with_next([=] {
+	boxClosing() | rpl::on_next([=] {
 		if (!_mustBePublic) {
 			AddParticipantsBoxController::Start(_navigation, _channel);
 		}
@@ -1276,7 +1284,7 @@ void SetupChannelBox::save() {
 	const auto saveUsername = [&](const QString &link) {
 		_sentUsername = link;
 		_saveRequestId = _api.request(MTPchannels_UpdateUsername(
-			_channel->inputChannel,
+			_channel->inputChannel(),
 			MTP_string(_sentUsername)
 		)).done([=] {
 			const auto done = _done;
@@ -1360,7 +1368,7 @@ void SetupChannelBox::check() {
 	if (link.size() >= Ui::EditPeer::kMinUsernameLength) {
 		_checkUsername = link;
 		_checkRequestId = _api.request(MTPchannels_CheckUsername(
-			_channel->inputChannel,
+			_channel->inputChannel(),
 			MTP_string(link)
 		)).done([=](const MTPBool &result) {
 			_checkRequestId = 0;
@@ -1490,7 +1498,7 @@ void SetupChannelBox::showRevokePublicLinkBoxForEdit() {
 		Box(PublicLinksLimitBox, navigation, callback));
 	const auto session = &navigation->session();
 	revoker->boxClosing(
-	) | rpl::start_with_next(crl::guard(session, [=] {
+	) | rpl::on_next(crl::guard(session, [=] {
 		base::call_delayed(200, session, [=] {
 			if (*revoked) {
 				return;
@@ -1524,7 +1532,10 @@ void SetupChannelBox::firstCheckFail(UsernameResult result) {
 	}
 }
 
-EditNameBox::EditNameBox(QWidget*, not_null<UserData*> user)
+EditNameBox::EditNameBox(
+	QWidget*,
+	not_null<UserData*> user,
+	Focus focus)
 : _user(user)
 , _api(&_user->session().mtp())
 , _first(
@@ -1537,7 +1548,8 @@ EditNameBox::EditNameBox(QWidget*, not_null<UserData*> user)
 	st::defaultInputField,
 	tr::lng_signup_lastname(),
 	_user->lastName)
-, _invertOrder(langFirstNameGoesSecond()) {
+, _invertOrder(langFirstNameGoesSecond())
+, _focus(focus) {
 }
 
 void EditNameBox::prepare() {
@@ -1558,25 +1570,26 @@ void EditNameBox::prepare() {
 	_last->setMaxLength(Ui::EditPeer::kMaxUserFirstLastName);
 
 	_first->submits(
-	) | rpl::start_with_next([=] { submit(); }, _first->lifetime());
+	) | rpl::on_next([=] { submit(); }, _first->lifetime());
 	_last->submits(
-	) | rpl::start_with_next([=] { submit(); }, _last->lifetime());
-
-	_first->customTab(true);
-	_last->customTab(true);
+	) | rpl::on_next([=] { submit(); }, _last->lifetime());
 
 	_first->tabbed(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=](not_null<bool*> handled) {
 		_last->setFocus();
+		*handled = true;
 	}, _first->lifetime());
 	_last->tabbed(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=](not_null<bool*> handled) {
 		_first->setFocus();
+		*handled = true;
 	}, _last->lifetime());
 }
 
 void EditNameBox::setInnerFocus() {
-	(_invertOrder ? _last : _first)->setFocusFast();
+	const auto focusLast = (_focus == Focus::LastName)
+		|| (_focus == Focus::FirstName && _invertOrder);
+	(focusLast ? _last : _first)->setFocusFast();
 }
 
 void EditNameBox::submit() {

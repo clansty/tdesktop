@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/toast/toast.h"
 #include "core/ui_integration.h"
 #include "styles/style_chat.h"
+#include "styles/style_widgets.h"
 
 namespace HistoryView {
 
@@ -31,16 +32,11 @@ void InfoTooltip::show(
 		not_null<Main::Session*> session,
 		const TextWithEntities &text,
 		Fn<void()> hiddenCallback) {
-	const auto context = [=](not_null<QWidget*> toast) {
-		return Core::MarkedTextContext{
-			.session = session,
-			.customEmojiRepaint = [=] { toast->update(); },
-		};
-	};
 	hide(anim::type::normal);
 	_topToast = Ui::Toast::Show(parent, Ui::Toast::Config{
 		.text = text,
-		.textContext = context,
+		.textContext = Core::TextContext({ .session = session }),
+		.icon = &st::historyInfoToastIcon,
 		.st = &st::historyInfoToast,
 		.attach = RectPart::Top,
 		.duration = CountToastDuration(text),

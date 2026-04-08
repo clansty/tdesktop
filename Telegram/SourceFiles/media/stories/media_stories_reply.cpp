@@ -15,27 +15,38 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/unixtime.h"
 #include "boxes/premium_limits_box.h"
 #include "boxes/send_files_box.h"
+#include "boxes/share_box.h" // ShareBoxStyleOverrides
+#include "calls/group/calls_group_call.h"
+#include "calls/group/calls_group_messages.h"
 #include "chat_helpers/compose/compose_show.h"
 #include "chat_helpers/tabbed_selector.h"
 #include "core/file_utilities.h"
 #include "core/mime_type.h"
 #include "data/stickers/data_custom_emoji.h"
+#include "data/data_changes.h"
 #include "data/data_chat_participant_status.h"
 #include "data/data_document.h"
+#include "data/data_group_call.h"
 #include "data/data_message_reaction_id.h"
+#include "data/data_message_reactions.h"
 #include "data/data_peer_values.h"
 #include "data/data_session.h"
 #include "data/data_user.h"
 #include "history/view/controls/compose_controls_common.h"
 #include "history/view/controls/history_view_compose_controls.h"
+#include "history/view/history_view_schedule_box.h" // ScheduleBoxStyleArgs
 #include "history/history_item_helpers.h"
 #include "history/history.h"
 #include "inline_bots/inline_bot_result.h"
 #include "lang/lang_keys.h"
+#include "main/session/send_as_peers.h"
 #include "main/main_session.h"
 #include "media/stories/media_stories_controller.h"
 #include "media/stories/media_stories_stealth.h"
+#include "media/view/media_view_video_stream.h"
 #include "menu/menu_send.h"
+#include "payments/ui/payments_reaction_box.h" // MaxTopPaidDonorsShown
+#include "settings/settings_credits_graphics.h" // DarkCreditsEntryBoxStyle
 #include "storage/localimageloader.h"
 #include "storage/storage_account.h"
 #include "storage/storage_media_prepare.h"
@@ -52,14 +63,19 @@ namespace {
 
 [[nodiscard]] rpl::producer<QString> PlaceholderText(
 		const std::shared_ptr<ChatHelpers::Show> &show,
-		rpl::producer<bool> isComment) {
+		rpl::producer<ReplyAreaType> type,
+		rpl::producer<int> starsPerMessage) {
 	return rpl::combine(
 		show->session().data().stories().stealthModeValue(),
-		std::move(isComment)
-	) | rpl::map([](Data::StealthMode value, bool isComment) {
-		return std::tuple(value.enabledTill, isComment);
+		std::move(type),
+		std::move(starsPerMessage)
+	) | rpl::map([](
+			Data::StealthMode value,
+			ReplyAreaType type,
+			int starsPerMessage) {
+		return std::tuple(value.enabledTill, type, starsPerMessage);
 	}) | rpl::distinct_until_changed(
-	) | rpl::map([](TimeId till, bool isComment) {
+	) | rpl::map([](TimeId till, ReplyAreaType type, int starsPerMessage) {
 		return rpl::single(
 			rpl::empty
 		) | rpl::then(
@@ -71,15 +87,49 @@ namespace {
 		}) | rpl::then(
 			rpl::single(0)
 		) | rpl::map([=](TimeId left) {
-			return left
+			return (type == ReplyAreaType::VideoStreamComment)
+				? (starsPerMessage
+					? tr::lng_video_stream_comment_paid_ph(
+						lt_count,
+						rpl::single(starsPerMessage * 1.))
+					: tr::lng_video_stream_comment_ph())
+				: starsPerMessage
+				? tr::lng_message_stars_ph(
+					lt_count,
+					rpl::single(starsPerMessage * 1.))
+				: left
 				? tr::lng_stealth_mode_countdown(
 					lt_left,
 					rpl::single(TimeLeftText(left)))
-				: isComment
+				: (type == ReplyAreaType::Comment)
 				? tr::lng_story_comment_ph()
 				: tr::lng_story_reply_ph();
 		}) | rpl::flatten_latest();
 	}) | rpl::flatten_latest();
+}
+
+[[nodiscard]] ChatHelpers::ComposeFeatures Features(
+		bool videoStream,
+		bool videoStreamManager) {
+	return {
+		.likes = !videoStream,
+		.sendAs = videoStream,
+		.ttlInfo = false,
+		.attachments = !videoStream,
+		.botCommandSend = false,
+		.silentBroadcastToggle = false,
+		.attachBotsMenu = false,
+		.inlineBots = false,
+		.megagroupSet = false,
+		.stickersSettings = false,
+		.openStickerSets = false,
+		.autocompleteHashtags = false,
+		.autocompleteMentions = false,
+		.autocompleteCommands = false,
+		.recordMediaMessage = !videoStream,
+		.editMessageStars = videoStream,
+		.emojiOnlyPanel = videoStream,
+	};
 }
 
 } // namespace
@@ -128,24 +178,11 @@ ReplyArea::ReplyArea(not_null<Controller*> controller)
 		.stickerOrEmojiChosen = _controller->stickerOrEmojiChosen(),
 		.customPlaceholder = PlaceholderText(
 			_controller->uiShow(),
-			rpl::deferred([=] { return _isComment.value(); })),
+			rpl::deferred([=] { return _type.value(); }),
+			rpl::deferred([=] { return _starsForMessage.value(); })),
 		.voiceCustomCancelText = tr::lng_record_cancel_stories(tr::now),
 		.voiceLockFromBottom = true,
-		.features = {
-			.likes = true,
-			.sendAs = false,
-			.ttlInfo = false,
-			.botCommandSend = false,
-			.silentBroadcastToggle = false,
-			.attachBotsMenu = false,
-			.inlineBots = false,
-			.megagroupSet = false,
-			.stickersSettings = false,
-			.openStickerSets = false,
-			.autocompleteHashtags = false,
-			.autocompleteMentions = false,
-			.autocompleteCommands = false,
-		},
+		.features = Features(false, false),
 	}
 )) {
 	initGeometry();
@@ -160,7 +197,7 @@ void ReplyArea::initGeometry() {
 	rpl::combine(
 		_controller->layoutValue(),
 		_controls->height()
-	) | rpl::start_with_next([=](const Layout &layout, int height) {
+	) | rpl::on_next([=](const Layout &layout, int height) {
 		const auto content = layout.content;
 		_controls->resizeToWidth(layout.controlsWidth);
 		if (_controls->heightCurrent() == height) {
@@ -199,37 +236,79 @@ bool ReplyArea::sendReaction(const Data::ReactionId &id) {
 		}
 	}
 	return !message.textWithTags.empty()
-		&& send(std::move(message), {}, true);
+		&& send(std::move(message), true);
 }
 
 void ReplyArea::send(Api::SendOptions options) {
+	auto text = _controls->getTextWithAppliedMarkdown();
+	const auto stars = _controls->chosenStarsForMessage();
+	if (const auto stream = _videoStream.get()) {
+		if (stars > 0) {
+			const auto weak = _videoStream;
+			const auto done = [=](Settings::SmallBalanceResult result) {
+				if (result == Settings::SmallBalanceResult::Success
+					|| result == Settings::SmallBalanceResult::Already) {
+					if (const auto strong = weak.get()) {
+						strong->messages()->send(text, stars);
+						_controls->clear();
+					}
+				}
+			};
+			using namespace Settings;
+			MaybeRequestBalanceIncrease(
+				_controller->uiShow(),
+				stars,
+				SmallBalanceVideoStream{ stream->peer()->id },
+				crl::guard(this, done));
+		} else {
+			stream->messages()->send(std::move(text), stars);
+			_controls->clear();
+		}
+		return;
+	}
 	const auto webPageDraft = _controls->webPageDraft();
 
 	auto message = Api::MessageToSend(prepareSendAction(options));
-	message.textWithTags = _controls->getTextWithAppliedMarkdown();
+	message.textWithTags = std::move(text);
 	message.webPage = webPageDraft;
 
-	send(std::move(message), options);
+	send(std::move(message));
 }
 
 bool ReplyArea::send(
 		Api::MessageToSend message,
-		Api::SendOptions options,
 		bool skipToast) {
-	if (!options.scheduled && showSlowmodeError()) {
+	if (!message.action.options.scheduled && showSlowmodeError()) {
 		return false;
 	}
 
-	const auto error = GetErrorForSending(
-		_data.peer,
-		{
-			.topicRootId = MsgId(0),
-			.text = &message.textWithTags,
-			.ignoreSlowmodeCountdown = (options.scheduled != 0),
-		});
+	auto request = SendingErrorRequest{
+		.topicRootId = MsgId(0),
+		.text = &message.textWithTags,
+		.ignoreSlowmodeCountdown = (message.action.options.scheduled != 0),
+	};
+	request.messagesCount = ComputeSendingMessagesCount(
+		message.action.history,
+		request);
+	const auto error = GetErrorForSending(_data.peer, request);
 	if (error) {
 		Data::ShowSendErrorToast(_controller->uiShow(), _data.peer, error);
 		return false;
+	}
+
+	if (!message.action.options.scheduled) {
+		const auto withPaymentApproved = [=](int approved) {
+			auto copy = message;
+			copy.action.options.starsApproved = approved;
+			send(copy);
+		};
+		const auto checked = checkSendPayment(
+			request.messagesCount,
+			message.action.options,
+			withPaymentApproved);
+		if (!checked) {
+			return false;
+		}
 	}
 
 	session().api().sendMessage(std::move(message));
@@ -239,8 +318,42 @@ bool ReplyArea::send(
 	return true;
 }
 
-void ReplyArea::sendVoice(VoiceToSend &&data) {
+bool ReplyArea::checkSendPayment(
+		int messagesCount,
+		Api::SendOptions options,
+		Fn<void(int)> withPaymentApproved) {
+	const auto st1 = ::Settings::DarkCreditsEntryBoxStyle();
+	const auto st2 = st1.shareBox.get();
+	const auto st3 = st2 ? st2->scheduleBox.get() : nullptr;
+	return _data.peer
+		&& _sendPayment.check(
+			_controller->uiShow(),
+			_data.peer,
+			options,
+			messagesCount,
+			std::move(withPaymentApproved),
+			{
+				.label = st3 ? st3->chooseDateTimeArgs.labelStyle : nullptr,
+				.checkbox = st2 ? st2->checkbox : nullptr,
+			});
+}
+
+void ReplyArea::sendVoice(const VoiceToSend &data) {
 	auto action = prepareSendAction(data.options);
+
+	const auto withPaymentApproved = [=](int approved) {
+		auto copy = data;
+		copy.options.starsApproved = approved;
+		sendVoice(copy);
+	};
+	const auto checked = checkSendPayment(
+		1,
+		action.options,
+		withPaymentApproved);
+	if (!checked) {
+		return;
+	}
+
 	session().api().sendVoiceMessage(
 		data.bytes,
 		data.waveform,
@@ -267,6 +380,18 @@ bool ReplyArea::sendExistingDocument(
 		return false;
 	} else if (showSlowmodeError()
 		|| Window::ShowSendPremiumError(show, document)) {
+		return false;
+	}
+	const auto withPaymentApproved = [=](int approved) {
+		auto copy = messageToSend;
+		copy.action.options.starsApproved = approved;
+		sendExistingDocument(document, std::move(copy), localId);
+	};
+	const auto checked = checkSendPayment(
+		1,
+		messageToSend.action.options,
+		withPaymentApproved);
+	if (!checked) {
 		return false;
 	}
 
@@ -296,10 +421,22 @@ bool ReplyArea::sendExistingPhoto(
 	} else if (showSlowmodeError()) {
 		return false;
 	}
+	const auto action = prepareSendAction(options);
 
-	Api::SendExistingPhoto(
-		Api::MessageToSend(prepareSendAction(options)),
-		photo);
+	const auto withPaymentApproved = [=](int approved) {
+		auto copy = options;
+		copy.starsApproved = approved;
+		sendExistingPhoto(photo, copy);
+	};
+	const auto checked = checkSendPayment(
+		1,
+		action.options,
+		withPaymentApproved);
+	if (!checked) {
+		return false;
+	}
+
+	Api::SendExistingPhoto(Api::MessageToSend(action), photo);
 
 	_controls->cancelReplyMessage();
 	finishSending();
@@ -307,7 +444,7 @@ bool ReplyArea::sendExistingPhoto(
 }
 
 void ReplyArea::sendInlineResult(
-		not_null<InlineBots::Result*> result,
+		std::shared_ptr<InlineBots::Result> result,
 		not_null<UserData*> bot) {
 	if (const auto error = result->getErrorOnSend(history())) {
 		const auto show = _controller->uiShow();
@@ -318,13 +455,31 @@ void ReplyArea::sendInlineResult(
 }
 
 void ReplyArea::sendInlineResult(
-		not_null<InlineBots::Result*> result,
+		std::shared_ptr<InlineBots::Result> result,
 		not_null<UserData*> bot,
 		Api::SendOptions options,
 		std::optional<MsgId> localMessageId) {
 	auto action = prepareSendAction(options);
 	action.generateLocal = true;
-	session().api().sendInlineResult(bot, result, action, localMessageId);
+
+	const auto withPaymentApproved = [=](int approved) {
+		auto copy = options;
+		copy.starsApproved = approved;
+		sendInlineResult(result, bot, copy, localMessageId);
+	};
+	const auto checked = checkSendPayment(
+		1,
+		action.options,
+		withPaymentApproved);
+	if (!checked) {
+		return;
+	}
+
+	session().api().sendInlineResult(
+		bot,
+		result.get(),
+		action,
+		localMessageId);
 
 	auto &bots = cRefRecentInlineBots();
 	const auto index = bots.indexOf(bot);
@@ -358,45 +513,15 @@ void ReplyArea::uploadFile(
 
 bool ReplyArea::showSendingFilesError(
 		const Ui::PreparedList &list) const {
-	return showSendingFilesError(list, std::nullopt);
+	const auto show = _controller->uiShow();
+	const auto peer = _data.peer;
+	return Data::ShowSendError(show, peer, list, std::nullopt, true);
 }
 
 bool ReplyArea::showSendingFilesError(
-		const Ui::PreparedList &list,
-		std::optional<bool> compress) const {
-	const auto error = [&]() -> Data::SendError {
-		const auto peer = _data.peer;
-		const auto error = Data::FileRestrictionError(peer, list, compress);
-		if (error) {
-			return error;
-		}
-		using Error = Ui::PreparedList::Error;
-		switch (list.error) {
-		case Error::None: return QString();
-		case Error::EmptyFile:
-		case Error::Directory:
-		case Error::NonLocalUrl: return tr::lng_send_image_empty(
-			tr::now,
-			lt_name,
-			list.errorData);
-		case Error::TooLargeFile: return u"(toolarge)"_q;
-		}
-		return tr::lng_forward_send_files_cant(tr::now);
-	}();
-	if (!error) {
-		return false;
-	} else if (error.text == u"(toolarge)"_q) {
-		const auto fileSize = list.files.back().size;
-		_controller->uiShow()->showBox(Box(
-			FileSizeLimitBox,
-			&session(),
-			fileSize,
-			&st::storiesComposePremium));
-		return true;
-	}
-
-	Data::ShowSendErrorToast(_controller->uiShow(), _data.peer, error);
-	return true;
+		const Ui::PreparedBundle &bundle) const {
+	const auto show = _controller->uiShow();
+	return Data::ShowSendError(show, _data.peer, bundle, true);
 }
 
 not_null<History*> ReplyArea::history() const {
@@ -474,9 +599,27 @@ void ReplyArea::chooseAttach(
 
 Fn<SendMenu::Details()> ReplyArea::sendMenuDetails() const {
 	return crl::guard(this, [=] {
+		const auto call = _videoStream
+			? _videoStream->lookupReal()
+			: nullptr;
 		return SendMenu::Details{
-			.type = SendMenu::Type::SilentOnly,
-			.effectAllowed = _data.peer && _data.peer->isUser(),
+			.type = (!_data.videoStream
+				? SendMenu::Type::SilentOnly
+				: !call
+				? SendMenu::Type::Disabled
+				: SendMenu::Type::EditCommentPrice),
+			.commentStreamerName = (call
+				? call->peer()->shortName()
+				: QString()),
+			.price = (_data.videoStream
+				? uint64(_controls->chosenStarsForMessage())
+				: std::optional<uint64>()),
+			.commentPriceMin = (call
+				? uint64(call->canManage() ? call->messagesMinPrice() : 0)
+				: std::optional<uint64>()),
+			.effectAllowed = (!_data.videoStream
+				&& _data.peer
+				&& _data.peer->isUser()),
 		};
 	});
 }
@@ -532,7 +675,7 @@ bool ReplyArea::confirmSendingFiles(
 		.show = show,
 		.list = std::move(list),
 		.caption = _controls->getTextWithAppliedMarkdown(),
-		.captionToPeer = _data.peer,
+		.toPeer = _data.peer,
 		.limits = DefaultLimitsForPeer(_data.peer),
 		.check = DefaultCheckForPeer(show, _data.peer),
 		.sendType = Api::SendType::Normal,
@@ -546,41 +689,35 @@ bool ReplyArea::confirmSendingFiles(
 }
 
 void ReplyArea::sendingFilesConfirmed(
-		Ui::PreparedList &&list,
-		Ui::SendFilesWay way,
-		TextWithTags &&caption,
-		Api::SendOptions options,
-		bool ctrlShiftEnter) {
-	Expects(list.filesToProcess.empty());
-
-	if (showSendingFilesError(list, way.sendImagesAsPhotos())) {
+		std::shared_ptr<Ui::PreparedBundle> bundle,
+		Api::SendOptions options) {
+	if (showSendingFilesError(*bundle)) {
 		return;
 	}
-	auto groups = DivideByGroups(
-		std::move(list),
-		way,
-		_data.peer->slowmodeApplied());
-	const auto type = way.sendImagesAsPhotos()
-		? SendMediaType::Photo
-		: SendMediaType::File;
+	const auto compress = bundle->way.sendImagesAsPhotos();
+	const auto type = compress ? SendMediaType::Photo : SendMediaType::File;
 	auto action = prepareSendAction(options);
 	action.clearDraft = false;
-	if ((groups.size() != 1 || !groups.front().sentWithCaption())
-		&& !caption.text.isEmpty()) {
-		auto message = Api::MessageToSend(action);
-		message.textWithTags = base::take(caption);
-		session().api().sendMessage(std::move(message));
+
+	const auto withPaymentApproved = [=](int approved) {
+		auto copy = options;
+		copy.starsApproved = approved;
+		sendingFilesConfirmed(bundle, copy);
+	};
+	const auto checked = checkSendPayment(
+		bundle->totalCount,
+		action.options,
+		withPaymentApproved);
+	if (!checked) {
+		return;
 	}
-	for (auto &group : groups) {
+
+	auto &api = session().api();
+	for (auto &group : bundle->groups) {
 		const auto album = (group.type != Ui::AlbumType::None)
 			? std::make_shared<SendingAlbum>()
 			: nullptr;
-		session().api().sendFiles(
-			std::move(group.list),
-			type,
-			base::take(caption),
-			album,
-			action);
+		api.sendFiles(std::move(group.list), type, album, action);
 	}
 	finishSending();
 }
@@ -604,24 +741,24 @@ bool ReplyArea::confirmSendingFiles(
 
 void ReplyArea::initActions() {
 	_controls->cancelRequests(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		_controller->unfocusReply();
 	}, _lifetime);
 
 	_controls->sendRequests(
-	) | rpl::start_with_next([=](Api::SendOptions options) {
+	) | rpl::on_next([=](Api::SendOptions options) {
 		send(options);
 	}, _lifetime);
 
 	_controls->sendVoiceRequests(
-	) | rpl::start_with_next([=](VoiceToSend &&data) {
-		sendVoice(std::move(data));
+	) | rpl::on_next([=](const VoiceToSend &data) {
+		sendVoice(data);
 	}, _lifetime);
 
 	_controls->attachRequests(
 	) | rpl::filter([=] {
 		return !_chooseAttachRequest;
-	}) | rpl::start_with_next([=](std::optional<bool> overrideCompress) {
+	}) | rpl::on_next([=](std::optional<bool> overrideCompress) {
 		_chooseAttachRequest = true;
 		base::call_delayed(
 			st::storiesAttach.ripple.hideDuration,
@@ -630,7 +767,7 @@ void ReplyArea::initActions() {
 	}, _lifetime);
 
 	_controls->fileChosen(
-	) | rpl::start_with_next([=](ChatHelpers::FileChosen data) {
+	) | rpl::on_next([=](ChatHelpers::FileChosen data) {
 		_controller->uiShow()->hideLayer();
 		auto messageToSend = Api::MessageToSend(
 			prepareSendAction(data.options));
@@ -642,18 +779,18 @@ void ReplyArea::initActions() {
 	}, _lifetime);
 
 	_controls->photoChosen(
-	) | rpl::start_with_next([=](ChatHelpers::PhotoChosen chosen) {
+	) | rpl::on_next([=](ChatHelpers::PhotoChosen chosen) {
 		sendExistingPhoto(chosen.photo, chosen.options);
 	}, _lifetime);
 
 	_controls->inlineResultChosen(
-	) | rpl::start_with_next([=](ChatHelpers::InlineChosen chosen) {
+	) | rpl::on_next([=](ChatHelpers::InlineChosen chosen) {
 		const auto localId = chosen.messageSendingFrom.localId;
 		sendInlineResult(chosen.result, chosen.bot, chosen.options, localId);
 	}, _lifetime);
 
 	_controls->likeToggled(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		_controller->toggleLiked();
 	}, _lifetime);
 
@@ -672,7 +809,7 @@ void ReplyArea::initActions() {
 	});
 
 	_controls->lockShowStarts(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 	}, _lifetime);
 
 	_controls->show();
@@ -686,8 +823,29 @@ void ReplyArea::show(
 	if (_data == data) {
 		return;
 	}
+	const auto stream = data.videoStream.get();
 	const auto peerChanged = (_data.peer != data.peer);
+	const auto streamChanged = (_data.videoStream.get() != stream);
 	_data = data;
+	if (streamChanged) {
+		const auto manager = stream && stream->canManage();
+		_controls->updateFeatures(Features(stream != nullptr, manager));
+		_controls->setToggleCommentsButton(stream
+			? _controller->commentsStateValue()
+			: nullptr);
+		_controller->setCommentsShownToggles(
+			_controls->commentsShownToggles());
+	}
+	using Controls = HistoryView::ComposeControls;
+	_controls->setStarsReactionCounter(
+		stream ? _controller->starsReactionsValue() : nullptr,
+		stream ? _controller->starsReactionsEffects() : nullptr);
+	_controller->setStarsReactionIncrements(
+		_controls->starsReactionIncrements(
+		) | rpl::map([](Controls::StarReactionIncrement increment) {
+			return increment.count;
+		}));
+	_starsForMessage = starsPerMessageValue();
 	if (!peerChanged) {
 		if (_data.peer) {
 			_controls->clear();
@@ -698,25 +856,45 @@ void ReplyArea::show(
 	const auto peer = data.peer;
 	const auto history = peer ? peer->owner().history(peer).get() : nullptr;
 	const auto user = peer->asUser();
-	_isComment = peer->isMegagroup();
-	auto writeRestriction = Data::CanSendAnythingValue(
-		peer
-	) | rpl::map([=](bool can) {
-		using namespace HistoryView::Controls;
-		return (can
-			|| !user
-			|| !user->meRequiresPremiumToWrite()
-			|| user->session().premium())
-			? WriteRestriction()
-			: WriteRestriction{
-				.text = tr::lng_send_non_premium_story(tr::now),
-				.button = tr::lng_send_non_premium_unlock(tr::now),
-				.type = WriteRestrictionType::PremiumRequired,
-			};
-	});
+	_type = peer->isMegagroup()
+		? ReplyAreaType::Comment
+		: ReplyAreaType::Reply;
+	auto writeRestriction = stream
+		? rpl::combine(
+			stream->messagesEnabledValue(),
+			stream->loadedValue()
+		) | rpl::map([=](bool enabled, bool loaded) {
+			using namespace HistoryView::Controls;
+			return !loaded
+				? WriteRestriction{ .type = WriteRestrictionType::Hidden }
+				: enabled
+				? WriteRestriction()
+				: WriteRestriction{
+					.text = tr::lng_video_stream_comments_disabled(tr::now),
+					.type = WriteRestrictionType::Rights,
+				};
+		}) | rpl::type_erased
+		: Data::CanSendAnythingValue(
+			peer
+		) | rpl::map([=](bool can) {
+			using namespace HistoryView::Controls;
+			return peer->session().frozen()
+				? WriteRestriction{ .type = WriteRestrictionType::Frozen }
+				: (can
+				|| !user
+				|| !user->requiresPremiumToWrite()
+				|| user->session().premium())
+				? WriteRestriction()
+				: WriteRestriction{
+					.text = tr::lng_send_non_premium_story(tr::now),
+					.button = tr::lng_send_non_premium_unlock(tr::now),
+					.type = WriteRestrictionType::PremiumRequired,
+				};
+		});
 	using namespace HistoryView;
 	_controls->setHistory({
 		.history = history,
+		.videoStream = _data.videoStream,
 		.showSlowmodeError = [=] { return showSlowmodeError(); },
 		.sendActionFactory = [=] { return prepareSendAction({}); },
 		.slowmodeSecondsLeft = SlowmodeSecondsLeft(history->peer),
@@ -726,11 +904,15 @@ void ReplyArea::show(
 		) | rpl::map([](const Data::ReactionId &id) {
 			return !id.empty();
 		}),
+		.minStarsCount = (stream
+			? _starsForMessage.value()
+			: rpl::producer<int>()),
 		.writeRestriction = std::move(writeRestriction),
 	});
 	_controls->clear();
 	const auto hidden = peer
-		&& (peer->isBroadcast() || peer->isSelf() || peer->isServiceUser());
+		&& (peer->isBroadcast() || peer->isSelf() || peer->isServiceUser())
+		&& !stream;
 	const auto cant = !peer;
 	if (!hidden && !cant) {
 		_controls->show();
@@ -739,7 +921,7 @@ void ReplyArea::show(
 		if (cant) {
 			_cant = std::make_unique<Cant>(_controller->wrap());
 			_controller->layoutValue(
-			) | rpl::start_with_next([=](const Layout &layout) {
+			) | rpl::on_next([=](const Layout &layout) {
 				const auto height = st::storiesComposeControls.attach.height;
 				const auto position = layout.controlsBottomPosition
 					- QPoint(0, height);
@@ -750,6 +932,32 @@ void ReplyArea::show(
 			_cant = nullptr;
 		}
 	}
+}
+
+rpl::producer<int> ReplyArea::starsPerMessageValue() const {
+	if (const auto stream = _data.videoStream.get()) {
+		return rpl::combine(
+			Data::CanManageGroupCallValue(stream->peer()),
+			stream->messagesMinPriceValue()
+		) | rpl::map([=](bool canManage, int price) {
+			return canManage ? 0 : price;
+		});
+	} else if (const auto peer = _data.peer) {
+		using Flag = Data::PeerUpdate::Flag;
+		return peer->session().changes().peerFlagsValue(
+			peer,
+			Flag::StarsPerMessage | Flag::FullInfo
+		) | rpl::map([=] {
+			return peer->starsPerMessageChecked();
+		});
+	}
+	return rpl::single(0);
+}
+
+void ReplyArea::updateVideoStream(not_null<Calls::GroupCall*> videoStream) {
+	_type = ReplyAreaType::VideoStreamComment;
+	_videoStream = videoStream;
+	_controls->setStarsReactionTop(View::TopVideoStreamDonors(videoStream));
 }
 
 bool ReplyArea::showSlowmodeError() {
@@ -765,8 +973,7 @@ bool ReplyArea::showSlowmodeError() {
 				lt_left,
 				Ui::FormatDurationWordsSlowmode(left));
 		} else if (peer->slowmodeApplied()) {
-			const auto history = peer->owner().history(peer);
-			if (const auto item = history->latestSendingMessage()) {
+			if (peer->owner().history(peer)->latestSendingMessage()) {
 				return tr::lng_slowmode_no_many(tr::now);
 			}
 		}
@@ -817,7 +1024,7 @@ void ReplyArea::tryProcessKeyInput(not_null<QKeyEvent*> e) {
 	_controls->tryProcessKeyInput(e);
 }
 
-not_null<Ui::RpWidget*> ReplyArea::likeAnimationTarget() const {
+Ui::RpWidget *ReplyArea::likeAnimationTarget() const {
 	return _controls->likeAnimationTarget();
 }
 

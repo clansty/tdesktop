@@ -133,24 +133,24 @@ GifsListWidget::GifsListWidget(
 		[=] { sendInlineRequest(); });
 
 	session().data().stickers().savedGifsUpdated(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		refreshSavedGifs();
 	}, lifetime());
 
 	session().downloaderTaskFinished(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		updateInlineItems();
 	}, lifetime());
 
 	_show->pauseChanged(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		if (!paused()) {
 			updateInlineItems();
 		}
 	}, lifetime());
 
 	sizeValue(
-	) | rpl::start_with_next([=](const QSize &s) {
+	) | rpl::on_next([=](const QSize &s) {
 		_mosaic.setFullWidth(s.width());
 	}, lifetime());
 
@@ -188,13 +188,13 @@ object_ptr<TabbedSelector::InnerFooter> GifsListWidget::createFooter() {
 
 	GifSectionsValue(
 		&session()
-	) | rpl::start_with_next([=](std::vector<GifSection> &&list) {
+	) | rpl::on_next([=](std::vector<GifSection> &&list) {
 		_sections = std::move(list);
 		refreshIcons();
 	}, _footer->lifetime());
 
 	_footer->setChosen(
-	) | rpl::start_with_next([=](uint64 setId) {
+	) | rpl::on_next([=](uint64 setId) {
 		if (_search) {
 			_search->cancel();
 		}
@@ -531,7 +531,8 @@ void GifsListWidget::selectInlineResult(
 			|| (media && media->image(PhotoSize::Large))) {
 			_photoChosen.fire({
 				.photo = photo,
-				.options = options });
+				.options = options
+			});
 		} else if (!photo->loading(PhotoSize::Thumbnail)) {
 			photo->load(PhotoSize::Thumbnail, Data::FileOrigin());
 		}
@@ -695,14 +696,15 @@ GifsListWidget::LayoutItem *GifsListWidget::layoutPrepareSavedGif(
 }
 
 GifsListWidget::LayoutItem *GifsListWidget::layoutPrepareInlineResult(
-		not_null<InlineResult*> result) {
-	auto it = _inlineLayouts.find(result);
+		std::shared_ptr<InlineResult> result) {
+	const auto raw = result.get();
+	auto it = _inlineLayouts.find(raw);
 	if (it == _inlineLayouts.cend()) {
 		if (auto layout = LayoutItem::createLayout(
 				this,
-				result,
+				std::move(result),
 				_inlineWithThumb)) {
-			it = _inlineLayouts.emplace(result, std::move(layout)).first;
+			it = _inlineLayouts.emplace(raw, std::move(layout)).first;
 			it->second->initDimensions();
 		} else {
 			return nullptr;
@@ -775,8 +777,8 @@ int GifsListWidget::refreshInlineRows(const InlineCacheEntry *entry, bool result
 			from,
 			count
 		) | ranges::views::transform([&](
-				const std::unique_ptr<InlineBots::Result> &r) {
-			return layoutPrepareInlineResult(r.get());
+				const std::shared_ptr<InlineBots::Result> &r) {
+			return layoutPrepareInlineResult(r);
 		}) | ranges::views::filter([](const LayoutItem *item) {
 			return item != nullptr;
 		}) | ranges::to<std::vector<not_null<LayoutItem*>>>;
@@ -799,7 +801,7 @@ int GifsListWidget::validateExistingInlineRows(const InlineResults &results) {
 	const auto until = _mosaic.validateExistingRows([&](
 			not_null<const LayoutItem*> item,
 			int untilIndex) {
-		return item->getResult() != results[untilIndex].get();
+		return item->getResult().get() != results[untilIndex].get();
 	}, results.size());
 
 	if (_mosaic.empty()) {
@@ -979,8 +981,8 @@ void GifsListWidget::sendInlineRequest() {
 	_search->setLoading(true);
 	_inlineRequestId = _api.request(MTPmessages_GetInlineBotResults(
 		MTP_flags(0),
-		_searchBot->inputUser,
-		_inlineQueryPeer->input,
+		_searchBot->inputUser(),
+		_inlineQueryPeer->input(),
 		MTPInputGeoPoint(),
 		MTP_string(_inlineQuery),
 		MTP_string(nextOffset)

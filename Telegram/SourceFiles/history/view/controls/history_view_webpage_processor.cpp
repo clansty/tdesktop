@@ -158,11 +158,15 @@ void WebpageResolver::request(const QString &link, bool force) {
 			MTP_flags(0),
 			MTP_string(link),
 			MTPVector<MTPMessageEntity>()
-	)).done([=](const MTPMessageMedia &result, mtpRequestId requestId) {
+	)).done([=](
+			const MTPmessages_WebPagePreview &result,
+			mtpRequestId requestId) {
 		if (_requestId == requestId) {
 			_requestId = 0;
 		}
-		result.match([=](const MTPDmessageMediaWebPage &data) {
+		const auto &data = result.data();
+		_session->data().processUsers(data.vusers());
+		data.vmedia().match([=](const MTPDmessageMediaWebPage &data) {
 			done(data);
 		}, [&](const auto &d) {
 			fail();
@@ -196,26 +200,26 @@ WebpageProcessor::WebpageProcessor(
 	_history->session().downloaderTaskFinished(
 	) | rpl::filter([=] {
 		return _data && (_data->document || _data->photo);
-	}) | rpl::start_with_next([=] {
+	}) | rpl::on_next([=] {
 		_repaintRequests.fire({});
 	}, _lifetime);
 
 	_history->owner().webPageUpdates(
 	) | rpl::filter([=](not_null<WebPageData*> page) {
 		return (_data == page.get());
-	}) | rpl::start_with_next([=] {
+	}) | rpl::on_next([=] {
 		_draft.id = _data->id;
 		_draft.url = _data->url;
 		updateFromData();
 	}, _lifetime);
 
 	_parser.list().changes(
-	) | rpl::start_with_next([=](QStringList &&parsed) {
+	) | rpl::on_next([=](QStringList &&parsed) {
 		_parsedLinks = std::move(parsed);
 		checkPreview();
 	}, _lifetime);
 
-	_resolver->resolved() | rpl::start_with_next([=](QString link) {
+	_resolver->resolved() | rpl::on_next([=](QString link) {
 		if (_link != link
 			|| _draft.removed
 			|| (_draft.manual && _draft.url != link)) {

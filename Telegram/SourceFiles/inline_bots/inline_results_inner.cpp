@@ -66,12 +66,12 @@ Inner::Inner(
 	setAttribute(Qt::WA_OpaquePaintEvent);
 
 	_controller->session().downloaderTaskFinished(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		updateInlineItems();
 	}, lifetime());
 
 	controller->gifPauseLevelChanged(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		if (!_controller->isGifPausedAtLeastFor(
 				Window::GifPauseReason::InlineResults)) {
 			updateInlineItems();
@@ -82,7 +82,7 @@ Inner::Inner(
 		Data::PeerUpdate::Flag::Rights
 	) | rpl::filter([=](const Data::PeerUpdate &update) {
 		return (update.peer.get() == _inlineQueryPeer);
-	}) | rpl::start_with_next([=] {
+	}) | rpl::on_next([=] {
 		auto isRestricted = (_restrictedLabel != nullptr);
 		if (isRestricted != isRestrictedView()) {
 			auto h = countHeight();
@@ -91,7 +91,7 @@ Inner::Inner(
 	}, lifetime());
 
 	sizeValue(
-	) | rpl::start_with_next([=](const QSize &s) {
+	) | rpl::on_next([=](const QSize &s) {
 		_mosaic.setFullWidth(s.width());
 	}, lifetime());
 
@@ -125,7 +125,7 @@ void Inner::checkRestrictedPeer() {
 			_restrictedLabel.create(
 				this,
 				rpl::single(error.boostsToLift
-					? Ui::Text::Link(error.text)
+					? tr::link(error.text)
 					: TextWithEntities{ error.text }),
 				st::stickersRestrictedLabel);
 			const auto lifting = error.boostsToLift;
@@ -331,7 +331,7 @@ void Inner::selectInlineResult(
 	if (const auto inlineResult = item->getResult()) {
 		if (inlineResult->onChoose(item)) {
 			_resultSelectedCallback({
-				.result = inlineResult,
+				.result = std::move(inlineResult),
 				.bot = _inlineBot,
 				.options = std::move(options),
 				.messageSendingFrom = messageSendingFrom(),
@@ -448,11 +448,16 @@ void Inner::clearInlineRows(bool resultsDeleted) {
 	_mosaic.clearRows(resultsDeleted);
 }
 
-ItemBase *Inner::layoutPrepareInlineResult(Result *result) {
-	auto it = _inlineLayouts.find(result);
+ItemBase *Inner::layoutPrepareInlineResult(std::shared_ptr<Result> result) {
+	const auto raw = result.get();
+	auto it = _inlineLayouts.find(raw);
 	if (it == _inlineLayouts.cend()) {
-		if (auto layout = ItemBase::createLayout(this, result, _inlineWithThumb)) {
-			it = _inlineLayouts.emplace(result, std::move(layout)).first;
+		if (auto layout = ItemBase::createLayout(
+				this,
+				std::move(result),
+				_inlineWithThumb,
+				_gallery)) {
+			it = _inlineLayouts.emplace(raw, std::move(layout)).first;
 			it->second->initDimensions();
 		} else {
 			return nullptr;
@@ -552,6 +557,8 @@ int Inner::refreshInlineRows(PeerData *queryPeer, UserData *bot, const CacheEntr
 
 	Assert(_inlineBot != 0);
 
+	_gallery = entry->gallery;
+
 	const auto count = int(entry->results.size());
 	const auto from = validateExistingInlineRows(entry->results);
 	auto added = 0;
@@ -560,8 +567,8 @@ int Inner::refreshInlineRows(PeerData *queryPeer, UserData *bot, const CacheEntr
 		const auto resultItems = entry->results | ranges::views::slice(
 			from,
 			count
-		) | ranges::views::transform([&](const std::unique_ptr<Result> &r) {
-			return layoutPrepareInlineResult(r.get());
+		) | ranges::views::transform([&](const std::shared_ptr<Result> &r) {
+			return layoutPrepareInlineResult(r);
 		}) | ranges::views::filter([](const ItemBase *item) {
 			return item != nullptr;
 		}) | ranges::to<std::vector<not_null<ItemBase*>>>;
@@ -585,7 +592,7 @@ int Inner::validateExistingInlineRows(const Results &results) {
 	const auto until = _mosaic.validateExistingRows([&](
 			not_null<const ItemBase*> item,
 			int untilIndex) {
-		return item->getResult() != results[untilIndex].get();
+		return item->getResult().get() != results[untilIndex].get();
 	}, results.size());
 
 	if (_mosaic.empty()) {

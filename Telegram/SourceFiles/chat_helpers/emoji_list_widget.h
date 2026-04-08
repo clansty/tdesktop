@@ -13,6 +13,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/round_rect.h"
 #include "base/timer.h"
 
+#include <map>
+
 class StickerPremiumMark;
 
 namespace style {
@@ -58,6 +60,7 @@ struct RepaintRequest;
 
 namespace Window {
 class SessionController;
+class MediaPreviewWidget;
 } // namespace Window
 
 namespace ChatHelpers {
@@ -83,18 +86,23 @@ enum class EmojiListMode {
 	MessageEffects,
 };
 
+[[nodiscard]] std::vector<EmojiStatusId> DocumentListToRecent(
+	const std::vector<DocumentId> &documents);
+
 struct EmojiListDescriptor {
 	std::shared_ptr<Show> show;
 	EmojiListMode mode = EmojiListMode::Full;
 	Fn<QColor()> customTextColor;
 	Fn<bool()> paused;
-	std::vector<DocumentId> customRecentList;
+	std::vector<EmojiStatusId> customRecentList;
 	Fn<std::unique_ptr<Ui::Text::CustomEmoji>(
 		DocumentId,
 		Fn<void()>)> customRecentFactory;
 	base::flat_set<DocumentId> freeEffects;
 	const style::EmojiPan *st = nullptr;
 	ComposeFeatures features;
+	QWidget *mediaPreviewParent = nullptr;
+	QMargins mediaPreviewMargins;
 };
 
 class EmojiListWidget final
@@ -137,7 +145,7 @@ public:
 	[[nodiscard]] rpl::producer<> jumpedToPremium() const;
 	[[nodiscard]] rpl::producer<> escapes() const;
 
-	void provideRecent(const std::vector<DocumentId> &customRecentList);
+	void provideRecent(const std::vector<EmojiStatusId> &customRecentList);
 
 	void prepareExpanding();
 	void paintExpanding(
@@ -186,6 +194,7 @@ private:
 		bool collapsed = false;
 	};
 	struct CustomOne {
+		std::shared_ptr<Data::EmojiStatusCollectible> collectible;
 		not_null<Ui::Text::CustomEmoji*> custom;
 		not_null<DocumentData*> document;
 		EmojiPtr emoji = nullptr;
@@ -253,6 +262,14 @@ private:
 		int finalHeight = 0;
 		bool expanding = false;
 	};
+	struct ResolvedCustom {
+		DocumentData *document = nullptr;
+		std::shared_ptr<Data::EmojiStatusCollectible> collectible;
+
+		explicit operator bool() const {
+			return document != nullptr;
+		}
+	};
 
 	template <typename Callback>
 	bool enumerateSections(Callback callback) const;
@@ -271,6 +288,7 @@ private:
 		Visible,
 		Hidden,
 	};
+	void refreshEmojiStatusCollectibles();
 	void refreshMegagroupStickers(
 		Fn<void(uint64 setId, bool installed)> push,
 		GroupStickersPlace place);
@@ -281,6 +299,18 @@ private:
 	void setupSearch();
 	[[nodiscard]] std::vector<EmojiPtr> collectPlainSearchResults();
 	void appendPremiumSearchResults();
+	void appendLocalPackSearchResults();
+	void sendSearchRequest();
+	void sendSearchSetsRequest();
+	void cancelSearchRequest();
+	void toggleSearchLoading(bool loading);
+	void searchCloudResultsDone(const MTPmessages_FoundStickers &result);
+	void searchSetsResultsDone(const MTPmessages_FoundStickerSets &result);
+	void showSearchResults();
+	void fillCloudSearchResults();
+	void fillCloudSearchSets();
+	[[nodiscard]] CustomSet &searchSetBySection(int section);
+	[[nodiscard]] const CustomSet &searchSetBySection(int section) const;
 	void ensureLoaded(int section);
 	void updateSelected();
 	void setSelected(OverState newSelected);
@@ -296,16 +326,16 @@ private:
 		int index);
 
 	[[nodiscard]] EmojiPtr lookupOverEmoji(const OverEmoji *over) const;
-	[[nodiscard]] DocumentData *lookupCustomEmoji(
+	[[nodiscard]] ResolvedCustom lookupCustomEmoji(
 		const OverEmoji *over) const;
-	[[nodiscard]] DocumentData *lookupCustomEmoji(
+	[[nodiscard]] ResolvedCustom lookupCustomEmoji(
 		int index,
 		int section) const;
 	[[nodiscard]] EmojiChosen lookupChosen(
 		EmojiPtr emoji,
 		not_null<const OverEmoji*> over);
 	[[nodiscard]] FileChosen lookupChosen(
-		not_null<DocumentData*> custom,
+		ResolvedCustom custom,
 		const OverEmoji *over,
 		Api::SendOptions options = Api::SendOptions());
 	void selectEmoji(EmojiChosen data);
@@ -327,6 +357,12 @@ private:
 		const ExpandingContext &context,
 		QPoint position,
 		int set,
+		int index);
+	void drawSearchSetCustom(
+		QPainter &p,
+		const ExpandingContext &context,
+		QPoint position,
+		int section,
 		int index);
 	void validateEmojiPaintContext(const ExpandingContext &context);
 	[[nodiscard]] bool hasColorButton(int index) const;
@@ -370,19 +406,24 @@ private:
 	void repaintCustom(uint64 setId);
 
 	void fillRecent();
-	void fillRecentFrom(const std::vector<DocumentId> &list);
+	void fillRecentFrom(const std::vector<EmojiStatusId> &list);
 	[[nodiscard]] not_null<Ui::Text::CustomEmoji*> resolveCustomEmoji(
+		EmojiStatusId id,
 		not_null<DocumentData*> document,
 		uint64 setId);
 	[[nodiscard]] Ui::Text::CustomEmoji *resolveCustomRecent(
 		Core::RecentEmojiId customId);
 	[[nodiscard]] not_null<Ui::Text::CustomEmoji*> resolveCustomRecent(
 		DocumentId documentId);
+	[[nodiscard]] not_null<Ui::Text::CustomEmoji*> resolveCustomRecent(
+		EmojiStatusId id);
 	[[nodiscard]] Fn<void()> repaintCallback(
 		DocumentId documentId,
 		uint64 setId);
 
 	void showPreview();
+	void showPreviewFor(not_null<DocumentData*> document);
+	void ensureMediaPreview();
 
 	void applyNextSearchQuery();
 
@@ -390,6 +431,8 @@ private:
 	const ComposeFeatures _features;
 	const bool _onlyUnicodeEmoji;
 	Mode _mode = Mode::Full;
+	QWidget *_mediaPreviewParent = nullptr;
+	QMargins _mediaPreviewMargins;
 	std::unique_ptr<Ui::TabbedSearch> _search;
 	MTP::Sender _api;
 	const int _staticCount = 0;
@@ -415,7 +458,7 @@ private:
 	QVector<EmojiPtr> _emoji[kEmojiSectionCount];
 	std::vector<CustomSet> _custom;
 	base::flat_set<DocumentId> _restrictedCustomList;
-	base::flat_map<DocumentId, CustomEmojiInstance> _customEmoji;
+	std::map<EmojiStatusId, CustomEmojiInstance> _customEmoji;
 	base::flat_map<
 		DocumentId,
 		std::unique_ptr<Ui::Text::CustomEmoji>> _customRecent;
@@ -434,11 +477,21 @@ private:
 	rpl::event_stream<std::vector<QString>> _searchQueries;
 	std::vector<QString> _nextSearchQuery;
 	std::vector<QString> _searchQuery;
+	QString _searchQueryText;
 	base::flat_set<EmojiPtr> _searchEmoji;
 	base::flat_set<EmojiPtr> _searchEmojiPrevious;
 	base::flat_set<DocumentId> _searchCustomIds;
 	std::vector<RecentOne> _searchResults;
 	bool _searchMode = false;
+	std::map<QString, std::vector<DocumentId>> _searchCloudCache;
+	std::map<QString, std::vector<uint64>> _searchSetsCache;
+	std::vector<CustomSet> _searchSets;
+	QString _searchRequestQuery;
+	QString _searchNextRequestQuery;
+	QString _searchEmoticon;
+	mtpRequestId _searchCloudRequestId = 0;
+	mtpRequestId _searchSetsRequestId = 0;
+	bool _searchLoading = false;
 
 	int _rowsTop = 0;
 	int _rowsLeft = 0;
@@ -458,10 +511,14 @@ private:
 	OverState _pickerSelected;
 	QPoint _lastMousePos;
 
+	base::Timer _searchRequestTimer;
 	object_ptr<EmojiColorPicker> _picker;
 	base::Timer _showPickerTimer;
 	base::Timer _previewTimer;
 	bool _previewShown = false;
+
+
+	base::unique_qptr<Window::MediaPreviewWidget> _mediaPreview;
 
 	rpl::event_stream<EmojiChosen> _chosen;
 	rpl::event_stream<FileChosen> _customChosen;

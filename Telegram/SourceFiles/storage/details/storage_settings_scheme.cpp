@@ -1084,6 +1084,7 @@ bool ReadSetting(
 			context.sessionSettings().setHiddenPinnedMessageId(
 				DeserializePeerId(i.key()),
 				MsgId(0), // topicRootId
+				PeerId(0), // monoforumPeerId
 				MsgId(i.value()));
 		}
 		context.legacyRead = true;
@@ -1122,6 +1123,7 @@ bool ReadSetting(
 
 		if (v == 2) {
 			Core::App().settings().setVoicePlaybackSpeed(2.);
+			Core::App().settings().setAudioPlaybackSpeed(2.);
 		}
 		context.legacyRead = true;
 	} break;

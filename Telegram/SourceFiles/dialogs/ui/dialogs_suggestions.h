@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/object_ptr.h"
 #include "base/timer.h"
 #include "dialogs/ui/top_peers_strip.h"
+#include "ui/controls/swipe_handler_data.h"
 #include "ui/effects/animations.h"
 #include "ui/rp_widget.h"
 
@@ -31,6 +32,10 @@ namespace Storage {
 enum class SharedMediaType : signed char;
 } // namespace Storage
 
+namespace Ui::Controls {
+struct SwipeHandlerArgs;
+} // namespace Ui::Controls
+
 namespace Ui {
 class BoxContent;
 class ScrollArea;
@@ -47,6 +52,10 @@ class SessionController;
 
 namespace Dialogs {
 
+class InnerWidget;
+class PostsSearch;
+class PostsSearchIntro;
+struct PostsSearchIntroState;
 enum class SearchEmptyIcon;
 
 struct RecentPeersList {
@@ -105,6 +114,9 @@ public:
 	-> rpl::producer<not_null<PeerData*>> {
 		return _openBotMainAppRequests.events();
 	}
+	[[nodiscard]] rpl::producer<> closeRequests() const {
+		return _closeRequests.events();
+	}
 
 	class ObjectListController;
 
@@ -114,6 +126,7 @@ private:
 		Chats,
 		Channels,
 		Apps,
+		Posts,
 		Media,
 		Downloads,
 	};
@@ -157,6 +170,9 @@ private:
 	void setupChats();
 	void setupChannels();
 	void setupApps();
+	void reinstallSwipe(not_null<Ui::ElasticScroll*>);
+	[[nodiscard]] auto generateIncompleteSwipeArgs()
+	-> Ui::Controls::SwipeHandlerArgs;
 
 	void selectJumpChats(Qt::Key direction, int pageSize);
 	void selectJumpChannels(Qt::Key direction, int pageSize);
@@ -202,6 +218,12 @@ private:
 	void updateControlsGeometry();
 	void applySearchQuery();
 
+	void setupPostsSearch();
+	void setPostsSearchQuery(const QString &query);
+	void setupPostsResults();
+	void setupPostsIntro(const PostsSearchIntroState &intro);
+	void updatePostsSearchVisibleRange();
+
 	const not_null<Window::SessionController*> _controller;
 
 	const std::unique_ptr<Ui::ScrollArea> _tabsScroll;
@@ -217,6 +239,7 @@ private:
 	const not_null<TopPeersStrip*> _topPeers;
 	rpl::event_stream<not_null<PeerData*>> _topPeerChosen;
 	rpl::event_stream<not_null<PeerData*>> _openBotMainAppRequests;
+	rpl::event_stream<> _closeRequests;
 
 	const std::unique_ptr<ObjectList> _recent;
 
@@ -232,6 +255,12 @@ private:
 
 	const std::unique_ptr<Ui::ElasticScroll> _appsScroll;
 	const not_null<Ui::VerticalLayout*> _appsContent;
+
+	std::unique_ptr<PostsSearch> _postsSearch;
+	const std::unique_ptr<Ui::ElasticScroll> _postsScroll;
+	const not_null<Ui::RpWidget*> _postsWrap;
+	PostsSearchIntro *_postsSearchIntro = nullptr;
+	InnerWidget *_postsContent = nullptr;
 
 	rpl::producer<> _recentAppsRefreshed;
 	Fn<bool(not_null<PeerData*>)> _recentAppsShows;
@@ -252,6 +281,9 @@ private:
 	Ui::Animations::Simple _slideAnimation;
 	QPixmap _slideLeft;
 	QPixmap _slideRight;
+
+	Ui::Controls::SwipeBackResult _swipeBackData;
+	rpl::lifetime _swipeLifetime;
 
 	int _slideLeftTop = 0;
 	int _slideRightTop = 0;

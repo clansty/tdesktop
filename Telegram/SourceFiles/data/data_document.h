@@ -13,6 +13,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_cloud_file.h"
 #include "core/file_location.h"
 
+class HistoryItem;
+class PhotoData;
 enum class ChatRestriction;
 class mtpFileLoader;
 
@@ -180,6 +182,7 @@ public:
 	[[nodiscard]] const VideoData *video() const;
 
 	void forceIsStreamedAnimation();
+	[[nodiscard]] bool isMusicForProfile() const;
 	[[nodiscard]] bool isVoiceMessage() const;
 	[[nodiscard]] bool isVideoMessage() const;
 	[[nodiscard]] bool isSong() const;
@@ -288,7 +291,7 @@ public:
 	[[nodiscard]] Storage::Cache::Key cacheKey() const;
 	[[nodiscard]] uint8 cacheTag() const;
 
-	[[nodiscard]] bool canBeStreamed(HistoryItem *item) const;
+	[[nodiscard]] bool canBeStreamed() const;
 	[[nodiscard]] auto createStreamingLoader(
 		Data::FileOrigin origin,
 		bool forceRemoteLoader) const
@@ -401,6 +404,10 @@ private:
 	std::unique_ptr<FileLoader> _loader;
 
 };
+
+[[nodiscard]] PhotoData *LookupVideoCover(
+	not_null<DocumentData*> document,
+	HistoryItem *item);
 
 VoiceWaveform documentWaveformDecode(const QByteArray &encoded5bit);
 QByteArray documentWaveformEncode5bit(const VoiceWaveform &waveform);

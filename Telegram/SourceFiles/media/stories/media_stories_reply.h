@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "base/weak_ptr.h"
+#include "history/history_item_helpers.h"
 
 class History;
 enum class SendMediaType;
@@ -18,7 +19,12 @@ struct SendAction;
 struct SendOptions;
 } // namespace Api
 
+namespace Calls {
+class GroupCall;
+} // namespace Calls
+
 namespace Data {
+class GroupCall;
 struct ReactionId;
 } // namespace Data
 
@@ -44,6 +50,7 @@ struct Details;
 
 namespace Ui {
 struct PreparedList;
+struct PreparedBundle;
 class SendFilesWay;
 class RpWidget;
 } // namespace Ui
@@ -55,9 +62,16 @@ class Controller;
 struct ReplyAreaData {
 	PeerData *peer = nullptr;
 	StoryId id = 0;
+	std::shared_ptr<Data::GroupCall> videoStream;
 
 	friend inline auto operator<=>(ReplyAreaData, ReplyAreaData) = default;
 	friend inline bool operator==(ReplyAreaData, ReplyAreaData) = default;
+};
+
+enum class ReplyAreaType {
+	Reply,
+	Comment,
+	VideoStreamComment,
 };
 
 class ReplyArea final : public base::has_weak_ptr {
@@ -78,7 +92,9 @@ public:
 	[[nodiscard]] bool ignoreWindowMove(QPoint position) const;
 	void tryProcessKeyInput(not_null<QKeyEvent*> e);
 
-	[[nodiscard]] not_null<Ui::RpWidget*> likeAnimationTarget() const;
+	[[nodiscard]] Ui::RpWidget *likeAnimationTarget() const;
+
+	void updateVideoStream(not_null<Calls::GroupCall*> videoStream);
 
 private:
 	class Cant;
@@ -90,8 +106,12 @@ private:
 
 	bool send(
 		Api::MessageToSend message,
-		Api::SendOptions options,
 		bool skipToast = false);
+
+	[[nodiscard]] bool checkSendPayment(
+		int messagesCount,
+		Api::SendOptions options,
+		Fn<void(int)> withPaymentApproved);
 
 	void uploadFile(const QByteArray &fileContent, SendMediaType type);
 	bool confirmSendingFiles(
@@ -107,15 +127,11 @@ private:
 		std::optional<bool> overrideSendImagesAsPhotos,
 		const QString &insertTextOnCancel = QString());
 	bool showSendingFilesError(const Ui::PreparedList &list) const;
-	bool showSendingFilesError(
-		const Ui::PreparedList &list,
-		std::optional<bool> compress) const;
+	bool showSendingFilesError(const Ui::PreparedBundle &bundle) const;
+
 	void sendingFilesConfirmed(
-		Ui::PreparedList &&list,
-		Ui::SendFilesWay way,
-		TextWithTags &&caption,
-		Api::SendOptions options,
-		bool ctrlShiftEnter);
+		std::shared_ptr<Ui::PreparedBundle> bundle,
+		Api::SendOptions options);
 	void finishSending(bool skipToast = false);
 
 	bool sendExistingDocument(
@@ -127,10 +143,10 @@ private:
 		not_null<PhotoData*> photo,
 		Api::SendOptions options);
 	void sendInlineResult(
-		not_null<InlineBots::Result*> result,
+		std::shared_ptr<InlineBots::Result> result,
 		not_null<UserData*> bot);
 	void sendInlineResult(
-		not_null<InlineBots::Result*> result,
+		std::shared_ptr<InlineBots::Result> result,
 		not_null<UserData*> bot,
 		Api::SendOptions options,
 		std::optional<MsgId> localMessageId);
@@ -141,16 +157,19 @@ private:
 	[[nodiscard]] Api::SendAction prepareSendAction(
 		Api::SendOptions options) const;
 	void send(Api::SendOptions options);
-	void sendVoice(VoiceToSend &&data);
+	void sendVoice(const VoiceToSend &data);
 	void chooseAttach(std::optional<bool> overrideSendImagesAsPhotos);
 
 	[[nodiscard]] Fn<SendMenu::Details()> sendMenuDetails() const;
+	[[nodiscard]] rpl::producer<int> starsPerMessageValue() const;
 
 	void showPremiumToast(not_null<DocumentData*> emoji);
 	[[nodiscard]] bool showSlowmodeError();
 
 	const not_null<Controller*> _controller;
-	rpl::variable<bool> _isComment;
+	rpl::variable<ReplyAreaType> _type;
+	rpl::variable<int> _starsForMessage;
+	base::weak_ptr<Calls::GroupCall> _videoStream;
 
 	const std::unique_ptr<HistoryView::ComposeControls> _controls;
 	std::unique_ptr<Cant> _cant;
@@ -159,6 +178,8 @@ private:
 	base::has_weak_ptr _shownPeerGuard;
 	bool _chooseAttachRequest = false;
 	rpl::variable<bool> _choosingAttach;
+
+	SendPaymentHelper _sendPayment;
 
 	rpl::lifetime _lifetime;
 

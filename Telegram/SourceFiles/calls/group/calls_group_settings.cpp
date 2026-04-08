@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "calls/group/calls_group_menu.h" // LeaveBox.
 #include "calls/group/calls_group_common.h"
 #include "calls/group/calls_choose_join_as.h"
+#include "calls/group/calls_volume_item.h"
 #include "calls/calls_instance.h"
 #include "ui/widgets/level_meter.h"
 #include "ui/widgets/continuous_sliders.h"
@@ -43,7 +44,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/core_settings.h"
 #include "webrtc/webrtc_audio_input_tester.h"
 #include "webrtc/webrtc_device_resolver.h"
-#include "settings/settings_calls.h"
+#include "settings/sections/settings_calls.h"
+#include "settings/settings_common.h"
+#include "settings/settings_credits_graphics.h"
 #include "main/main_session.h"
 #include "apiwrap.h"
 #include "api/api_invite_links.h"
@@ -75,16 +78,43 @@ void SaveCallJoinMuted(
 	const auto call = peer->groupCall();
 	if (!call
 		|| call->id() != callId
+		|| peer->isUser()
 		|| !peer->canManageGroupCall()
 		|| !call->canChangeJoinMuted()
 		|| call->joinMuted() == joinMuted) {
 		return;
 	}
+	using Flag = MTPphone_ToggleGroupCallSettings::Flag;
 	call->setJoinMutedLocally(joinMuted);
 	peer->session().api().request(MTPphone_ToggleGroupCallSettings(
-		MTP_flags(MTPphone_ToggleGroupCallSettings::Flag::f_join_muted),
+		MTP_flags(Flag::f_join_muted),
 		call->input(),
-		MTP_bool(joinMuted)
+		MTP_bool(joinMuted),
+		MTPBool(), // messages_enabled
+		MTPlong() // send_paid_messages_stars
+	)).send();
+}
+
+void SaveCallMessagesEnabled(
+		not_null<PeerData*> peer,
+		CallId callId,
+		bool messagesEnabled) {
+	const auto call = peer->groupCall();
+	if (!call
+		|| call->id() != callId
+		|| !peer->canManageGroupCall()
+		|| !call->canChangeMessagesEnabled()
+		|| call->messagesEnabled() == messagesEnabled) {
+		return;
+	}
+	using Flag = MTPphone_ToggleGroupCallSettings::Flag;
+	call->setMessagesEnabledLocally(messagesEnabled);
+	peer->session().api().request(MTPphone_ToggleGroupCallSettings(
+		MTP_flags(Flag::f_messages_enabled),
+		call->input(),
+		MTPBool(), // join_muted
+		MTP_bool(messagesEnabled),
+		MTPlong() // send_paid_messages_stars
 	)).send();
 }
 
@@ -110,7 +140,7 @@ object_ptr<ShareBox> ShareInviteLinkBox(
 		const QString &linkListener,
 		std::shared_ptr<Ui::Show> show) {
 	const auto sending = std::make_shared<bool>();
-	const auto box = std::make_shared<QPointer<ShareBox>>();
+	const auto box = std::make_shared<base::weak_qptr<ShareBox>>();
 
 	auto bottom = linkSpeaker.isEmpty()
 		? nullptr
@@ -132,8 +162,12 @@ object_ptr<ShareBox> ShareInviteLinkBox(
 		QGuiApplication::clipboard()->setText(currentLink());
 		show->showToast(tr::lng_group_invite_copied(tr::now));
 	};
+	auto countMessagesCallback = [=](const TextWithTags &comment) {
+		return 1;
+	};
 	auto submitCallback = [=](
 			std::vector<not_null<Data::Thread*>> &&result,
+			Fn<bool()> checkPaid,
 			TextWithTags &&comment,
 			Api::SendOptions options,
 			Data::ForwardOptions) {
@@ -150,6 +184,8 @@ object_ptr<ShareBox> ShareInviteLinkBox(
 					MakeSendErrorBox(error, result.size() > 1));
 			}
 			return;
+		} else if (!checkPaid()) {
+			return;
 		}
 
 		*sending = true;
@@ -164,7 +200,7 @@ object_ptr<ShareBox> ShareInviteLinkBox(
 			comment.text = link;
 		}
 		auto &api = peer->session().api();
-		for (const auto thread : result) {
+		for (const auto &thread : result) {
 			auto message = Api::MessageToSend(
 				Api::SendAction(thread, options));
 			message.textWithTags = comment;
@@ -178,32 +214,18 @@ object_ptr<ShareBox> ShareInviteLinkBox(
 	};
 	auto filterCallback = [](not_null<Data::Thread*> thread) {
 		if (const auto user = thread->peer()->asUser()) {
-			if (user->canSendIgnoreRequirePremium()) {
+			if (user->canSendIgnoreMoneyRestrictions()) {
 				return true;
 			}
 		}
 		return Data::CanSend(thread, ChatRestriction::SendOther);
 	};
 
-	const auto scheduleStyle = [&] {
-		auto date = Ui::ChooseDateTimeStyleArgs();
-		date.labelStyle = &st::groupCallBoxLabel;
-		date.dateFieldStyle = &st::groupCallScheduleDateField;
-		date.timeFieldStyle = &st::groupCallScheduleTimeField;
-		date.separatorStyle = &st::callMuteButtonLabel;
-		date.atStyle = &st::callMuteButtonLabel;
-		date.calendarStyle = &st::groupCallCalendarColors;
-
-		auto st = HistoryView::ScheduleBoxStyleArgs();
-		st.topButtonStyle = &st::groupCallMenuToggle;
-		st.popupMenuStyle = &st::groupCallPopupMenu;
-		st.chooseDateTimeArgs = std::move(date);
-		return st;
-	};
-
+	const auto st = ::Settings::DarkCreditsEntryBoxStyle();
 	auto result = Box<ShareBox>(ShareBox::Descriptor{
 		.session = &peer->session(),
 		.copyCallback = std::move(copyCallback),
+		.countMessagesCallback = std::move(countMessagesCallback),
 		.submitCallback = std::move(submitCallback),
 		.filterCallback = std::move(filterCallback),
 		.bottomWidget = std::move(bottom),
@@ -213,12 +235,8 @@ object_ptr<ShareBox> ShareInviteLinkBox(
 				: rpl::single(false)),
 			tr::lng_group_call_copy_speaker_link(),
 			tr::lng_group_call_copy_listener_link()),
-		.stMultiSelect = &st::groupCallMultiSelect,
-		.stComment = &st::groupCallShareBoxComment,
-		.st = &st::groupCallShareBoxList,
-		.stLabel = &st::groupCallField,
-		.scheduleBoxStyle = scheduleStyle(),
-		.premiumRequiredError = SharePremiumRequiredError(),
+		.st = st.shareBox ? *st.shareBox : ShareBoxStyleOverrides(),
+		.moneyRestrictionError = ShareMessageMoneyRestrictionError(),
 	});
 	*box = result.data();
 	return result;
@@ -232,7 +250,7 @@ void SettingsBox(
 	using namespace Settings;
 
 	const auto weakCall = base::make_weak(call);
-	const auto weakBox = Ui::MakeWeak(box);
+	const auto weakBox = base::make_weak(box);
 
 	struct State {
 		std::unique_ptr<Webrtc::DeviceResolver> deviceId;
@@ -245,7 +263,9 @@ void SettingsBox(
 	};
 	const auto peer = call->peer();
 	const auto state = box->lifetime().make_state<State>();
-	const auto real = peer->groupCall();
+	const auto real = call->conference()
+		? call->lookupReal()
+		: peer->groupCall();
 	const auto rtmp = call->rtmp();
 	const auto id = call->id();
 	const auto goodReal = (real && real->id() == id);
@@ -253,20 +273,28 @@ void SettingsBox(
 	const auto layout = box->verticalLayout();
 	const auto &settings = Core::App().settings();
 
-	const auto joinMuted = goodReal ? real->joinMuted() : false;
+	const auto joinMuted = !call->conference()
+		&& goodReal
+		&& real->joinMuted();
+	const auto messagesEnabled = goodReal && real->messagesEnabled();
 	const auto canChangeJoinMuted = !rtmp
 		&& goodReal
 		&& real->canChangeJoinMuted();
-	const auto addCheck = (peer->canManageGroupCall() && canChangeJoinMuted);
+	const auto canChangeMessagesEnabled = !rtmp
+		&& goodReal
+		&& real->canChangeMessagesEnabled();
+	const auto addCheck = canChangeJoinMuted && peer->canManageGroupCall();
+	const auto addMessages = canChangeMessagesEnabled
+		&& (call->conference() || peer->canManageGroupCall());
 
 	const auto addDivider = [&] {
 		layout->add(object_ptr<Ui::BoxContentDivider>(
 			layout,
 			st::boxDividerHeight,
-			st::groupCallDividerBg));
+			st::groupCallDividerBar));
 	};
 
-	if (addCheck) {
+	if (addCheck || addMessages) {
 		Ui::AddSkip(layout);
 	}
 	const auto muteJoined = addCheck
@@ -275,7 +303,14 @@ void SettingsBox(
 			tr::lng_group_call_new_muted(),
 			st::groupCallSettingsButton))->toggleOn(rpl::single(joinMuted))
 		: nullptr;
-	if (addCheck) {
+	const auto enableMessages = addMessages
+		? layout->add(object_ptr<Ui::SettingsButton>(
+			layout,
+			tr::lng_group_call_enable_messages(),
+			st::groupCallSettingsButton))->toggleOn(
+				rpl::single(messagesEnabled))
+		: nullptr;
+	if (addCheck || addMessages) {
 		Ui::AddSkip(layout);
 	}
 
@@ -345,7 +380,7 @@ void SettingsBox(
 		))->toggleOn(rpl::single(
 			settings.groupCallNoiseSuppression()
 		))->toggledChanges(
-		) | rpl::start_with_next([=](bool enabled) {
+		) | rpl::on_next([=](bool enabled) {
 			Core::App().settings().setGroupCallNoiseSuppression(enabled);
 			call->setNoiseSuppression(enabled);
 			Core::App().saveSettingsDelayed();
@@ -360,7 +395,7 @@ void SettingsBox(
 	)->toggledChanges(
 	) | rpl::filter([=](bool toggled) {
 		return (toggled != GetEnhancedBool("show_scheduled_button"));
-	}) | rpl::start_with_next([=](bool toggled) {
+	}) | rpl::on_next([=](bool toggled) {
 		call->setStereoMode(toggled);
 		if (call->muted() == MuteState::Active) {
 			call->setMuted(MuteState::Muted);
@@ -443,8 +478,8 @@ void SettingsBox(
 									? tr::lng_group_call_mac_input()
 									: tr::lng_group_call_mac_accessibility())
 							) | rpl::map([](QString a, QString b) {
-								auto result = Ui::Text::RichLangValue(a);
-								result.append("\n\n").append(Ui::Text::RichLangValue(b));
+								auto result = tr::rich(a);
+								result.append("\n\n").append(tr::rich(b));
 								return result;
 							}),
 							st::groupCallBoxLabel),
@@ -468,7 +503,7 @@ void SettingsBox(
 							kCheckAccessibilityInterval
 						) | rpl::filter([] {
 							return base::GlobalShortcutsAllowed();
-						}) | rpl::start_with_next([=] {
+						}) | rpl::on_next([=] {
 							box->closeBox();
 						}, box->lifetime());
 					}
@@ -565,7 +600,7 @@ void SettingsBox(
 				settings.groupCallPushToTalk(),
 				anim::type::instant);
 			pushToTalk->toggledChanges(
-			) | rpl::start_with_next([=](bool toggled) {
+			) | rpl::on_next([=](bool toggled) {
 				if (!toggled) {
 					stopRecording();
 				} else if (!ensureManager()) {
@@ -679,7 +714,8 @@ void SettingsBox(
 			const auto session = &peer->session();
 			state->requestId = session->api().request(
 				MTPphone_GetGroupCallStreamRtmpUrl(
-					peer->input,
+					MTP_flags(0),
+					peer->input(),
 					MTP_bool(true)
 			)).done([=](const MTPphone_GroupCallStreamRtmpUrl &result) {
 				auto data = result.match([&](
@@ -751,8 +787,56 @@ void SettingsBox(
 		addDivider();
 		Ui::AddSkip(layout);
 	}
+	if (rtmp) {
+		const auto fakeMenu = layout->add(object_ptr<Ui::Menu::Menu>(
+			layout,
+			st::groupCallVolumeSettings));
+		auto volumeItem = base::make_unique_q<MenuVolumeItem>(
+			fakeMenu,
+			st::groupCallVolumeSettings,
+			st::groupCallVolumeSettingsSlider,
+			call->otherParticipantStateValue(
+			) | rpl::filter([=](const Group::ParticipantState &data) {
+				return data.peer == peer;
+			}),
+			call->rtmpVolume(),
+			Group::kMaxVolume,
+			false,
+			st::groupCallVolumeSettingsPadding);
 
-	if (peer->canManageGroupCall()) {
+		const auto toggleMute = crl::guard(layout, [=](bool m, bool local) {
+			if (call) {
+				call->toggleMute({
+					.peer = peer,
+					.mute = m,
+					.locallyOnly = local,
+				});
+			}
+		});
+		const auto changeVolume = crl::guard(layout, [=](int v, bool local) {
+			if (call) {
+				call->changeVolume({
+					.peer = peer,
+					.volume = std::clamp(v, 1, Group::kMaxVolume),
+					.locallyOnly = local,
+				});
+			}
+		});
+
+		volumeItem->toggleMuteLocallyRequests(
+		) | rpl::on_next([=](bool muted) {
+			toggleMute(muted, true);
+		}, volumeItem->lifetime());
+
+		volumeItem->changeVolumeLocallyRequests(
+		) | rpl::on_next([=](int volume) {
+			changeVolume(volume, true);
+		}, volumeItem->lifetime());
+
+		fakeMenu->addAction(std::move(volumeItem));
+	}
+
+	if (call->canManage()) {
 		layout->add(object_ptr<Ui::SettingsButton>(
 			layout,
 			(peer->isBroadcast()
@@ -790,11 +874,21 @@ void SettingsBox(
 
 	box->setTitle(tr::lng_group_call_settings_title());
 	box->boxClosing(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		if (canChangeJoinMuted
 			&& muteJoined
 			&& muteJoined->toggled() != joinMuted) {
 			SaveCallJoinMuted(peer, id, muteJoined->toggled());
+		}
+		if (canChangeMessagesEnabled
+			&& enableMessages
+			&& enableMessages->toggled() != messagesEnabled) {
+			const auto value = enableMessages->toggled();
+			if (!call->conference()) {
+				SaveCallMessagesEnabled(peer, id, value);
+			} else if (const auto real = call->lookupReal()) {
+				real->setMessagesEnabledLocally(value);
+			}
 		}
 	}, box->lifetime());
 	box->addButton(tr::lng_box_done(), [=] {
@@ -822,7 +916,7 @@ std::pair<Fn<void()>, rpl::lifetime> ShareInviteLinkAction(
 		bool generatingLink = false;
 	};
 	const auto state = lifetime.make_state<State>(&peer->session());
-	if (!peer->canManageGroupCall()) {
+	if (peer->isUser() || !peer->canManageGroupCall()) {
 		state->linkSpeaker = QString();
 	}
 

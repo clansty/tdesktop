@@ -50,7 +50,7 @@ namespace InlineBots {
 namespace Layout {
 
 class ItemBase;
-using Results = std::vector<std::unique_ptr<Result>>;
+using Results = std::vector<std::shared_ptr<Result>>;
 
 struct CacheEntry {
 	QString nextOffset;
@@ -58,6 +58,7 @@ struct CacheEntry {
 	QString switchPmStartToken;
 	QByteArray switchPmUrl;
 	Results results;
+	bool gallery = false;
 };
 
 class Inner
@@ -135,7 +136,7 @@ private:
 	void updateInlineItems();
 	void repaintItems(crl::time now = 0);
 	void clearInlineRows(bool resultsDeleted);
-	ItemBase *layoutPrepareInlineResult(Result *result);
+	ItemBase *layoutPrepareInlineResult(std::shared_ptr<Result> result);
 
 	void updateRestrictedLabelGeometry();
 	void deleteUnusedInlineLayouts();
@@ -158,6 +159,7 @@ private:
 	crl::time _lastUpdatedAt = 0;
 	base::Timer _updateInlineItems;
 	bool _inlineWithThumb = false;
+	bool _gallery = false;
 
 	object_ptr<Ui::RoundButton> _switchPmButton = { nullptr };
 	QString _switchPmStartToken;

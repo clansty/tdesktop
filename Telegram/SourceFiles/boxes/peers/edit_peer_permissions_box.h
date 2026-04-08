@@ -27,6 +27,11 @@ enum Flag : uint32;
 using Flags = base::flags<Flag>;
 } // namespace PowerSaving
 
+namespace Data {
+enum class ChatbotsPermission;
+using ChatbotsPermissions = base::flags<ChatbotsPermission>;
+} // namespace Data
+
 template <typename Object>
 class object_ptr;
 
@@ -39,6 +44,7 @@ struct EditPeerPermissionsBoxResult final {
 	ChatRestrictions rights;
 	int slowmodeSeconds = 0;
 	int boostsUnrestrict = 0;
+	int starsPerMessage = 0;
 };
 
 void ShowEditPeerPermissionsBox(
@@ -63,6 +69,7 @@ struct EditFlagsControl {
 	object_ptr<Ui::RpWidget> widget;
 	Fn<Flags()> value;
 	rpl::producer<Flags> changes;
+	QPointer<Ui::RpWidget> highlightWidget;
 };
 
 template <typename Flags>
@@ -77,6 +84,7 @@ struct EditFlagsDescriptor {
 	base::flat_map<Flags, QString> disabledMessages;
 	const style::SettingsButton *st = nullptr;
 	rpl::producer<QString> forceDisabledMessage;
+	Flags highlightFlags = Flags();
 };
 
 using RestrictionLabel = EditFlagsLabel<ChatRestrictions>;
@@ -111,7 +119,8 @@ using AdminRightLabel = EditFlagsLabel<ChatAdminRights>;
 [[nodiscard]] auto CreateEditPowerSaving(
 	QWidget *parent,
 	PowerSaving::Flags flags,
-	rpl::producer<QString> forceDisabledMessage
+	rpl::producer<QString> forceDisabledMessage,
+	PowerSaving::Flags highlightFlags = PowerSaving::Flags()
 ) -> EditFlagsControl<PowerSaving::Flags>;
 
 [[nodiscard]] auto CreateEditAdminLogFilter(
@@ -119,3 +128,8 @@ using AdminRightLabel = EditFlagsLabel<ChatAdminRights>;
 	AdminLog::FilterValue::Flags flags,
 	bool isChannel
 ) -> EditFlagsControl<AdminLog::FilterValue::Flags>;
+
+[[nodiscard]] auto CreateEditChatbotPermissions(
+	QWidget *parent,
+	Data::ChatbotsPermissions flags
+) -> EditFlagsControl<Data::ChatbotsPermissions>;

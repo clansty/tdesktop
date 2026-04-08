@@ -32,6 +32,8 @@ public:
 		About,
 		Birthday,
 		GiftsAutoSave,
+		NoPaidMessages,
+		SavedMusic,
 	};
 	enum class Option {
 		Everyone,

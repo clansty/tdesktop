@@ -11,6 +11,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_message_reaction_id.h"
 #include "data/stickers/data_custom_emoji.h"
 
+namespace Calls {
+class GroupCall;
+} // namespace Calls
+
 namespace Ui {
 class AnimatedIcon;
 } // namespace Ui
@@ -61,6 +65,8 @@ struct PossibleItemReactions {
 [[nodiscard]] PossibleItemReactionsRef LookupPossibleReactions(
 	not_null<HistoryItem*> item,
 	bool paidInFront = false);
+[[nodiscard]] PossibleItemReactionsRef LookupPossibleReactions(
+	not_null<Main::Session*> session);
 
 struct MyTagInfo {
 	ReactionId id;
@@ -71,7 +77,7 @@ struct MyTagInfo {
 struct PaidReactionSend {
 	int count = 0;
 	bool valid = false;
-	std::optional<bool> anonymous = false;
+	std::optional<PeerId> shownPeer = PeerId();
 };
 
 class Reactions final : private CustomEmojiManager::Listener {
@@ -152,10 +158,17 @@ public:
 		SavedSublist *sublist = nullptr);
 
 	[[nodiscard]] bool isQuitPrevent();
+
 	void schedulePaid(not_null<HistoryItem*> item);
 	void undoScheduledPaid(not_null<HistoryItem*> item);
 	[[nodiscard]] crl::time sendingScheduledPaidAt(
 		not_null<HistoryItem*> item) const;
+
+	void schedulePaid(not_null<Calls::GroupCall*> call);
+	void undoScheduledPaid(not_null<Calls::GroupCall*> call);
+	[[nodiscard]] crl::time sendingScheduledPaidAt(
+		not_null<Calls::GroupCall*> call) const;
+
 	[[nodiscard]] static crl::time ScheduledPaidDelay();
 
 	[[nodiscard]] static bool HasUnread(const MTPMessageReactions &data);
@@ -353,6 +366,8 @@ private:
 	base::flat_map<not_null<HistoryItem*>, mtpRequestId> _sendingPaid;
 	base::Timer _sendPaidTimer;
 
+	base::flat_map<not_null<Calls::GroupCall*>, crl::time> _sendPaidCalls;
+
 	mtpRequestId _saveFaveRequestId = 0;
 
 	rpl::lifetime _lifetime;
@@ -409,7 +424,7 @@ public:
 	[[nodiscard]] bool hasUnread() const;
 	void markRead();
 
-	void scheduleSendPaid(int count, std::optional<bool> anonymous);
+	void scheduleSendPaid(int count, std::optional<PeerId> shownPeer);
 	[[nodiscard]] int scheduledPaid() const;
 	void cancelScheduledPaid();
 
@@ -418,19 +433,19 @@ public:
 
 	[[nodiscard]] bool localPaidData() const;
 	[[nodiscard]] int localPaidCount() const;
-	[[nodiscard]] bool localPaidAnonymous() const;
+	[[nodiscard]] PeerId localPaidShownPeer() const;
 	bool clearCloudData();
 
 private:
 	struct Paid {
 		std::vector<TopPaid> top;
-		uint32 scheduled: 29 = 0;
+		PeerId scheduledShownPeer = 0;
+		PeerId sendingShownPeer = 0;
+		uint32 scheduled: 30 = 0;
 		uint32 scheduledFlag : 1 = 0;
-		uint32 scheduledAnonymous : 1 = 0;
 		uint32 scheduledPrivacySet : 1 = 0;
-		uint32 sending : 29 = 0;
+		uint32 sending : 30 = 0;
 		uint32 sendingFlag : 1 = 0;
-		uint32 sendingAnonymous : 1 = 0;
 		uint32 sendingPrivacySet : 1 = 0;
 	};
 	const not_null<HistoryItem*> _item;

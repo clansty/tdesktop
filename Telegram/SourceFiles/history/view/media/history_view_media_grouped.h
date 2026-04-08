@@ -93,9 +93,11 @@ public:
 	bool allowsFastShare() const override {
 		return true;
 	}
+	std::optional<PaidInformation> paidInformation() const override;
 	bool customHighlight() const override {
 		return true;
 	}
+	QRect groupItemRect(int index) const override;
 	bool enforceBubbleWidth() const override;
 
 	void stopAnimation() override;

@@ -19,7 +19,6 @@ SingleMediaPreview *SingleMediaPreview::Create(
 		const style::ComposeControls &st,
 		Fn<bool()> gifPaused,
 		const PreparedFile &file,
-		Fn<bool()> canToggleSpoiler,
 		AttachControls::Type type) {
 	auto preview = QImage();
 	auto animated = false;
@@ -32,7 +31,9 @@ SingleMediaPreview *SingleMediaPreview::Create(
 		hasModifications = !image->modifications.empty();
 	} else if (const auto video = std::get_if<PreparedFileInformation::Video>(
 			&file.information->media)) {
-		preview = video->thumbnail;
+		preview = file.videoCover
+			? file.videoCover->preview
+			: video->thumbnail;
 		animated = true;
 		animationPreview = video->isGifv;
 	}
@@ -43,7 +44,7 @@ SingleMediaPreview *SingleMediaPreview::Create(
 		&& !hasModifications) {
 		return nullptr;
 	}
-	return CreateChild<SingleMediaPreview>(
+	const auto result = CreateChild<SingleMediaPreview>(
 		parent,
 		st,
 		std::move(gifPaused),
@@ -52,8 +53,9 @@ SingleMediaPreview *SingleMediaPreview::Create(
 		Core::IsMimeSticker(file.information->filemime),
 		file.spoiler,
 		animationPreview ? file.path : QString(),
-		type,
-		std::move(canToggleSpoiler));
+		type);
+	result->setCanShowHighQualityBadge(file.canUseHighQualityPhoto());
+	return result;
 }
 
 SingleMediaPreview::SingleMediaPreview(
@@ -65,9 +67,8 @@ SingleMediaPreview::SingleMediaPreview(
 	bool sticker,
 	bool spoiler,
 	const QString &animatedPreviewPath,
-	AttachControls::Type type,
-	Fn<bool()> canToggleSpoiler)
-: AbstractSingleMediaPreview(parent, st, type, std::move(canToggleSpoiler))
+	AttachControls::Type type)
+: AbstractSingleMediaPreview(parent, st, type)
 , _gifPaused(std::move(gifPaused))
 , _sticker(sticker) {
 	Expects(!preview.isNull());
@@ -124,7 +125,7 @@ void SingleMediaPreview::prepareAnimatedPreview(
 			Lottie::ReadContent(QByteArray(), animatedPreviewPath),
 			Lottie::FrameRequest{ box });
 		_lottiePreview->updates(
-		) | rpl::start_with_next([=] {
+		) | rpl::on_next([=] {
 			update();
 		}, lifetime());
 	} else if (!animatedPreviewPath.isEmpty()) {

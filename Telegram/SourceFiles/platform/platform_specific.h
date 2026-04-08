@@ -11,6 +11,10 @@ namespace Core {
 enum class QuitReason;
 } // namespace Core
 
+namespace Data {
+class LocationPoint;
+} // namespace Data
+
 namespace Platform {
 
 void start();
@@ -44,12 +48,13 @@ void AutostartToggle(bool enabled, Fn<void(bool)> done = nullptr);
 [[nodiscard]] bool AutostartSkip();
 [[nodiscard]] bool TrayIconSupported();
 [[nodiscard]] bool SkipTaskbarSupported();
-[[nodiscard]] bool RunInBackground();
 void WriteCrashDumpDetails();
 void NewVersionLaunched(int oldVersion);
 [[nodiscard]] QImage DefaultApplicationIcon();
+[[nodiscard]] QString ApplicationIconName();
 [[nodiscard]] bool PreventsQuit(Core::QuitReason reason);
 [[nodiscard]] QString ExecutablePathForShortcuts();
+void LaunchMaps(const Data::LocationPoint &point, Fn<void()> fail);
 
 #if QT_VERSION < QT_VERSION_CHECK(6, 5, 0)
 [[nodiscard]] std::optional<bool> IsDarkMode();

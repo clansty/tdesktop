@@ -10,9 +10,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_top_bar_widget.h"
 #include "history/view/history_view_translate_bar.h"
 #include "history/view/history_view_list_widget.h"
+#include "data/data_chat_participant_status.h"
 #include "history/history.h"
 #include "history/history_item_components.h"
 #include "history/history_item.h"
+#include "history/history_view_swipe_back_session.h"
 #include "ui/boxes/confirm_box.h"
 #include "ui/widgets/scroll_area.h"
 #include "ui/widgets/shadow.h"
@@ -93,6 +95,10 @@ Data::ForumTopic *PinnedMemento::topicForRemoveRequests() const {
 	return _thread->asTopic();
 }
 
+Data::SavedSublist *PinnedMemento::sublistForRemoveRequests() const {
+	return _thread->asSublist();
+}
+
 PinnedWidget::PinnedWidget(
 	QWidget *parent,
 	not_null<Window::SessionController*> controller,
@@ -120,14 +126,14 @@ PinnedWidget::PinnedWidget(
 		controller->chatStyle(),
 		static_cast<HistoryView::CornerButtonsDelegate*>(this)) {
 	controller->chatStyle()->paletteChanged(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		_scroll->updateBars();
 	}, _scroll->lifetime());
 
 	Window::ChatThemeValueFromPeer(
 		controller,
 		thread->peer()
-	) | rpl::start_with_next([=](std::shared_ptr<Ui::ChatTheme> &&theme) {
+	) | rpl::on_next([=](std::shared_ptr<Ui::ChatTheme> &&theme) {
 		_theme = std::move(theme);
 		controller->setChatStyleTheme(_theme);
 	}, lifetime());
@@ -145,34 +151,34 @@ PinnedWidget::PinnedWidget(
 	_topBar->setCustomTitle(tr::lng_contacts_loading(tr::now));
 
 	_topBar->deleteSelectionRequest(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		confirmDeleteSelected();
 	}, _topBar->lifetime());
 	_topBar->oldForwardSelectionRequest(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		confirmOldForwardSelected();
 	}, _topBar->lifetime());
 	_topBar->forwardSelectionRequest(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		confirmForwardSelected();
 	}, _topBar->lifetime());
 	_topBar->forwardNoQuoteSelectionRequest(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		confirmForwardNoQuoteSelected();
 	}, _topBar->lifetime());
 	_topBar->savedMessagesSelectionRequest(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		confirmForwardSelectedToSavedMessages();
 	}, _topBar->lifetime());
 	_topBar->clearSelectionRequest(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		clearSelected();
 	}, _topBar->lifetime());
 
 	_translateBar->raise();
 	_topBarShadow->raise();
 	controller->adaptive().value(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		updateAdaptiveLayout();
 	}, lifetime());
 
@@ -183,12 +189,18 @@ PinnedWidget::PinnedWidget(
 	_scroll->move(0, _topBar->height());
 	_scroll->show();
 	_scroll->scrolls(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		onScroll();
+	}, lifetime());
+
+	_inner->scrollKeyEvents(
+	) | rpl::on_next([=](not_null<QKeyEvent*> e) {
+		_scroll->keyPressEvent(e);
 	}, lifetime());
 
 	setupClearButton();
 	setupTranslateBar();
+	Window::SetupSwipeBackSection(this, _scroll.get(), _inner);
 }
 
 PinnedWidget::~PinnedWidget() = default;
@@ -196,7 +208,7 @@ PinnedWidget::~PinnedWidget() = default;
 void PinnedWidget::setupClearButton() {
 	Data::CanPinMessagesValue(
 		_history->peer
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		refreshClearButtonText();
 	}, _clearButton->lifetime());
 
@@ -209,6 +221,7 @@ void PinnedWidget::setupClearButton() {
 				controller(),
 				_history->peer,
 				_thread->topicRootId(),
+				_thread->monoforumPeerId(),
 				crl::guard(this, callback));
 		} else {
 			Window::UnpinAllMessages(controller(), _thread);
@@ -218,7 +231,7 @@ void PinnedWidget::setupClearButton() {
 
 void PinnedWidget::setupTranslateBar() {
 	controller()->adaptive().oneColumnValue(
-	) | rpl::start_with_next([=, raw = _translateBar.get()](bool one) {
+	) | rpl::on_next([=, raw = _translateBar.get()](bool one) {
 		raw->setShadowGeometryPostprocess([=](QRect geometry) {
 			if (!one) {
 				geometry.setLeft(geometry.left() + st::lineWidth);
@@ -229,7 +242,7 @@ void PinnedWidget::setupTranslateBar() {
 
 	_translateBarHeight = 0;
 	_translateBar->heightValue(
-	) | rpl::start_with_next([=](int height) {
+	) | rpl::on_next([=](int height) {
 		if (const auto delta = height - _translateBarHeight) {
 			_translateBarHeight = height;
 			setGeometryWithTopMoved(geometry(), delta);
@@ -271,7 +284,8 @@ bool PinnedWidget::cornerButtonsUnreadMayBeShown() {
 }
 
 bool PinnedWidget::cornerButtonsHas(CornerButtonType type) {
-	return (type == CornerButtonType::Down);
+	return (type == CornerButtonType::Down)
+		|| (type == CornerButtonType::PollVotes);
 }
 
 void PinnedWidget::showAtPosition(
@@ -531,6 +545,7 @@ rpl::producer<Data::MessagesSlice> PinnedWidget::listSource(
 			SparseIdsMergedSlice::Key(
 				_history->peer->id,
 				_thread->topicRootId(),
+				_thread->monoforumPeerId(),
 				_migratedPeer ? _migratedPeer->id : 0,
 				messageId),
 			Storage::SharedMediaType::Pinned),
@@ -676,14 +691,23 @@ void PinnedWidget::listShowPremiumToast(not_null<DocumentData*> document) {
 void PinnedWidget::listOpenPhoto(
 		not_null<PhotoData*> photo,
 		FullMsgId context) {
-	controller()->openPhoto(photo, { context });
+	const auto draw = Data::CanSendAnyOf(
+		_thread,
+		Data::FilesSendRestrictions());
+	controller()->openPhoto(photo, { .id = context, .showDrawButton = draw });
 }
 
 void PinnedWidget::listOpenDocument(
 		not_null<DocumentData*> document,
 		FullMsgId context,
 		bool showInMediaView) {
-	controller()->openDocument(document, showInMediaView, { context });
+	const auto draw = Data::CanSendAnyOf(
+		_thread,
+		Data::FilesSendRestrictions());
+	controller()->openDocument(
+		document,
+		showInMediaView,
+		{ .id = context, .showDrawButton = draw });
 }
 
 void PinnedWidget::listPaintEmpty(

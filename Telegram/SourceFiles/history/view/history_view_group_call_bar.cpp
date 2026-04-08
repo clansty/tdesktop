@@ -65,6 +65,43 @@ void GenerateUserpicsInRow(
 	}
 }
 
+bool NeedRegenerateUserpics(
+		const QImage &image,
+		const std::vector<UserpicInRow> &list) {
+	if (image.isNull()) {
+		return true;
+	}
+	for (auto &entry : list) {
+		const auto peer = entry.peer;
+		auto &view = entry.view;
+		const auto wasView = view.cloud.get();
+		if (peer->userpicUniqueKey(view) != entry.uniqueKey
+			|| view.cloud.get() != wasView) {
+			return true;
+		}
+	}
+	return false;
+}
+
+PreparedUserpicsInRow PrepareUserpicsInRow(
+		const std::vector<not_null<PeerData*>> &peers,
+		const style::GroupCallUserpics &st,
+		int limit) {
+	auto rows = std::vector<UserpicInRow>();
+	rows.reserve(peers.size());
+	for (const auto &peer : peers) {
+		rows.push_back({ .peer = peer });
+	}
+	auto result = PreparedUserpicsInRow();
+	if (!rows.empty()) {
+		GenerateUserpicsInRow(result.image, rows, st, limit);
+	}
+	result.width = result.image.isNull()
+		? 0
+		: (result.image.width() / style::DevicePixelRatio());
+	return result;
+}
+
 rpl::producer<Ui::GroupCallBarContent> GroupCallBarContentByCall(
 		not_null<Data::GroupCall*> call,
 		int userpicSize) {
@@ -85,19 +122,29 @@ rpl::producer<Ui::GroupCallBarContent> GroupCallBarContentByCall(
 		return (~uint64(0)) - result; // sorting with less(), so invert.
 	};
 
+	static const auto RtmpCallTopBarParticipants = [](
+			not_null<Data::GroupCall*> call) {
+		using Participant = Data::GroupCallParticipant;
+		return std::vector<Participant>{ Participant{
+			.peer = call->peer(),
+		} };
+	};
+
 	constexpr auto kLimit = 3;
 	static const auto FillMissingUserpics = [](
 			not_null<State*> state,
 			not_null<Data::GroupCall*> call) {
 		const auto already = int(state->userpics.size());
-		const auto &participants = call->participants();
+		const auto &participants = call->rtmp()
+			? RtmpCallTopBarParticipants(call)
+			: call->participants();
 		if (already >= kLimit || participants.size() <= already) {
 			return false;
 		}
 		std::array<const Data::GroupCallParticipant*, kLimit> adding{
 			{ nullptr }
 		};
-		for (const auto &participant : call->participants()) {
+		for (const auto &participant : participants) {
 			const auto alreadyInList = ranges::contains(
 				state->userpics,
 				participant.peer,
@@ -186,6 +233,9 @@ rpl::producer<Ui::GroupCallBarContent> GroupCallBarContentByCall(
 			int userpicSize) {
 		Expects(state->userpics.size() <= kLimit);
 
+		if (call->rtmp()) {
+			return false;
+		}
 		const auto &participants = call->participants();
 		auto i = begin(state->userpics);
 
@@ -278,7 +328,7 @@ rpl::producer<Ui::GroupCallBarContent> GroupCallBarContentByCall(
 
 		using ParticipantUpdate = Data::GroupCall::ParticipantUpdate;
 		call->participantUpdated(
-		) | rpl::start_with_next([=](const ParticipantUpdate &update) {
+		) | rpl::on_next([=](const ParticipantUpdate &update) {
 			const auto participantPeer = update.now
 				? update.now->peer
 				: update.was->peer;
@@ -328,12 +378,12 @@ rpl::producer<Ui::GroupCallBarContent> GroupCallBarContentByCall(
 		call->participantsReloaded(
 		) | rpl::filter([=] {
 			return RegenerateUserpics(state, call, userpicSize);
-		}) | rpl::start_with_next(pushNext, lifetime);
+		}) | rpl::on_next(pushNext, lifetime);
 
 		call->peer()->session().downloaderTaskFinished(
 		) | rpl::filter([=] {
 			return state->someUserpicsNotLoaded;
-		}) | rpl::start_with_next([=] {
+		}) | rpl::on_next([=] {
 			for (const auto &userpic : state->userpics) {
 				if (userpic.peer->userpicUniqueKey(userpic.view)
 					!= userpic.uniqueKey) {
@@ -350,7 +400,7 @@ rpl::producer<Ui::GroupCallBarContent> GroupCallBarContentByCall(
 			call->titleValue(),
 			call->scheduleDateValue(),
 			call->fullCountValue()
-		) | rpl::start_with_next([=](
+		) | rpl::on_next([=](
 				const QString &title,
 				TimeId scheduleDate,
 				int count) {
@@ -376,7 +426,7 @@ rpl::producer<Ui::GroupCallBarContent> GroupCallBarContentByPeer(
 			Data::PeerUpdate::Flag::GroupCall),
 		Core::App().calls().currentGroupCallValue(),
 		((showInForum || !channel)
-			? (rpl::single(false) | rpl::type_erased())
+			? (rpl::single(false) | rpl::type_erased)
 			: Data::PeerFlagValue(channel, ChannelData::Flag::Forum))
 	) | rpl::map([=](auto, Calls::GroupCall *current, bool hiddenByForum) {
 		const auto call = peer->groupCall();

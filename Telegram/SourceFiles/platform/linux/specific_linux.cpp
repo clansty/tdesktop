@@ -12,14 +12,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/platform/base_platform_info.h"
 #include "base/platform/linux/base_linux_dbus_utilities.h"
 #include "base/platform/linux/base_linux_xdp_utilities.h"
+#include "base/platform/linux/base_linux_app_launch_context.h"
 #include "lang/lang_keys.h"
-#include "mainwindow.h"
-#include "storage/localstorage.h"
 #include "core/launcher.h"
 #include "core/sandbox.h"
 #include "core/application.h"
-#include "core/core_settings.h"
 #include "core/update_checker.h"
+#include "data/data_location.h"
 #include "window/window_controller.h"
 #include "webview/platform/linux/webview_linux_webkitgtk.h"
 
@@ -29,6 +28,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QSystemTrayIcon>
+#include <QtGui/QDesktopServices>
 #include <QtCore/QStandardPaths>
 #include <QtCore/QProcess>
 
@@ -37,6 +37,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <xdgdbus/xdgdbus.hpp>
 #include <xdpbackground/xdpbackground.hpp>
+#include <xdpopenuri/xdpopenuri.hpp>
 #include <xdprequest/xdprequest.hpp>
 
 #include <sys/stat.h>
@@ -46,8 +47,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <unistd.h>
 #include <dirent.h>
 #include <pwd.h>
-
-#include <iostream>
 
 namespace {
 
@@ -261,7 +260,7 @@ bool GenerateDesktopFile(
 		-1,
 		GLib::KeyFileFlags::KEEP_COMMENTS_
 			| GLib::KeyFileFlags::KEEP_TRANSLATIONS_);
-	
+
 	if (!loaded) {
 		if (!silent) {
 			LOG(("App Error: %1").arg(loaded.error().message_().c_str()));
@@ -482,12 +481,33 @@ void InstallLauncher() {
 	const auto icons = QStandardPaths::writableLocation(
 		QStandardPaths::GenericDataLocation) + u"/icons/"_q;
 
-	if (!QDir(icons).exists()) QDir().mkpath(icons);
+	const auto appIcons = icons + u"/hicolor/256x256/apps/"_q;
+	if (!QDir(appIcons).exists()) QDir().mkpath(appIcons);
 
-	const auto icon = icons + base::IconName() + u".png"_q;
+	const auto icon = appIcons + ApplicationIconName() + u".png"_q;
 	QFile::remove(icon);
+	QFile::remove(icons + u"telegram.png"_q);
 	if (QFile::copy(u":/gui/art/logo_256.png"_q, icon)) {
 		DEBUG_LOG(("App Info: Icon copied to '%1'").arg(icon));
+	}
+
+	const auto symbolicIcons = icons + u"/hicolor/symbolic/apps/"_q;
+	if (!QDir().exists(symbolicIcons)) QDir().mkpath(symbolicIcons);
+
+	const auto monochromeIcons = {
+		QString(),
+		u"attention"_q,
+		u"mute"_q,
+	};
+
+	for (const auto &icon : monochromeIcons) {
+		QFile::copy(
+			u":/gui/icons/tray/monochrome%1.svg"_q.arg(
+				!icon.isEmpty() ? u"_"_q + icon : QString()),
+			symbolicIcons
+				+ ApplicationIconName()
+				+ (!icon.isEmpty() ? u"-"_q + icon : QString())
+				+ u"-symbolic.svg"_q);
 	}
 
 	QProcess::execute("update-desktop-database", {
@@ -495,14 +515,64 @@ void InstallLauncher() {
 	});
 }
 
-[[nodiscard]] QByteArray HashForSocketPath(const QByteArray &data) {
+[[nodiscard]] QByteArray HashForSocketPath() {
 	constexpr auto kHashForSocketPathLength = 24;
 
-	const auto binary = openssl::Sha256(bytes::make_span(data));
+	const auto binary = openssl::Sha256(
+		bytes::make_span(Core::Launcher::Instance().instanceHash()));
 	const auto base64 = QByteArray(
 		reinterpret_cast<const char*>(binary.data()),
 		binary.size()).toBase64(QByteArray::Base64UrlEncoding);
 	return base64.mid(0, kHashForSocketPathLength);
+}
+
+void AppInfoCheckScheme(
+		const std::string &scheme,
+		Fn<void(Gio::AppInfo, Fn<void()>)> callback,
+		Fn<void()> fail) {
+	// TODO: use get_default_for_uri_scheme_async once we can use GLib 2.74
+	if (auto appInfo = Gio::AppInfo::get_default_for_uri_scheme(scheme)) {
+		callback(appInfo, fail);
+		return;
+	}
+	fail();
+}
+
+void PortalCheckScheme(
+		const std::string &scheme,
+		Fn<void(Fn<void()>)> callback,
+		Fn<void()> fail) {
+	XdpOpenURI::OpenURIProxy::new_for_bus(
+		Gio::BusType::SESSION_,
+		Gio::DBusProxyFlags::NONE_,
+		base::Platform::XDP::kService,
+		base::Platform::XDP::kObjectPath,
+		[=](GObject::Object, Gio::AsyncResult res) {
+			auto interface = XdpOpenURI::OpenURI(
+				XdpOpenURI::OpenURIProxy::new_for_bus_finish(res, nullptr));
+
+			if (!interface) {
+				fail();
+				return;
+			}
+
+			interface.call_scheme_supported(
+				scheme,
+				GLib::Variant::new_array(
+					GLib::VariantType::new_("{sv}"),
+					{}),
+				[=](GObject::Object, Gio::AsyncResult res) mutable {
+					const auto result
+						= interface.call_scheme_supported_finish(res);
+
+					if (!result || !std::get<1>(*result)) {
+						fail();
+						return;
+					}
+
+					callback(fail);
+				});
+		});
 }
 
 } // namespace
@@ -533,7 +603,13 @@ QString SingleInstanceLocalServerName(const QString &hash) {
 
 #if QT_VERSION < QT_VERSION_CHECK(6, 5, 0)
 std::optional<bool> IsDarkMode() {
-	return std::nullopt;
+	auto result = base::Platform::XDP::ReadSetting(
+		"org.freedesktop.appearance",
+		"color-scheme");
+
+	return result.has_value()
+		? std::make_optional(result->get_uint32() == 1)
+		: std::nullopt;
 }
 #endif // Qt < 6.5.0
 
@@ -589,10 +665,6 @@ bool SkipTaskbarSupported() {
 #endif // !DESKTOP_APP_DISABLE_X11_INTEGRATION
 
 	return false;
-}
-
-bool RunInBackground() {
-	return true;
 }
 
 QString ExecutablePathForShortcuts() {
@@ -652,10 +724,6 @@ int psFixPrevious() {
 namespace Platform {
 
 void start() {
-	const auto d = QFile::encodeName(QDir(cWorkingDir()).absolutePath());
-	char h[33] = { 0 };
-	hashMd5Hex(d.constData(), d.size(), h);
-
 	QGuiApplication::setDesktopFileName([&] {
 		if (KSandbox::isFlatpak()) {
 			return qEnvironmentVariable("FLATPAK_ID");
@@ -668,18 +736,8 @@ void start() {
 		}
 
 		//if (!Core::UpdaterDisabled()) {
-		//	QByteArray md5Hash(h);
-		//	if (!Core::Launcher::Instance().customWorkingDir()) {
-		//		const auto exePath = QFile::encodeName(
-		//			cExeDir() + cExeName());
-
-		//		hashMd5Hex(
-		//			exePath.constData(),
-		//			exePath.size(),
-		//			md5Hash.data());
-		//	}
-
-		//	return u"io.github.tdesktop_x64.TDesktop._%1"_q.arg(md5Hash.constData());
+		//	return u"org.telegram.desktop._%1"_q.arg(
+		//		Core::Launcher::Instance().instanceHash().constData());
 		//}
 
 		return u"0wgram"_q;
@@ -693,16 +751,17 @@ void start() {
 	}
 
 	qputenv("PULSE_PROP_application.name", AppName.utf8());
-	qputenv("PULSE_PROP_application.icon_name", base::IconName().toLatin1());
+	qputenv(
+		"PULSE_PROP_application.icon_name",
+		ApplicationIconName().toUtf8());
 
 	GLib::set_prgname(cExeName().toStdString());
 	GLib::set_application_name(AppName.data());
 
-	Webview::WebKitGTK::SetSocketPath(u"%1/%2-%3-webview-%4"_q.arg(
+	Webview::WebKitGTK::SetSocketPath(u"%1/%2-%3-webview-{}"_q.arg(
 		QDir::tempPath(),
-		HashForSocketPath(d),
-		u"TD"_q,//QCoreApplication::applicationName(), - make path smaller.
-		u"%1"_q).toStdString());
+		HashForSocketPath(),
+		u"TD"_q).toStdString());
 
 	InstallLauncher();
 }
@@ -755,13 +814,44 @@ bool OpenSystemSettings(SystemSettingsType type) {
 }
 
 void NewVersionLaunched(int oldVersion) {
-	if (oldVersion <= 4001001 && cAutoStart()) {
+	if (oldVersion <= 5014003 && cAutoStart()) {
 		AutostartToggle(true);
 	}
 }
 
 QImage DefaultApplicationIcon() {
 	return Window::Logo();
+}
+
+QString ApplicationIconName() {
+	static const auto Result = KSandbox::isSnap()
+		? u"snap.%1."_q.arg(qEnvironmentVariable("SNAP_INSTANCE_NAME"))
+		: QGuiApplication::desktopFileName().remove(
+		u"._"_q + Core::Launcher::Instance().instanceHash());
+	return Result;
+}
+
+void LaunchMaps(const Data::LocationPoint &point, Fn<void()> fail) {
+	const auto url = QUrl(
+		u"geo:%1,%2"_q.arg(point.latAsString(), point.lonAsString()));
+
+	AppInfoCheckScheme(url.scheme().toStdString(), [=](
+			Gio::AppInfo appInfo,
+			Fn<void()> fail) {
+		// TODO: use launch_uris_async once we can use GLib 2.60
+		if (!appInfo.launch_uris(
+				{ url.toString().toStdString() },
+				base::Platform::AppLaunchContext(),
+				nullptr)) {
+			fail();
+		}
+	}, [=] {
+		PortalCheckScheme(url.scheme().toStdString(), [=](Fn<void()> fail) {
+			if (!QDesktopServices::openUrl(url)) {
+				fail();
+			}
+		}, fail);
+	});
 }
 
 namespace ThirdParty {
@@ -820,8 +910,4 @@ bool linuxMoveFile(const char *from, const char *to) {
 	}
 
 	return true;
-}
-
-bool psLaunchMaps(const Data::LocationPoint &point) {
-	return false;
 }

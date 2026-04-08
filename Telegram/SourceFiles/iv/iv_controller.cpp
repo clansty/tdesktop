@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "iv/iv_controller.h"
 
+#include "base/event_filter.h"
 #include "base/platform/base_platform_info.h"
 #include "base/qt/qt_key_modifiers.h"
 #include "base/invoke_queued.h"
@@ -68,11 +69,11 @@ class ItemZoom final
 	, public Ui::AbstractTooltipShower {
 public:
 	ItemZoom(
-		not_null<RpWidget*> parent,
+		not_null<Ui::PopupMenu*> parent,
 		const not_null<Delegate*> delegate,
 		const style::Menu &st)
 	: Ui::Menu::Action(
-		parent,
+		parent->menu(),
 		st,
 		Ui::CreateChild<QAction>(parent),
 		nullptr,
@@ -88,7 +89,7 @@ public:
 		AbstractButton::setDisabled(true);
 
 		const auto processTooltip = [=](not_null<Ui::RpWidget*> w) {
-			w->events() | rpl::start_with_next([=](not_null<QEvent*> e) {
+			w->events() | rpl::on_next([=](not_null<QEvent*> e) {
 				if (e->type() == QEvent::Enter) {
 					Ui::Tooltip::Show(1000, this);
 				} else if (e->type() == QEvent::Leave) {
@@ -109,14 +110,14 @@ public:
 		resetLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
 		reset->setTextTransform(Ui::RoundButton::TextTransform::NoTransform);
 		reset->setClickedCallback([this] {
-			_delegate->ivSetZoom(kDefaultZoom);
+			_delegate->ivSetZoom(0);
 		});
 		reset->show();
 		const auto plus = Ui::CreateSimpleCircleButton(
 			this,
 			st::defaultRippleAnimationBgOver);
 		plus->resize(Size(st::ivZoomButtonsSize));
-		plus->paintRequest() | rpl::start_with_next([=, fg = _st.itemFg] {
+		plus->paintRequest() | rpl::on_next([=, fg = _st.itemFg] {
 			auto p = QPainter(plus);
 			p.setPen(fg);
 			p.setFont(st::normalFont);
@@ -138,7 +139,7 @@ public:
 			this,
 			st::defaultRippleAnimationBgOver);
 		minus->resize(Size(st::ivZoomButtonsSize));
-		minus->paintRequest() | rpl::start_with_next([=, fg = _st.itemFg] {
+		minus->paintRequest() | rpl::on_next([=, fg = _st.itemFg] {
 			auto p = QPainter(minus);
 			const auto r = minus->rect();
 			p.setPen(fg);
@@ -167,7 +168,7 @@ public:
 		}
 
 		_delegate->ivZoomValue(
-		) | rpl::start_with_next([this](int value) {
+		) | rpl::on_next([this](int value) {
 			_text.setText(_st.itemStyle, QString::number(value) + '%');
 			update();
 		}, lifetime());
@@ -175,7 +176,7 @@ public:
 		rpl::combine(
 			sizeValue(),
 			reset->sizeValue()
-		) | rpl::start_with_next([=](const QSize &size, const QSize &) {
+		) | rpl::on_next([=](const QSize &size, const QSize &) {
 			reset->setFullWidth(0
 				+ resetLabel->width()
 				+ st::ivResetZoomInnerPadding);
@@ -423,7 +424,7 @@ void Controller::updateTitleGeometry(int newWidth) const {
 		0,
 		newWidth,
 		st::ivSubtitleHeight);
-	_subtitleWrap->paintRequest() | rpl::start_with_next([=](QRect clip) {
+	_subtitleWrap->paintRequest() | rpl::on_next([=](QRect clip) {
 		QPainter(_subtitleWrap.get()).fillRect(clip, st::windowBg);
 	}, _subtitleWrap->lifetime());
 
@@ -465,7 +466,7 @@ void Controller::initControls() {
 		return prefix + ' ' + QChar(0x2014) + ' ' + subtitle;
 	});
 	_windowTitleText.value(
-	) | rpl::start_with_next([=](const QString &title) {
+	) | rpl::on_next([=](const QString &title) {
 		_window->setWindowTitle(title);
 	}, _subtitle->lifetime());
 
@@ -494,7 +495,7 @@ void Controller::initControls() {
 	});
 
 	_back->toggledValue(
-	) | rpl::start_with_next([=](bool toggled) {
+	) | rpl::on_next([=](bool toggled) {
 		_subtitleBackShift.start(
 			[=] { updateTitleGeometry(_window->body()->width()); },
 			toggled ? 0. : 1.,
@@ -504,7 +505,7 @@ void Controller::initControls() {
 	_back->hide(anim::type::instant);
 
 	_forward->toggledValue(
-	) | rpl::start_with_next([=](bool toggled) {
+	) | rpl::on_next([=](bool toggled) {
 		_subtitleForwardShift.start(
 			[=] { updateTitleGeometry(_window->body()->width()); },
 			toggled ? 0. : 1.,
@@ -592,7 +593,7 @@ QByteArray Controller::fillInChannelValuesScript(
 	auto result = QByteArray();
 	for (auto &[id, in] : inChannelValues) {
 		if (_inChannelSubscribed.emplace(id).second) {
-			std::move(in) | rpl::start_with_next([=](bool in) {
+			std::move(in) | rpl::on_next([=](bool in) {
 				if (_ready) {
 					_webview->eval(toggleInChannelScript(id, in));
 				} else {
@@ -624,22 +625,22 @@ void Controller::createWindow() {
 	) | rpl::filter([=](QWindow *focused) {
 		const auto handle = window->window()->windowHandle();
 		return _webview && handle && (focused == handle);
-	}) | rpl::start_with_next([=] {
+	}) | rpl::on_next([=] {
 		setInnerFocus();
 	}, window->lifetime());
 
 	initControls();
 
-	window->body()->widthValue() | rpl::start_with_next([=](int width) {
+	window->body()->widthValue() | rpl::on_next([=](int width) {
 		updateTitleGeometry(width);
 	}, _subtitle->lifetime());
 
-	window->setGeometry(_delegate->ivGeometry());
+	window->setGeometry(_delegate->ivGeometry(window));
 	window->setMinimumSize({ st::windowMinWidth, st::windowMinHeight });
 
 	window->geometryValue(
 	) | rpl::distinct_until_changed(
-	) | rpl::skip(1) | rpl::start_with_next([=] {
+	) | rpl::skip(1) | rpl::on_next([=] {
 		_delegate->ivSaveGeometry(window);
 	}, window->lifetime());
 
@@ -647,12 +648,12 @@ void Controller::createWindow() {
 	rpl::combine(
 		window->body()->sizeValue(),
 		_subtitleWrap->heightValue()
-	) | rpl::start_with_next([=](QSize size, int title) {
+	) | rpl::on_next([=](QSize size, int title) {
 		_container->setGeometry(QRect(QPoint(), size).marginsRemoved(
 			{ 0, title, 0, 0 }));
 	}, _container->lifetime());
 
-	_container->paintRequest() | rpl::start_with_next([=](QRect clip) {
+	_container->paintRequest() | rpl::on_next([=](QRect clip) {
 		QPainter(_container).fillRect(clip, st::windowBg);
 	}, _container->lifetime());
 
@@ -674,18 +675,19 @@ void Controller::createWebview(const Webview::StorageId &storageId) {
 		Webview::WindowConfig{
 			.opaqueBg = st::windowBg->c,
 			.storageId = storageId,
+			.safe = true,
 		});
 	const auto raw = _webview.get();
 
 	if (const auto webviewZoomController = raw->zoomController()) {
 		webviewZoomController->zoomValue(
-		) | rpl::start_with_next([this](int value) {
+		) | rpl::on_next([this](int value) {
 			if (value > 0) {
 				_delegate->ivSetZoom(value);
 			}
 		}, lifetime());
 		_delegate->ivZoomValue(
-		) | rpl::start_with_next([=](int value) {
+		) | rpl::on_next([=](int value) {
 			webviewZoomController->setZoom(value);
 		}, lifetime());
 	}
@@ -696,7 +698,7 @@ void Controller::createWebview(const Webview::StorageId &storageId) {
 	});
 
 	window->events(
-	) | rpl::start_with_next([=](not_null<QEvent*> e) {
+	) | rpl::on_next([=](not_null<QEvent*> e) {
 		if (e->type() == QEvent::Close) {
 			close();
 		} else if (e->type() == QEvent::KeyPress) {
@@ -704,18 +706,31 @@ void Controller::createWebview(const Webview::StorageId &storageId) {
 			if (event->key() == Qt::Key_Escape) {
 				escape();
 			}
+		}
+	}, window->lifetime());
+
+	base::install_event_filter(window, qApp, [=](not_null<QEvent*> e) {
+		if (e->type() == QEvent::ShortcutOverride) {
+			if (!window->isActiveWindow()) {
+				return base::EventFilterResult::Continue;
+			}
+			const auto event = static_cast<QKeyEvent*>(e.get());
 			if (event->modifiers() & Qt::ControlModifier) {
 				if (event->key() == Qt::Key_Plus
 					|| event->key() == Qt::Key_Equal) {
 					_delegate->ivSetZoom(_delegate->ivZoom() + kZoomStep);
+					return base::EventFilterResult::Cancel;
 				} else if (event->key() == Qt::Key_Minus) {
 					_delegate->ivSetZoom(_delegate->ivZoom() - kZoomStep);
+					return base::EventFilterResult::Cancel;
 				} else if (event->key() == Qt::Key_0) {
-					_delegate->ivSetZoom(kDefaultZoom);
+					_delegate->ivSetZoom(0);
+					return base::EventFilterResult::Cancel;
 				}
 			}
 		}
-	}, window->lifetime());
+		return base::EventFilterResult::Continue;
+	});
 
 	const auto widget = raw->widget();
 	if (!widget) {
@@ -738,7 +753,7 @@ void Controller::createWebview(const Webview::StorageId &storageId) {
 	});
 
 	_container->sizeValue(
-	) | rpl::start_with_next([=](QSize size) {
+	) | rpl::on_next([=](QSize size) {
 		if (const auto widget = raw->widget()) {
 			widget->setGeometry(QRect(QPoint(), size));
 		}
@@ -828,7 +843,7 @@ void Controller::createWebview(const Webview::StorageId &storageId) {
 					Lang::Updated(),
 					style::PaletteChanged(),
 					_delegate->ivZoomValue() | rpl::to_empty
-				) | rpl::start_with_next([=] {
+				) | rpl::on_next([=] {
 					_updateStyles.call();
 				}, _webview->lifetime());
 			}
@@ -887,7 +902,7 @@ void Controller::createWebview(const Webview::StorageId &storageId) {
 	});
 
 	raw->navigationHistoryState(
-	) | rpl::start_with_next([=](Webview::NavigationHistoryState state) {
+	) | rpl::on_next([=](Webview::NavigationHistoryState state) {
 		_back->toggle(
 			state.canGoBack || state.canGoForward,
 			anim::type::normal);
@@ -915,10 +930,12 @@ void Controller::showWebviewError() {
 }
 
 void Controller::showWebviewError(TextWithEntities text) {
-	auto error = Ui::CreateChild<Ui::PaddingWrap<Ui::FlatLabel>>(
-		_container,
+	const auto wrap = Ui::CreateChild<Ui::RpWidget>(_container);
+
+	const auto error = Ui::CreateChild<Ui::PaddingWrap<Ui::FlatLabel>>(
+		wrap,
 		object_ptr<Ui::FlatLabel>(
-			_container,
+			wrap,
 			rpl::single(text),
 			st::paymentsCriticalError),
 		st::paymentsCriticalErrorPadding);
@@ -932,10 +949,16 @@ void Controller::showWebviewError(TextWithEntities text) {
 		File::OpenUrl(entity.data);
 		return false;
 	});
-	error->show();
-	_container->sizeValue() | rpl::start_with_next([=](QSize size) {
-		error->setGeometry(0, 0, size.width(), size.height() * 2 / 3);
-	}, error->lifetime());
+	wrap->show();
+
+	wrap->widthValue() | rpl::on_next([=](int width) {
+		error->resizeToWidth(width);
+		wrap->resize(width, error->height());
+	}, wrap->lifetime());
+
+	_container->sizeValue() | rpl::on_next([=](QSize size) {
+		wrap->setGeometry(0, 0, size.width(), size.height() * 2 / 3);
+	}, wrap->lifetime());
 }
 
 void Controller::showInWindow(
@@ -1019,7 +1042,7 @@ void Controller::processKey(const QString &key, const QString &modifier) {
 	} else if (key == u"q"_q && modifier == ctrl) {
 		quit();
 	} else if (key == u"0"_q && modifier == ctrl) {
-		_delegate->ivSetZoom(kDefaultZoom);
+		_delegate->ivSetZoom(0);
 	}
 }
 
@@ -1108,7 +1131,7 @@ void Controller::showMenu() {
 	}
 	_menu->setDestroyedCallback(crl::guard(_window.get(), [
 			this,
-			weakButton = Ui::MakeWeak(_menuToggle.data()),
+			weakButton = base::make_weak(_menuToggle.data()),
 			menu = _menu.get()] {
 		if (_menu == menu && weakButton) {
 			weakButton->setForceRippled(false);
@@ -1213,7 +1236,7 @@ void Controller::showShareMenu() {
 			_window->body().get(),
 			Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint));
 	}
-	_window->body()->sizeValue() | rpl::start_with_next([=](QSize size) {
+	_window->body()->sizeValue() | rpl::on_next([=](QSize size) {
 		const auto widget = _shareHidesContent
 			? _shareWrap.get()
 			: _shareContainer.get();
@@ -1227,7 +1250,7 @@ void Controller::showShareMenu() {
 	_shareFocus = result.focus;
 	_shareHide = result.hide;
 
-	std::move(result.destroyRequests) | rpl::start_with_next([=] {
+	std::move(result.destroyRequests) | rpl::on_next([=] {
 		destroyShareMenu();
 	}, _shareWrap->lifetime());
 

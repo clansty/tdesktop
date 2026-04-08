@@ -8,9 +8,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "calls/group/calls_volume_item.h"
 
 #include "calls/group/calls_group_common.h"
+#include "ui/color_int_conversion.h"
 #include "ui/effects/animation_value.h"
 #include "ui/effects/cross_line.h"
 #include "ui/widgets/continuous_sliders.h"
+#include "ui/rect.h"
 #include "styles/style_calls.h"
 
 #include "ui/paint/arcs.h"
@@ -39,22 +41,23 @@ constexpr auto kVolumeStickedValues
 } // namespace
 
 MenuVolumeItem::MenuVolumeItem(
-	not_null<RpWidget*> parent,
+	not_null<Ui::Menu::Menu*> parent,
 	const style::Menu &st,
+	const style::MediaSlider &stSlider,
 	rpl::producer<Group::ParticipantState> participantState,
 	int startVolume,
 	int maxVolume,
-	bool muted)
+	bool muted,
+	const QMargins &padding)
 : Ui::Menu::ItemBase(parent, st)
 , _maxVolume(maxVolume)
 , _cloudMuted(muted)
 , _localMuted(muted)
-, _slider(base::make_unique_q<Ui::MediaSlider>(
-	this,
-	st::groupCallMenuVolumeSlider))
+, _slider(base::make_unique_q<Ui::MediaSlider>(this, stSlider))
 , _dummyAction(new QAction(parent))
 , _st(st)
 , _stCross(st::groupCallMuteCrossLine)
+, _padding(padding)
 , _crossLineMute(std::make_unique<Ui::CrossLineAnimation>(_stCross, true))
 , _arcs(std::make_unique<Ui::Paint::ArcsAnimation>(
 	st::groupCallSpeakerArcsAnimation,
@@ -62,16 +65,16 @@ MenuVolumeItem::MenuVolumeItem(
 	_localMuted ? 0. : (startVolume / float(maxVolume)),
 	Ui::Paint::ArcsAnimation::Direction::Right)) {
 
-	initResizeHook(parent->sizeValue());
+	fitToMenuWidth();
 	enableMouseSelecting();
 	enableMouseSelecting(_slider.get());
 
 	_slider->setAlwaysDisplayMarker(true);
 
 	sizeValue(
-	) | rpl::start_with_next([=](const QSize &size) {
+	) | rpl::on_next([=](const QSize &size) {
 		const auto geometry = QRect(QPoint(), size);
-		_itemRect = geometry - st::groupCallMenuVolumePadding;
+		_itemRect = geometry - _padding;
 		_speakerRect = QRect(_itemRect.topLeft(), _stCross.icon.size());
 		_arcPosition = _speakerRect.center()
 			+ QPoint(0, st::groupCallMenuSpeakerArcsSkip);
@@ -87,7 +90,7 @@ MenuVolumeItem::MenuVolumeItem(
 	setCloudVolume(startVolume);
 
 	paintRequest(
-	) | rpl::start_with_next([=](const QRect &clip) {
+	) | rpl::on_next([=](const QRect &clip) {
 		auto p = QPainter(this);
 
 		const auto volume = _localMuted
@@ -164,7 +167,7 @@ MenuVolumeItem::MenuVolumeItem(
 
 	std::move(
 		participantState
-	) | rpl::start_with_next([=](const Group::ParticipantState &state) {
+	) | rpl::on_next([=](const Group::ParticipantState &state) {
 		const auto newMuted = state.mutedByMe;
 		const auto newVolume = state.volume.value_or(0);
 
@@ -207,7 +210,7 @@ void MenuVolumeItem::initArcsAnimation() {
 	});
 
 	_arcs->startUpdateRequests(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		if (!_arcsAnimation.animating()) {
 			*lastTime = crl::now();
 			_arcsAnimation.start();
@@ -215,7 +218,7 @@ void MenuVolumeItem::initArcsAnimation() {
 	}, lifetime());
 
 	_arcs->stopUpdateRequests(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		_arcsAnimation.stop();
 	}, lifetime());
 }
@@ -252,23 +255,19 @@ void MenuVolumeItem::setSliderVolume(int volume) {
 
 void MenuVolumeItem::updateSliderColor(float64 value) {
 	value = std::clamp(value, 0., 1.);
-	const auto color = [](int rgb) {
-		return QColor(
-			int((rgb & 0xFF0000) >> 16),
-			int((rgb & 0x00FF00) >> 8),
-			int(rgb & 0x0000FF));
-	};
 	const auto colors = std::array<QColor, 4>{ {
-		color(0xF66464),
-		color(0xD0B738),
-		color(0x24CD80),
-		color(0x3BBCEC),
+		Ui::ColorFromSerialized(0xF66464),
+		Ui::ColorFromSerialized(0xD0B738),
+		Ui::ColorFromSerialized(0x24CD80),
+		Ui::ColorFromSerialized(0x3BBCEC),
 	} };
-	_slider->setActiveFgOverride((value < 0.25)
-		? anim::color(colors[0], colors[1], value / 0.25)
-		: (value < 0.5)
-		? anim::color(colors[1], colors[2], (value - 0.25) / 0.25)
-		: anim::color(colors[2], colors[3], (value - 0.5) / 0.5));
+	_slider->setColorOverrides({
+		.activeFg = (value < 0.25)
+			? anim::color(colors[0], colors[1], value / 0.25)
+			: (value < 0.5)
+			? anim::color(colors[1], colors[2], (value - 0.25) / 0.25)
+			: anim::color(colors[2], colors[3], (value - 0.5) / 0.5),
+	});
 }
 
 not_null<QAction*> MenuVolumeItem::action() const {
@@ -280,9 +279,7 @@ bool MenuVolumeItem::isEnabled() const {
 }
 
 int MenuVolumeItem::contentHeight() const {
-	return st::groupCallMenuVolumePadding.top()
-		+ st::groupCallMenuVolumePadding.bottom()
-		+ _stCross.icon.height();
+	return rect::m::sum::v(_padding) + _stCross.icon.height();
 }
 
 rpl::producer<bool> MenuVolumeItem::toggleMuteRequests() const {

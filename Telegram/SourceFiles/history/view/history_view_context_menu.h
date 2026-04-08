@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_element.h"
 
 namespace Data {
+class Session;
 struct ReactionId;
 } // namespace Data
 
@@ -57,14 +58,18 @@ base::unique_qptr<Ui::PopupMenu> FillContextMenu(
 	not_null<ListWidget*> list,
 	const ContextMenuRequest &request);
 
+void InsertPollHiddenResultsLabel(not_null<Ui::PopupMenu*> menu);
+
 void CopyPostLink(
 	not_null<Window::SessionController*> controller,
 	FullMsgId itemId,
-	Context context);
+	Context context,
+	std::optional<TimeId> videoTimestamp = {});
 void CopyPostLink(
 	std::shared_ptr<Main::SessionShow> show,
 	FullMsgId itemId,
-	Context context);
+	Context context,
+	std::optional<TimeId> videoTimestamp = {});
 void ViewAsJSON(
 	not_null<Window::SessionController*> controller,
 	FullMsgId itemId);
@@ -74,12 +79,27 @@ void ViewAsJSON(
 void CopyStoryLink(
 	std::shared_ptr<Main::SessionShow> show,
 	FullStoryId storyId);
+void FillPollOptionPage(
+	not_null<Ui::PopupMenu*> menu,
+	not_null<Data::Session*> owner,
+	FullMsgId itemId,
+	const QByteArray &pollOption,
+	Fn<void()> replyToOption = nullptr);
+
+void AttachPollOptionTabs(
+	not_null<Ui::PopupMenu*> menu,
+	QPoint desiredPosition);
+
+[[nodiscard]] std::optional<QString> CurrentVoiceTimecode(FullMsgId itemId);
+[[nodiscard]] rpl::producer<QString> VoiceTimecodeUpdates(FullMsgId itemId);
+
 void AddPollActions(
 	not_null<Ui::PopupMenu*> menu,
 	not_null<PollData*> poll,
 	not_null<HistoryItem*> item,
 	Context context,
-	not_null<Window::SessionController*> controller);
+	not_null<Window::SessionController*> controller,
+	bool skipRetractVote = false);
 void AddSaveSoundForNotifications(
 	not_null<Ui::PopupMenu*> menu,
 	not_null<HistoryItem*> item,
@@ -92,7 +112,8 @@ void AddWhoReactedAction(
 	not_null<Window::SessionController*> controller);
 void MaybeAddWhenEditedForwardedAction(
 	not_null<Ui::PopupMenu*> menu,
-	not_null<HistoryItem*> item);
+	not_null<HistoryItem*> item,
+	not_null<Window::SessionController*> controller);
 void ShowWhoReactedMenu(
 	not_null<base::unique_qptr<Ui::PopupMenu>*> menu,
 	QPoint position,
@@ -135,6 +156,10 @@ void AddSelectRestrictionAction(
 	not_null<Ui::PopupMenu*> menu,
 	not_null<HistoryItem*> item,
 	bool addIcon);
+void AddStickerSetOwnerActions(
+	not_null<Ui::PopupMenu*> menu,
+	not_null<DocumentData*> document,
+	HistoryItem* item);
 
 [[nodiscard]] TextWithEntities TransribedText(not_null<HistoryItem*> item);
 

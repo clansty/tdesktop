@@ -65,7 +65,7 @@ Controller::Controller(
 , _callback(std::move(callback)) {
 	std::move(
 		add
-	) | rpl::start_with_next([=](not_null<PeerData*> peer) {
+	) | rpl::on_next([=](not_null<PeerData*> peer) {
 		if (_prepared) {
 			addRow(peer);
 		} else {
@@ -111,6 +111,9 @@ void AddBotToGroupBoxController::Start(
 		Scope scope,
 		const QString &token,
 		ChatAdminRights requestedRights) {
+	if (controller->showFrozenError()) {
+		return;
+	}
 	auto initBox = [=](not_null<PeerListBox*> box) {
 		box->addButton(tr::lng_cancel(), [box] { box->closeBox(); });
 	};
@@ -160,8 +163,8 @@ void AddBotToGroupBoxController::requestExistingRights(
 	_bot->session().api().request(_existingRightsRequestId).cancel();
 	_existingRightsRequestId = _bot->session().api().request(
 		MTPchannels_GetParticipant(
-			_existingRightsChannel->inputChannel,
-			_bot->input)
+			_existingRightsChannel->inputChannel(),
+			_bot->input())
 	).done([=](const MTPchannels_ChannelParticipant &result) {
 		result.match([&](const MTPDchannels_channelParticipant &data) {
 			channel->owner().processUsers(data.vusers());
@@ -230,8 +233,8 @@ void AddBotToGroupBoxController::addBotToGroup(not_null<PeerData*> chat) {
 		const auto token = _token;
 		const auto done = [=](
 				ChatAdminRightsInfo newRights,
-				const QString &rank) {
-			if (scope == Scope::GroupAdmin) {
+				const std::optional<QString> &rank) {
+			if (scope == Scope::GroupAdmin && !token.isEmpty()) {
 				chat->session().api().sendBotStart(show, bot, chat, token);
 			}
 			close();
@@ -356,7 +359,7 @@ object_ptr<Ui::RpWidget> AddBotToGroupBoxController::prepareAdminnedChats() {
 		delegate->setContent(content);
 		controller->setDelegate(delegate);
 
-		items.events() | rpl::take(1) | rpl::start_with_next([=] {
+		items.events() | rpl::take(1) | rpl::on_next([=] {
 			wrap->show(anim::type::instant);
 		}, inner->lifetime());
 	};
@@ -370,7 +373,7 @@ object_ptr<Ui::RpWidget> AddBotToGroupBoxController::prepareAdminnedChats() {
 	rpl::merge(
 		_groups.events(),
 		_channels.events()
-	) | rpl::take(1) | rpl::start_with_next([=] {
+	) | rpl::take(1) | rpl::on_next([=] {
 		container->add(CreatePeerListSectionSubtitle(
 			container,
 			tr::lng_bot_groups()));
@@ -400,7 +403,7 @@ void AddBotToGroupBoxController::prepareViewHook() {
 	session().data().chatsListLoadedEvents(
 	) | rpl::filter([=](Data::Folder *folder) {
 		return !folder;
-	}) | rpl::start_with_next([=] {
+	}) | rpl::on_next([=] {
 		updateLabels();
 	}, lifetime());
 }

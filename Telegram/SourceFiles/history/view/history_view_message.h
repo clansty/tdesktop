@@ -15,6 +15,8 @@ class HistoryItem;
 struct HistoryMessageEdited;
 struct HistoryMessageForwarded;
 struct HistoryMessageReplyMarkup;
+struct HistoryMessageSuggestion;
+struct HistoryMessageReply;
 
 namespace Data {
 struct ReactionId;
@@ -29,14 +31,18 @@ namespace HistoryView {
 
 class ViewButton;
 class WebPage;
+class TranscribeButton;
 
 namespace Reactions {
 class InlineList;
 } // namespace Reactions
 
+namespace ReplyButton {
+struct ButtonParameters;
+} // namespace ReplyButton
+
 // Special type of Component for the channel actions log.
-struct LogEntryOriginal
-	: public RuntimeComponent<LogEntryOriginal, Element> {
+struct LogEntryOriginal : RuntimeComponent<LogEntryOriginal, Element> {
 	LogEntryOriginal();
 	LogEntryOriginal(LogEntryOriginal &&other);
 	LogEntryOriginal &operator=(LogEntryOriginal &&other);
@@ -45,17 +51,35 @@ struct LogEntryOriginal
 	std::unique_ptr<WebPage> page;
 };
 
-struct Factcheck
-: public RuntimeComponent<Factcheck, Element> {
+struct Factcheck : RuntimeComponent<Factcheck, Element> {
 	std::unique_ptr<WebPage> page;
 	bool expanded = false;
 };
 
-struct PsaTooltipState : public RuntimeComponent<PsaTooltipState, Element> {
+struct PsaTooltipState : RuntimeComponent<PsaTooltipState, Element> {
 	QString type;
 	mutable ClickHandlerPtr link;
 	mutable Ui::Animations::Simple buttonVisibleAnimation;
 	mutable bool buttonVisible = true;
+};
+
+enum class BadgeRole : uchar {
+	User,
+	Admin,
+	Creator,
+};
+
+struct RightBadge : RuntimeComponent<RightBadge, Element> {
+	Ui::Text::String tag;
+	Ui::Text::String boosts;
+	mutable ClickHandlerPtr tagLink;
+	mutable ClickHandlerPtr boostsLink;
+	int width = 0;
+	BadgeRole role = BadgeRole::User;
+	bool overridden = false;
+	bool special = false;
+	mutable std::unique_ptr<Ui::RippleAnimation> ripple;
+	mutable QPoint lastPoint;
 };
 
 struct BottomRippleMask {
@@ -111,9 +135,11 @@ public:
 	Reactions::ButtonParameters reactionButtonParameters(
 		QPoint position,
 		const TextState &reactionState) const override;
+	ReplyButton::ButtonParameters replyButtonParameters(
+		QPoint position,
+		const TextState &replyState) const override;
 	int reactionsOptimalWidth() const override;
 
-	bool hasHeavyPart() const override;
 	void unloadHeavyPart() override;
 
 	// hasFromPhoto() returns true even if we don't display the photo
@@ -129,9 +155,6 @@ public:
 	TopicButton *displayedTopicButton() const override;
 	bool unwrapped() const override;
 	int minWidthForMedia() const override;
-	bool hasFastReply() const override;
-	bool displayFastReply() const override;
-	bool displayFastForward() const override;
 	bool displayRightActionComments() const;
 	std::optional<QSize> rightActionSize() const override;
 	void drawRightAction(
@@ -161,24 +184,30 @@ public:
 
 	void animateReaction(Ui::ReactionFlyAnimationArgs &&args) override;
 
-	void animateEffect(Ui::ReactionFlyAnimationArgs &&args) override;
 	auto takeEffectAnimation()
 	-> std::unique_ptr<Ui::ReactionFlyAnimation> override;
 
 	QRect effectIconGeometry() const override;
 	QRect innerGeometry() const override;
+	QPoint mediaTopLeft() const override;
 	[[nodiscard]] BottomRippleMask bottomRippleMask(int buttonHeight) const;
-
-protected:
-	void refreshDataIdHook() override;
 
 private:
 	struct CommentsButton;
+	struct LinkRipple;
 	struct FromNameStatus;
 	struct RightAction;
 
+	void refreshDataIdHook() override;
+	bool hasHeavyPart() const override;
+
 	bool updateBottomInfo();
 
+	void initPaidInformation();
+	void refreshSuggestedInfo(
+		not_null<HistoryItem*> item,
+		not_null<const HistoryMessageSuggestion*> suggest,
+		const HistoryMessageReply *reply);
 	void initLogEntryOriginal();
 	void initPsa();
 	void fromNameUpdated(int width) const;
@@ -194,9 +223,32 @@ private:
 	void toggleTopicButtonRipple(bool pressed);
 	void createTopicButtonRipple();
 
+	void toggleLinkRipple(bool pressed);
+	void recordLinkRipplePoint(
+		QPoint point,
+		QPoint textOrigin) const;
+	void paintLinkRipple(
+		Painter &p,
+		const ClickHandlerPtr &handler,
+		QRect linkRect,
+		QPoint textPosition) const;
+	void createLinkRippleMask(
+		const QPainterPath &path,
+		QPoint textPosition,
+		int useWidth,
+		style::margins padding,
+		int radius) const;
+	void createLinkRippleMask(
+		QRect linkRect,
+		QPoint textPosition,
+		style::margins padding,
+		int radius) const;
+
 	void toggleRightActionRipple(bool pressed);
+	void toggleBadgeRipple(bool pressed);
 
 	void toggleReplyRipple(bool pressed);
+	void toggleSummaryHeaderRipple(bool pressed);
 
 	void paintCommentsButton(
 		Painter &p,
@@ -215,6 +267,10 @@ private:
 		QRect &trect,
 		const PaintContext &context) const;
 	void paintReplyInfo(
+		Painter &p,
+		QRect &trect,
+		const PaintContext &context) const;
+	void paintSummaryHeaderInfo(
 		Painter &p,
 		QRect &trect,
 		const PaintContext &context) const;
@@ -250,6 +306,10 @@ private:
 		QPoint point,
 		QRect &trect,
 		not_null<TextState*> outResult) const;
+	bool getStateSummaryHeaderInfo(
+		QPoint point,
+		QRect &trect,
+		not_null<TextState*> outResult) const;
 	bool getStateViaBotIdInfo(
 		QPoint point,
 		QRect &trect,
@@ -275,21 +335,33 @@ private:
 	[[nodiscard]] int visibleMediaTextLength() const;
 	[[nodiscard]] bool needInfoDisplay() const;
 	[[nodiscard]] bool invertMedia() const;
+	[[nodiscard]] bool hasFastReply() const;
+	[[nodiscard]] bool displayFastReply() const;
 
 	[[nodiscard]] bool isPinnedContext() const;
+	[[nodiscard]] bool isCommentsRootView() const;
 
 	[[nodiscard]] bool displayFastShare() const;
 	[[nodiscard]] bool displayGoToOriginal() const;
 	[[nodiscard]] ClickHandlerPtr fastReplyLink() const;
-	[[nodiscard]] ClickHandlerPtr fastForwardLink() const;
 	[[nodiscard]] ClickHandlerPtr prepareRightActionLink() const;
 
 	void ensureRightAction() const;
 	void refreshTopicButton();
 	void refreshInfoSkipBlock(HistoryItem *textItem);
 	[[nodiscard]] int monospaceMaxWidth() const;
+	[[nodiscard]] int bubbleTextWidth(int bubbleWidth) const;
+	[[nodiscard]] int bubbleTextualWidth() const;
 
-	void validateInlineKeyboard(HistoryMessageReplyMarkup *markup);
+	void ensureSummarizeButton() const;
+	void paintSummarize(
+		Painter &p,
+		int x,
+		int y,
+		bool right,
+		const PaintContext &context,
+		QRect g) const;
+
 	void updateViewButtonExistence();
 	[[nodiscard]] int viewButtonHeight() const;
 
@@ -299,32 +371,38 @@ private:
 	[[nodiscard]] ClickHandlerPtr createGoToCommentsLink() const;
 	[[nodiscard]] ClickHandlerPtr psaTooltipLink() const;
 	void psaTooltipToggled(bool shown) const;
+	void invalidateTextDependentCache() override;
 
 	void refreshRightBadge();
+	[[nodiscard]] int rightBadgeWidth() const;
 	void validateFromNameText(PeerData *from) const;
-	void validateForwardedNameText(HistoryItem *item) const;
+	void validateForwardedNameText(HistoryItem* item) const;
+	void ensureFromNameStatusLink(not_null<PeerData*> peer) const;
 
 	mutable std::unique_ptr<RightAction> _rightAction;
 	mutable ClickHandlerPtr _fastReplyLink;
-	mutable ClickHandlerPtr _fastForwardLink;
 	mutable std::unique_ptr<ViewButton> _viewButton;
 	std::unique_ptr<TopicButton> _topicButton;
+	mutable std::unique_ptr<LinkRipple> _linkRipple;
+	mutable QPoint _linkRippleLastPoint;
 	mutable std::unique_ptr<CommentsButton> _comments;
+	mutable std::unique_ptr<TranscribeButton> _summarize;
 
 	mutable Ui::Text::String _fromName;
 	mutable std::unique_ptr<FromNameStatus> _fromNameStatus;
 	mutable std::unique_ptr<Ui::RoundCheckbox> _selectionRoundCheckbox;
 	mutable bool _previousMode = false;
-	Ui::Text::String _rightBadge;
 	mutable int _fromNameVersion = 0;
-	uint32 _bubbleWidthLimit : 28 = 0;
+	mutable int _bubbleTextualWidthMinimum : 16 = -1;
+	mutable int _bubbleTextualWidthCache : 16 = 0;
+	uint32 _bubbleWidthLimit : 26 = 0;
 	uint32 _invertMedia : 1 = 0;
 	uint32 _hideReply : 1 = 0;
-	uint32 _rightBadgeHasBoosts : 1 = 0;
 	uint32 _postShowingAuthor : 1 = 0;
-	uint32 _rightBadgeIsChannel : 1 = 0;
+	mutable uint32 _fromLinkRipplePointSet : 1 = 0;
 
 	BottomInfo _bottomInfo;
+	mutable QPoint _lastMediaPosition;
 
 };
 

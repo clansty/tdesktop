@@ -234,13 +234,13 @@ MTPDialogFilter ChatFilter::tl(FilterId replaceId) const {
 	auto pinned = QVector<MTPInputPeer>();
 	pinned.reserve(_pinned.size());
 	for (const auto &history : _pinned) {
-		pinned.push_back(history->peer->input);
+		pinned.push_back(history->peer->input());
 		always.remove(history);
 	}
 	auto include = QVector<MTPInputPeer>();
 	include.reserve(always.size());
 	for (const auto &history : always) {
-		include.push_back(history->peer->input);
+		include.push_back(history->peer->input());
 	}
 	auto title = MTP_textWithEntities(
 		MTP_string(_title.text),
@@ -279,7 +279,7 @@ MTPDialogFilter ChatFilter::tl(FilterId replaceId) const {
 	auto never = QVector<MTPInputPeer>();
 	never.reserve(_never.size());
 	for (const auto &history : _never) {
-		never.push_back(history->peer->input);
+		never.push_back(history->peer->input());
 	}
 	return MTP_dialogFilter(
 		MTP_flags(flags),
@@ -351,7 +351,7 @@ bool ChatFilter::contains(
 				: user->isContact()
 				? Flag::Contacts
 				: Flag::NonContacts;
-		} else if (const auto chat = peer->asChat()) {
+		} else if (peer->isChat()) {
 			return Flag::Groups;
 		} else if (const auto channel = peer->asChannel()) {
 			if (channel->isBroadcast()) {
@@ -463,6 +463,10 @@ bool ChatFilters::tagsEnabled() const {
 
 rpl::producer<bool> ChatFilters::tagsEnabledValue() const {
 	return _tagsEnabled.value();
+}
+
+rpl::producer<bool> ChatFilters::tagsEnabledChanges() const {
+	return _tagsEnabled.changes();
 }
 
 void ChatFilters::requestToggleTags(bool value, Fn<void()> fail) {
@@ -960,7 +964,7 @@ bool ChatFilters::loadNextExceptions(bool chatsListLoaded) {
 			for (const auto &history : i->always()) {
 				if (!history->folderKnown()) {
 					inputs.push_back(
-						MTP_inputDialogPeer(history->peer->input));
+						MTP_inputDialogPeer(history->peer->input()));
 				}
 			}
 		}
@@ -1063,7 +1067,7 @@ rpl::producer<Ui::MoreChatsBarContent> ChatFilters::moreChatsContent(
 
 		_moreChatsUpdated.events_starting_with_copy(
 			id
-		) | rpl::start_with_next([=] {
+		) | rpl::on_next([=] {
 			consumer.put_next(Ui::MoreChatsBarContent{
 				.count = int(moreChats(id).size()),
 			});

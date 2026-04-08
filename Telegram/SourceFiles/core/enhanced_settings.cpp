@@ -314,11 +314,12 @@ namespace EnhancedSettings {
 		settings.insert(qsl("disable_global_search"), false);
 		settings.insert(qsl("show_group_sender_avatar"), true);
 		settings.insert(qsl("show_seconds"), false);
+		settings.insert(qsl("show_json"), false);
 		settings.insert(qsl("hide_counter"), false);
 		settings.insert(qsl("translate_to_tc"), false);
 		settings.insert(qsl("hide_stories"), false);
-		settings.insert(qsl("recent_display_limit"), 20);
 		settings.insert(qsl("screenshot_mode"), false);
+		settings.insert(qsl("update_url"), "");
 
 		auto document = QJsonDocument();
 		document.setObject(settings);
@@ -368,11 +369,12 @@ namespace EnhancedSettings {
 		settings.insert(qsl("disable_global_search"), GetEnhancedBool("disable_global_search"));
 		settings.insert(qsl("show_group_sender_avatar"), GetEnhancedBool("show_group_sender_avatar"));
 		settings.insert(qsl("show_seconds"), GetEnhancedBool("show_seconds"));
+		settings.insert(qsl("show_json"), GetEnhancedBool("show_json"));
 		settings.insert(qsl("hide_counter"), GetEnhancedBool("hide_counter"));
 		settings.insert(qsl("translate_to_tc"), GetEnhancedBool("translate_to_tc"));
 		settings.insert(qsl("hide_stories"), GetEnhancedBool("hide_stories"));
-		settings.insert(qsl("recent_display_limit"), GetEnhancedInt("recent_display_limit"));
 		settings.insert(qsl("screenshot_mode"), GetEnhancedBool("screenshot_mode"));
+		settings.insert(qsl("update_url"), GetEnhancedString("update_url"));
 
 		auto document = QJsonDocument();
 		document.setObject(settings);

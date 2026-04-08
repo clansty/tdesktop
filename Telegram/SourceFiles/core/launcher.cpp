@@ -21,11 +21,24 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <QtCore/QLoggingCategory>
 #include <QtCore/QStandardPaths>
+#include <QtCore/QLibraryInfo>
 
 namespace Core {
 namespace {
 
 uint64 InstallationTag = 0;
+
+base::options::toggle OptionHighDpiDownscale({
+	.id = kOptionHighDpiDownscale,
+	.name = "High DPI downscale",
+	.description = "Follow system interface scale settings exactly"
+		" (another approach, likely better quality).",
+	.scope = [] {
+		return !Platform::IsMac()
+			&& QLibraryInfo::version() >= QVersionNumber(6, 4);
+	},
+	.restartRequired = true,
+});
 
 base::options::toggle OptionFreeType({
 	.id = kOptionFreeType,
@@ -62,7 +75,7 @@ FilteredCommandLineArguments::FilteredCommandLineArguments(
 	}
 
 #if defined Q_OS_WIN || defined Q_OS_MAC
-	if (OptionFreeType.value()) {
+	if (OptionFreeType.value() || OptionHighDpiDownscale.value()) {
 		pushArgument("-platform");
 #ifdef Q_OS_WIN
 		pushArgument("windows:fontengine=freetype");
@@ -294,6 +307,7 @@ base::options::toggle OptionFractionalScalingEnabled({
 } // namespace
 
 const char kOptionFractionalScalingEnabled[] = "fractional-scaling-enabled";
+const char kOptionHighDpiDownscale[] = "high-dpi-downscale";
 const char kOptionFreeType[] = "freetype";
 
 Launcher *Launcher::InstanceSetter::Instance = nullptr;
@@ -345,7 +359,14 @@ void Launcher::initHighDpi() {
 	QApplication::setAttribute(Qt::AA_EnableHighDpiScaling, true);
 #endif // Qt < 6.0.0
 
-	if (OptionFractionalScalingEnabled.value()) {
+	if (OptionHighDpiDownscale.value()) {
+		qputenv("QT_WIDGETS_HIGHDPI_DOWNSCALE", "1");
+		qputenv("QT_WIDGETS_RHI", "1");
+		qputenv("QT_WIDGETS_RHI_BACKEND", "opengl");
+	}
+
+	if (OptionFractionalScalingEnabled.value()
+			|| OptionHighDpiDownscale.value()) {
 		QApplication::setHighDpiScaleFactorRoundingPolicy(
 			Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
 	} else {
@@ -504,6 +525,22 @@ uint64 Launcher::installationTag() const {
 	return InstallationTag;
 }
 
+QByteArray Launcher::instanceHash() const {
+	static const auto Result = [&] {
+		QByteArray h(32, 0);
+		if (customWorkingDir()) {
+			const auto d = QFile::encodeName(
+				QDir(cWorkingDir()).absolutePath());
+			hashMd5Hex(d.constData(), d.size(), h.data());
+		} else {
+			const auto f = QFile::encodeName(cExeDir() + cExeName());
+			hashMd5Hex(f.constData(), f.size(), h.data());
+		}
+		return h;
+	}();
+	return Result;
+}
+
 void Launcher::processArguments() {
 	enum class KeyFormat {
 		NoValues,
@@ -520,16 +557,18 @@ void Launcher::processArguments() {
 		{ "-tosettings"     , KeyFormat::NoValues },
 		{ "-startintray"    , KeyFormat::NoValues },
 		{ "-quit"           , KeyFormat::NoValues },
-		{ "-ghost"          , KeyFormat::NoValues },
-		{ "-sendpath"       , KeyFormat::AllLeftValues },
 		{ "-workdir"        , KeyFormat::OneValue },
-		{ "--"              , KeyFormat::OneValue },
+		{ "--"              , KeyFormat::AllLeftValues },
 		{ "-scale"          , KeyFormat::OneValue },
 	};
 	auto parseResult = QMap<QByteArray, QStringList>();
 	auto parsingKey = QByteArray();
 	auto parsingFormat = KeyFormat::NoValues;
-	for (const auto &argument : std::as_const(_arguments)) {
+	for (auto i = _arguments.cbegin(); i != _arguments.cend(); ++i) {
+		if (i == _arguments.cbegin()) {
+			continue;
+		}
+		const auto &argument = *i;
 		switch (parsingFormat) {
 		case KeyFormat::OneValue: {
 			parseResult[parsingKey] = QStringList(argument.mid(0, 8192));
@@ -544,7 +583,9 @@ void Launcher::processArguments() {
 			if (it != parseMap.end()) {
 				parsingFormat = it->second;
 				parseResult[parsingKey] = QStringList();
+				continue;
 			}
+			parseResult["--"].push_back(argument.mid(0, 8192));
 		} break;
 		}
 	}
@@ -564,13 +605,15 @@ void Launcher::processArguments() {
 	gStartToSettings = parseResult.contains("-tosettings");
 	gStartInTray = parseResult.contains("-startintray");
 	gQuit = parseResult.contains("-quit");
-	gGhost = parseResult.contains("-ghost");
-	gSendPaths = parseResult.value("-sendpath", {});
 	_customWorkingDir = parseResult.value("-workdir", {}).join(QString());
 	if (!_customWorkingDir.isEmpty()) {
 		_customWorkingDir = QDir(_customWorkingDir).absolutePath() + '/';
 	}
-	gStartUrl = parseResult.value("--", {}).join(QString());
+
+	const auto startUrls = parseResult.value("--", {});
+	gStartUrls = startUrls | ranges::views::transform([&](const QString &url) {
+		return QUrl::fromUserInput(url, _initialWorkingDir);
+	}) | ranges::views::filter(&QUrl::isValid) | ranges::to<QList<QUrl>>;
 
 	const auto scaleKey = parseResult.value("-scale", {});
 	if (scaleKey.size() > 0) {

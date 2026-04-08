@@ -69,13 +69,36 @@ void PaintOutlineSegments(
 	}
 }
 
-QLinearGradient UnreadStoryOutlineGradient(QRectF rect) {
+void PaintOutlineSegments(
+		QPainter &p,
+		QRectF rect,
+		float64 radius,
+		const std::vector<OutlineSegment> &segments) {
+	Expects(!segments.empty());
+
+	p.setBrush(Qt::NoBrush);
+	const auto count = std::min(int(segments.size()), kOutlineSegmentsMax);
+	if (count == 1 || true) {
+		p.setPen(QPen(segments.back().brush, segments.back().width));
+		p.drawRoundedRect(rect, radius, radius);
+		return;
+	}
+}
+
+QLinearGradient UnreadStoryOutlineGradient(
+		QRectF rect,
+		const QColor &c1,
+		const QColor &c2) {
 	auto result = QLinearGradient(rect.topRight(), rect.bottomLeft());
-	result.setStops({
-		{ 0., st::groupCallLive1->c },
-		{ 1., st::groupCallMuted1->c },
-	});
+	result.setStops({ { 0., c1 }, { 1., c2 } });
 	return result;
+}
+
+QLinearGradient UnreadStoryOutlineGradient(QRectF rect) {
+	return UnreadStoryOutlineGradient(
+		std::move(rect),
+		st::groupCallLive1->c,
+		st::groupCallMuted1->c);
 }
 
 } // namespace Ui

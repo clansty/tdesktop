@@ -210,7 +210,8 @@ void ProcessFullPhoto(
 			| UpdateFlag::PhoneNumber
 			| UpdateFlag::Username
 			| UpdateFlag::About
-			| UpdateFlag::Birthday)
+			| UpdateFlag::Birthday
+			| UpdateFlag::ContactNote)
 	) | rpl::map([=] {
 		const auto user = peer->asUser();
 		const auto username = peer->username();
@@ -237,6 +238,7 @@ void ProcessFullPhoto(
 				? ('@' + username)
 				: QString()),
 			.birthday = user ? user->birthday() : Data::Birthday(),
+			.note = user ? user->note() : TextWithEntities(),
 			.isBio = (user && !user->isBot()),
 			.user_id = QString::number(peer->id.value),
 		};
@@ -362,7 +364,7 @@ bool ProcessCurrent(
 			&& peer->asUser()->hasPersonalPhoto())
 		? tr::lng_profile_photo_by_you(tr::now)
 		: ((state->current.index == (state->current.count - 1))
-			&& SyncUserFallbackPhotoViewer(peer->asUser()))
+			&& SyncUserFallbackPhotoViewer(peer->asUser()) == state->photoId)
 		? tr::lng_profile_public_photo(tr::now)
 		: QString();
 	state->waitingLoad = false;
@@ -409,13 +411,13 @@ bool ProcessCurrent(
 			UpdateFlag::Photo | UpdateFlag::FullInfo
 		) | rpl::filter([=](const Data::PeerUpdate &update) {
 			return (update.flags & UpdateFlag::Photo) || state->waitingFull;
-		}) | rpl::start_with_next([=] {
+		}) | rpl::on_next([=] {
 			push();
 		}, lifetime);
 
 		rpl::duplicate(
 			slices
-		) | rpl::start_with_next([=](UserPhotosSlice &&slice) {
+		) | rpl::on_next([=](UserPhotosSlice &&slice) {
 			state->userSlice = std::move(slice);
 			push();
 		}, lifetime);
@@ -423,7 +425,7 @@ bool ProcessCurrent(
 		moveRequests->events(
 		) | rpl::filter([=] {
 			return (state->current.count > 1);
-		}) | rpl::start_with_next([=](int shift) {
+		}) | rpl::on_next([=](int shift) {
 			state->current.index = std::clamp(
 				((state->current.index + shift + state->current.count)
 					% state->current.count),
@@ -438,7 +440,7 @@ bool ProcessCurrent(
 				&& (state->photoView
 					? (!!state->photoView->image(Data::PhotoSize::Large))
 					: (!Ui::PeerUserpicLoading(state->userpicView)));
-		}) | rpl::start_with_next([=] {
+		}) | rpl::on_next([=] {
 			push();
 		}, lifetime);
 
@@ -471,36 +473,39 @@ object_ptr<Ui::BoxContent> PrepareShortInfoBox(
 
 	if (menuFiller) {
 		result->fillMenuRequests(
-		) | rpl::start_with_next([=](Ui::Menu::MenuCallback callback) {
+		) | rpl::on_next([=](Ui::Menu::MenuCallback callback) {
 			menuFiller(std::move(callback));
 		}, result->lifetime());
 	}
 
 	result->openRequests(
-	) | rpl::start_with_next(open, result->lifetime());
+	) | rpl::on_next(open, result->lifetime());
 
 	result->moveRequests(
-	) | rpl::start_with_next(userpic.move, result->lifetime());
+	) | rpl::on_next(userpic.move, result->lifetime());
 
 	return result;
 }
 
 object_ptr<Ui::BoxContent> PrepareShortInfoBox(
 		not_null<PeerData*> peer,
-		not_null<Window::SessionNavigation*> navigation,
+		std::shared_ptr<ChatHelpers::Show> show,
 		const style::ShortInfoBox *stOverride) {
-	const auto open = [=] { navigation->showPeerHistory(peer); };
+	const auto open = [=] {
+		if (const auto window = show->resolveWindow()) {
+			window->showPeerHistory(peer);
+		}
+	};
 	const auto videoIsPaused = [=] {
-		return navigation->parentController()->isGifPausedAtLeastFor(
-			Window::GifPauseReason::Layer);
+		return show->paused(Window::GifPauseReason::Layer);
 	};
 	auto menuFiller = [=](Ui::Menu::MenuCallback addAction) {
-		const auto controller = navigation->parentController();
 		const auto peerSeparateId = Window::SeparateId(peer);
-		if (controller->windowId() != peerSeparateId) {
+		const auto window = show->resolveWindow();
+		if (window && window->windowId() != peerSeparateId) {
 			addAction(tr::lng_context_new_window(tr::now), [=] {
 				Ui::PreventDelayedActivation();
-				controller->showInNewWindow(peer);
+				window->showInNewWindow(peer);
 			}, &st::menuIconNewWindow);
 		}
 	};
@@ -510,6 +515,13 @@ object_ptr<Ui::BoxContent> PrepareShortInfoBox(
 		videoIsPaused,
 		std::move(menuFiller),
 		stOverride);
+}
+
+object_ptr<Ui::BoxContent> PrepareShortInfoBox(
+		not_null<PeerData*> peer,
+		not_null<Window::SessionNavigation*> navigation,
+		const style::ShortInfoBox *stOverride) {
+	return PrepareShortInfoBox(peer, navigation->uiShow(), stOverride);
 }
 
 rpl::producer<QString> PrepareShortInfoStatus(not_null<PeerData*> peer) {
@@ -545,7 +557,7 @@ PreparedShortInfoUserpic PrepareShortInfoFallbackUserpic(
 			1,
 			1,
 			1))
-		: (rpl::never<UserPhotosSlice>() | rpl::type_erased());
+		: (rpl::never<UserPhotosSlice>() | rpl::type_erased);
 	auto process = [=](not_null<UserpicState*> state) {
 		if (photoId) {
 			ProcessFullPhoto(peer, state, peer->owner().photo(*photoId));

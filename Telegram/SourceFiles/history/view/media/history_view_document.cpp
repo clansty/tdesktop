@@ -17,7 +17,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/player/media_player_instance.h"
 #include "main/main_session.h"
 #include "history/history_item_components.h"
-#include "history/history_item_helpers.h" // ClearMediaAsExpired.
+#include "history/history_item.h"
 #include "history/history.h"
 #include "core/click_handler_types.h" // kDocumentFilenameTooltipProperty.
 #include "history/view/history_view_element.h"
@@ -26,6 +26,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/media/history_view_media_common.h"
 #include "ui/text/format_values.h"
 #include "ui/text/format_song_document_name.h"
+#include "ui/text/text_lottie_custom_emoji.h"
 #include "ui/text/text_utilities.h"
 #include "ui/chat/chat_style.h"
 #include "ui/painter.h"
@@ -197,7 +198,8 @@ void PaintWaveform(
 		const VoiceData *voiceData,
 		int availableWidth,
 		float64 progress,
-		bool ttl) {
+		bool ttl,
+		float64 hoverProgress = -1) {
 	const auto wf = [&]() -> const VoiceWaveform* {
 		if (!voiceData) {
 			return nullptr;
@@ -221,6 +223,9 @@ void PaintWaveform(
 		? int(wf->size())
 		: ::Media::Player::kWaveformSamplesCount;
 	const auto activeWidth = base::SafeRound(availableWidth * progress);
+	const auto hoverWidth = (hoverProgress >= 0)
+		? base::SafeRound(availableWidth * hoverProgress)
+		: -1.;
 
 	const auto &barWidth = st::msgWaveformBar;
 	const auto barCount = std::min(
@@ -262,6 +267,19 @@ void PaintWaveform(
 			const auto &color = (barLeft >= activeWidth) ? inactive : active;
 			p.fillRect(QRectF(barLeft, barTop, barWidth, barHeight), color);
 		}
+		if (hoverWidth >= 0) {
+			const auto hoverFrom = std::min(activeWidth, hoverWidth);
+			const auto hoverTo = std::max(activeWidth, hoverWidth);
+			if (barLeft < hoverTo && barLeft + barWidth > hoverFrom) {
+				const auto left = std::max(double(barLeft), hoverFrom);
+				const auto right = std::min(
+					double(barLeft + barWidth),
+					hoverTo);
+				p.fillRect(
+					QRectF(left, barTop, right - left, barHeight),
+					anim::with_alpha(active->c, 0.30));
+			}
+		}
 		barLeft += barWidth + st::msgWaveformSkip;
 
 		maxValue = (sum < (barCount + 1) / 2) ? 0 : value;
@@ -276,10 +294,10 @@ void PaintWaveform(
 	};
 	add(FormatDownloadText(document->size, document->size));
 	const auto duration = document->duration() / 1000;
-	if (const auto song = document->song()) {
+	if (document->song()) {
 		add(FormatPlayedText(duration, duration));
 		add(FormatDurationAndSizeText(duration, document->size));
-	} else if (const auto voice = document->voice() ? document->voice() : document->round()) {
+	} else if (document->voice() ? document->voice() : document->round()) {
 		add(FormatPlayedText(duration, duration));
 		add(FormatDurationAndSizeText(duration, document->size));
 	} else if (document->isVideoFile()) {
@@ -316,7 +334,7 @@ Document::Document(
 		const auto fullId = _realParent->fullId();
 		if (_parent->delegate()->elementContext() == Context::TTLViewer) {
 			auto lifetime = std::make_shared<rpl::lifetime>();
-			TTLVoiceStops(fullId) | rpl::start_with_next([=]() mutable {
+			TTLVoiceStops(fullId) | rpl::on_next([=]() mutable {
 				if (lifetime) {
 					base::take(lifetime)->destroy();
 				}
@@ -332,13 +350,13 @@ Document::Document(
 				}
 
 				auto lifetime = std::make_shared<rpl::lifetime>();
-				TTLVoiceStops(fullId) | rpl::start_with_next([=]() mutable {
+				TTLVoiceStops(fullId) | rpl::on_next([=]() mutable {
 					if (lifetime) {
 						base::take(lifetime)->destroy();
 					}
 					if (const auto item = data->message(fullId)) {
 						// Destroys this.
-						ClearMediaAsExpired(item);
+						item->clearMediaAsExpired();
 					}
 				}, *lifetime);
 
@@ -428,9 +446,12 @@ QSize Document::countOptimalSize() {
 		const auto transcribes = &session->api().transcribes();
 		if (_parent->data()->media()->ttlSeconds()
 			|| _realParent->isScheduled()
+			|| _realParent->isAdminLogEntry()
 			|| (!session->premium()
 				&& !transcribes->freeFor(_realParent)
-				&& !transcribes->trialsSupport())) {
+				&& !transcribes->trialsSupport())
+			|| (!session->premium()
+				&& _data->duration() > transcribes->trialsMaxLengthMs())) {
 			voice->transcribe = nullptr;
 			voice->transcribeText = {};
 		} else {
@@ -443,17 +464,26 @@ QSize Document::countOptimalSize() {
 			const auto &entry = transcribes->entry(_realParent);
 			const auto update = [=] { repaint(); };
 			voice->transcribe->setLoading(
-				entry.shown && (entry.requestId || entry.pending),
-				update);
+				entry.shown && (entry.requestId || entry.pending));
+			const auto pending = entry.pending;
+			auto descriptor = pending
+				? Lottie::IconDescriptor{
+					.name = u"transcribe_loading"_q,
+					.color = &st::attentionButtonFg, // Any contrast.
+					.sizeOverride = Size(st::historyTranscribeLoadingSize),
+					.colorizeUsingAlpha = true,
+				}
+				: Lottie::IconDescriptor();
 			auto text = (entry.requestId || !entry.shown)
 				? TextWithEntities()
 				: entry.toolong
-				? Ui::Text::Italic(tr::lng_audio_transcribe_long(tr::now))
+				? tr::italic(tr::lng_audio_transcribe_long(tr::now))
 				: entry.failed
-				? Ui::Text::Italic(tr::lng_attach_failed(tr::now))
-				: TextWithEntities{
-					entry.result + (entry.pending ? " [...]" : ""),
-				};
+				? tr::italic(tr::lng_attach_failed(tr::now))
+				: TextWithEntities{ entry.result }.append(
+					pending
+						? Ui::Text::LottieEmoji(descriptor)
+						: TextWithEntities());
 			voice->transcribe->setOpened(
 				!text.empty(),
 				creating ? Fn<void()>() : update);
@@ -466,7 +496,11 @@ QSize Document::countOptimalSize() {
 				voice->transcribeText = Ui::Text::String(minResizeWidth);
 				voice->transcribeText.setMarkedText(
 					st::messageTextStyle,
-					text);
+					text,
+					kMarkupTextOptions,
+					pending
+						? Ui::Text::LottieEmojiContext(std::move(descriptor))
+						: Ui::Text::MarkedContext());
 				hasTranscribe = true;
 				if (const auto skipBlockWidth = _parent->hasVisibleText()
 					? 0
@@ -509,9 +543,19 @@ QSize Document::countOptimalSize() {
 		accumulate_max(maxWidth, tleft + named->name.maxWidth() + tright);
 		accumulate_min(maxWidth, st::msgMaxWidth);
 	}
-	if (voice && voice->transcribe) {
-		maxWidth += st::historyTranscribeSkip
-			+ voice->transcribe->size().width();
+	if (voice) {
+		const auto maxWaveformWidth = ::Media::Player::kWaveformSamplesCount *
+			(st::msgWaveformBar + st::msgWaveformSkip);
+		const auto transcribeWidth = voice->transcribe
+			? (voice->transcribe->size().width() + st::historyTranscribeSkip)
+			: 0;
+		accumulate_max(
+			maxWidth,
+			maxWaveformWidth
+				+ rect::m::sum::h(st.padding)
+				+ st.thumbSize
+				+ st.thumbSkip
+				+ transcribeWidth);
 	}
 
 	auto minHeight = st.padding.top() + st.thumbSize + st.padding.bottom();
@@ -618,7 +662,7 @@ void Document::draw(
 
 	const auto cornerDownload = downloadInCorner();
 
-	if (!_dataMedia->canBePlayed(_realParent)) {
+	if (!_dataMedia->canBePlayed()) {
 		auto peerId = _parent->data()->from() ? _parent->data()->from()->id : PeerId(0);
 		auto user = history()->session().data().peerLoaded(_parent->data()->from() ? _parent->data()->from()->id : PeerId(0));
 		if ((!blockExist(peerId.value) 
@@ -760,8 +804,8 @@ void Document::draw(
 				return _data->isSongWithCover()
 					? sti->historyFileThumbPause
 					: stm->historyFilePause;
-			} else if (loaded || _dataMedia->canBePlayed(_realParent)) {
-				return _dataMedia->canBePlayed(_realParent)
+			} else if (loaded || _dataMedia->canBePlayed()) {
+				return _dataMedia->canBePlayed()
 					? (_data->isSongWithCover()
 						? sti->historyFileThumbPlay
 						: stm->historyFilePlay)
@@ -897,7 +941,8 @@ void Document::draw(
 			_transcribedRound ? _data->round() : _data->voice(),
 			namewidth + st::msgWaveformSkip,
 			progress,
-			inTTLViewer);
+			inTTLViewer,
+			_voiceHoverProgress);
 		p.restore();
 	} else if (const auto named = Get<HistoryDocumentNamed>()) {
 		p.setPen(stm->historyFileNameFg);
@@ -940,13 +985,16 @@ void Document::draw(
 	if (const auto captioned = Get<HistoryDocumentCaptioned>()) {
 		p.setPen(stm->historyTextFg);
 		_parent->prepareCustomEmojiPaint(p, context, captioned->caption);
+
 		auto highlightRequest = context.computeHighlightCache();
 		captioned->caption.draw(p, {
 			.position = { st::msgPadding.left(), captiontop },
 			.availableWidth = captionw,
 			.palette = &stm->textPalette,
 			.pre = stm->preCache.get(),
-			.blockquote = context.quoteCache(parent()->contentColorIndex()),
+			.blockquote = context.quoteCache(
+				parent()->contentColorCollectible(),
+				parent()->contentColorIndex()),
 			.colors = context.st->highlightColors(),
 			.spoiler = Ui::Text::DefaultSpoilerCache(),
 			.now = context.now,
@@ -1048,7 +1096,7 @@ void Document::ensureDataMediaCreated() const {
 bool Document::downloadInCorner() const {
 	return _data->isAudioFile()
 		&& _realParent->allowsForward()
-		&& _data->canBeStreamed(_realParent)
+		&& _data->canBeStreamed()
 		&& !_data->inappPlaybackFailed();
 }
 
@@ -1225,12 +1273,24 @@ TextState Document::textState(
 			const auto state = ::Media::Player::instance()->getState(AudioMsgId::Type::Voice);
 			if (state.id == AudioMsgId(_data, _realParent->fullId(), state.id.externalPlayId())
 				&& !::Media::Player::IsStoppedOrStopping(state.state)) {
+				const auto hover = std::clamp(
+					(point.x() - nameleft) / float64(namewidth),
+					0.,
+					1.);
+				if (_voiceHoverProgress != hover) {
+					_voiceHoverProgress = hover;
+					repaint();
+				}
 				if (!voice->seeking()) {
 					voice->setSeekingStart((point.x() - nameleft) / float64(namewidth));
 				}
 				result.link = voice->seekl;
 				return result;
 			}
+		}
+		if (_voiceHoverProgress >= 0) {
+			_voiceHoverProgress = -1;
+			repaint();
 		}
 		transcribeLength = voice->transcribeText.length();
 		if (transcribeLength > 0) {
@@ -1277,7 +1337,7 @@ TextState Document::textState(
 		&& (!_data->loading() || downloadInCorner())
 		&& !_data->uploading()
 		&& !_data->isNull()) {
-		if (loaded || _dataMedia->canBePlayed(_realParent)) {
+		if (loaded || _dataMedia->canBePlayed()) {
 			result.link = _openl;
 		} else {
 			result.link = _savel;

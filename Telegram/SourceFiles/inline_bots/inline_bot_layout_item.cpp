@@ -29,7 +29,7 @@ base::NeverFreedPointer<DocumentItems> documentItemsMap;
 
 } // namespace
 
-Result *ItemBase::getResult() const {
+std::shared_ptr<Result> ItemBase::getResult() const {
 	return _result;
 }
 
@@ -92,33 +92,72 @@ void ItemBase::layoutChanged() {
 
 std::unique_ptr<ItemBase> ItemBase::createLayout(
 		not_null<Context*> context,
-		not_null<Result*> result,
-		bool forceThumb) {
+		std::shared_ptr<Result> result,
+		bool forceThumb,
+		std::optional<bool> gallery) {
 	using Type = Result::Type;
+
+	if (gallery.has_value()) {
+		if (!*gallery) {
+			// Force list mode: render gallery types as Article.
+			switch (result->_type) {
+			case Type::Photo:
+			case Type::Sticker:
+			case Type::Gif:
+				return std::make_unique<internal::Article>(
+					context,
+					std::move(result),
+					forceThumb);
+			default:
+				break;
+			}
+		} else {
+			// Force gallery mode: render list types as Thumbnail.
+			switch (result->_type) {
+			case Type::Article:
+			case Type::Geo:
+			case Type::Venue:
+			case Type::Video:
+			case Type::Audio:
+			case Type::File:
+			case Type::Contact:
+			case Type::Game:
+				return std::make_unique<internal::Thumbnail>(
+					context,
+					std::move(result));
+			default:
+				break;
+			}
+		}
+	}
 
 	switch (result->_type) {
 	case Type::Photo:
-		return std::make_unique<internal::Photo>(context, result);
+		return std::make_unique<internal::Photo>(context, std::move(result));
 	case Type::Audio:
 	case Type::File:
-		return std::make_unique<internal::File>(context, result);
+		return std::make_unique<internal::File>(context, std::move(result));
 	case Type::Video:
-		return std::make_unique<internal::Video>(context, result);
+		return std::make_unique<internal::Video>(context, std::move(result));
 	case Type::Sticker:
-		return std::make_unique<internal::Sticker>(context, result);
+		return std::make_unique<internal::Sticker>(
+			context,
+			std::move(result));
 	case Type::Gif:
-		return std::make_unique<internal::Gif>(context, result);
+		return std::make_unique<internal::Gif>(context, std::move(result));
 	case Type::Article:
 	case Type::Geo:
 	case Type::Venue:
 		return std::make_unique<internal::Article>(
 			context,
-			result,
+			std::move(result),
 			forceThumb);
 	case Type::Game:
-		return std::make_unique<internal::Game>(context, result);
+		return std::make_unique<internal::Game>(context, std::move(result));
 	case Type::Contact:
-		return std::make_unique<internal::Contact>(context, result);
+		return std::make_unique<internal::Contact>(
+			context,
+			std::move(result));
 	}
 	return nullptr;
 }
@@ -197,7 +236,7 @@ ClickHandlerPtr ItemBase::getResultPreviewHandler() const {
 			_result->_content_url,
 			false);
 	} else if (const auto document = _result->_document
-		; document && document->createMediaView()->canBePlayed(nullptr)) {
+		; document && document->createMediaView()->canBePlayed()) {
 		return std::make_shared<OpenFileClickHandler>();
 	} else if (_result->_photo) {
 		return std::make_shared<OpenFileClickHandler>();

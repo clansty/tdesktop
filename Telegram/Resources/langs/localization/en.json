@@ -29,6 +29,7 @@
     "lng_settings_disable_global_search": "Disable global search",
     "lng_settings_show_group_sender_avatar": "Show sender's avatar in groups",
     "lng_settings_show_seconds": "Time with seconds",
+    "lng_settings_show_view_as_json": "Show View As JSON",
     "lng_settings_hide_counter": "Hide online users counter",
     "lng_settings_hide_stories": "Hide Stories",
     "lng_settings_screen_shot_mode": "Screenshot Mode",
@@ -36,9 +37,6 @@
 
     "lng_settings_skip_message": "Skip to next unread chat",
     "lng_settings_skip_message_desc": "Note: Allow ALT+↑/↓ shortcut to skip to next unread chat",
-
-    "lng_settings_recent_display_limit": "Recent sticker display limit",
-    "lng_settings_recent_display_limit_default": "Default (20)",
 
     "lng_net_speed_boost_title": "Network speed boost",
     "lng_net_speed_boost_desc": "Warning: changing this parameter to high values on slow networks can make it even worse. Use it at your own risk.",
@@ -110,6 +108,7 @@
     "lng_forward_to_stickers": "Forward to Stickers",
     "lng_context_repeater": "Repeater",
     "lng_context_forward": "Forward",
+    "lng_context_view_as_json": "View As JSON",
 
     "lng_settings_enable_hd_video": "Higher video bitrate",
     "lng_hd_video_hint": "Video bitrate is changed! Rejoin a voice chat if you've already joined.",

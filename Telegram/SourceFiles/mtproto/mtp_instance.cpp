@@ -100,6 +100,7 @@ public:
 
 	[[nodiscard]] auto nonPremiumDelayedRequests() const
 	-> rpl::producer<mtpRequestId>;
+	[[nodiscard]] rpl::producer<> frozenErrorReceived() const;
 
 	void restart();
 	void restart(ShiftedDcId shiftedDcId);
@@ -286,6 +287,7 @@ private:
 	Fn<void(ShiftedDcId shiftedDcId)> _sessionResetHandler;
 
 	rpl::event_stream<mtpRequestId> _nonPremiumDelayedRequests;
+	rpl::event_stream<> _frozenErrorReceived;
 
 	base::Timer _checkDelayedTimer;
 
@@ -319,12 +321,12 @@ Instance::Private::Private(
 	_fileSessionThreads.resize(2 * std::max(idealThreadPoolSize / 2, 1));
 
 	details::unpaused(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		unpaused();
 	}, _lifetime);
 
 	_networkReachability->availableChanges(
-	) | rpl::start_with_next([=](bool available) {
+	) | rpl::on_next([=](bool available) {
 		restart();
 	}, _lifetime);
 
@@ -333,7 +335,7 @@ Instance::Private::Private(
 
 	_customDeviceModel = Core::App().settings().customDeviceModel();
 	Core::App().settings().customDeviceModelChanges(
-	) | rpl::start_with_next([=](const QString &value) {
+	) | rpl::on_next([=](const QString &value) {
 		QMutexLocker lock(&_deviceModelMutex);
 		_customDeviceModel = value;
 		lock.unlock();
@@ -363,7 +365,7 @@ Instance::Private::Private(
 	}
 
 	_proxySettings.connectionTypeChanges(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		if (_configLoader) {
 			_configLoader->setProxyEnabled(_proxySettings.isEnabled());
 		}
@@ -560,6 +562,10 @@ rpl::producer<ShiftedDcId> Instance::Private::restartsByTimeout() const {
 auto Instance::Private::nonPremiumDelayedRequests() const
 -> rpl::producer<mtpRequestId> {
 	return _nonPremiumDelayedRequests.events();
+}
+
+rpl::producer<> Instance::Private::frozenErrorReceived() const {
+	return _frozenErrorReceived.events();
 }
 
 void Instance::Private::requestConfigIfOld() {
@@ -1593,6 +1599,8 @@ bool Instance::Private::onErrorDefault(
 		return true;
 	} else if (type == u"CONNECTION_LANG_CODE_INVALID"_q) {
 		Lang::CurrentCloudManager().resetToDefault();
+	} else if (type == u"FROZEN_METHOD_INVALID"_q) {
+		_frozenErrorReceived.fire({});
 	}
 	if (badGuestDc) _badGuestDcRequests.erase(requestId);
 	return false;
@@ -1918,6 +1926,10 @@ rpl::producer<ShiftedDcId> Instance::restartsByTimeout() const {
 
 rpl::producer<mtpRequestId> Instance::nonPremiumDelayedRequests() const {
 	return _private->nonPremiumDelayedRequests();
+}
+
+rpl::producer<> Instance::frozenErrorReceived() const {
+	return _private->frozenErrorReceived();
 }
 
 void Instance::requestConfigIfOld() {

@@ -9,6 +9,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "info/info_content_widget.h"
 #include "info/info_controller.h"
+#include "info/info_flexible_scroll.h"
+
+#include <any>
 
 namespace Settings {
 class AbstractSection;
@@ -47,8 +50,16 @@ public:
 
 	~Memento();
 
+	void setSectionState(std::any state) {
+		_sectionState = std::move(state);
+	}
+	[[nodiscard]] const std::any &sectionState() const {
+		return _sectionState;
+	}
+
 private:
 	Type _type = Type();
+	std::any _sectionState;
 
 };
 
@@ -98,14 +109,10 @@ private:
 	not_null<UserData*> _self;
 	Type _type = Type();
 
-	struct {
-		rpl::event_stream<int> contentHeightValue;
-		rpl::event_stream<int> fillerWidthValue;
-		rpl::event_stream<> backButtonEnables;
-	} _flexibleScroll;
+	FlexibleScrollData _flexibleScroll;
 	not_null<::Settings::AbstractSection*> _inner;
-	QPointer<Ui::RpWidget> _pinnedToTop;
-	QPointer<Ui::RpWidget> _pinnedToBottom;
+	base::weak_qptr<Ui::RpWidget> _pinnedToTop;
+	base::weak_qptr<Ui::RpWidget> _pinnedToBottom;
 
 	rpl::event_stream<std::vector<Type>> _removesFromStack;
 

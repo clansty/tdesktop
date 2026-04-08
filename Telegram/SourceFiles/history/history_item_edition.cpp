@@ -13,9 +13,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session.h"
 
 HistoryMessageEdition::HistoryMessageEdition(
-		not_null<Main::Session*> session,
-		const MTPDmessage &message) {
+	not_null<Main::Session*> session,
+	const MTPDmessage &message)
+: suggest(HistoryMessageSuggestInfo(message.vsuggested_post())) {
 	isEditHide = message.is_edit_hide();
+	isMediaUnread = message.is_media_unread();
+	repeatPeriod = message.vschedule_repeat_period().value_or_empty();
 	editDate = message.vedit_date().value_or(-1);
 
 	auto peerId = message.vfrom_id() ? peerFromMTP(*message.vfrom_id()) : PeerId(0);
@@ -52,6 +55,9 @@ HistoryMessageEdition::HistoryMessageEdition(
 		replies = HistoryMessageRepliesData(mtpReplies);
 	}
 	invertMedia = message.is_invert_media();
+	if (const auto rank = message.vfrom_rank()) {
+		fromRank = qs(*rank);
+	}
 
 	const auto period = message.vttl_period();
 	ttl = (period && period->v > 0) ? (message.vdate().v + period->v) : 0;

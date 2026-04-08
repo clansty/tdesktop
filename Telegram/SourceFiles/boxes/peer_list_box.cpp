@@ -113,7 +113,7 @@ void PeerListBox::createMultiSelect() {
 		tr::lng_participant_filter());
 	_select.create(this, std::move(entity));
 	_select->heightValue(
-	) | rpl::start_with_next(
+	) | rpl::on_next(
 		[this] { updateScrollSkips(); },
 		lifetime());
 	_select->entity()->setSubmittedCallback([=](Qt::KeyboardModifiers) {
@@ -138,15 +138,16 @@ void PeerListBox::createMultiSelect() {
 		}
 	});
 	_select->resizeToWidth(_controller->contentWidth());
-	_select->moveToLeft(0, 0);
+	_select->moveToLeft(0, topSelectSkip());
 }
 
 void PeerListBox::appendQueryChangedCallback(Fn<void(QString)> callback) {
 	_customQueryChangedCallback = std::move(callback);
 }
 
-void PeerListBox::setAddedTopScrollSkip(int skip) {
+void PeerListBox::setAddedTopScrollSkip(int skip, bool aboveSearch) {
 	_addedTopScrollSkip = skip;
+	_addedTopScrollAboveSearch = aboveSearch;
 	_scrollBottomFixed = false;
 	updateScrollSkips();
 }
@@ -155,7 +156,7 @@ void PeerListBox::showFinished() {
 	_controller->showFinished();
 }
 
-int PeerListBox::getTopScrollSkip() const {
+int PeerListBox::topScrollSkip() const {
 	auto result = _addedTopScrollSkip;
 	if (_select && !_select->isHidden()) {
 		result += _select->height();
@@ -163,12 +164,19 @@ int PeerListBox::getTopScrollSkip() const {
 	return result;
 }
 
+int PeerListBox::topSelectSkip() const {
+	return _addedTopScrollAboveSearch ? _addedTopScrollSkip : 0;
+}
+
 void PeerListBox::updateScrollSkips() {
 	// If we show / hide the search field scroll top is fixed.
 	// If we resize search field by bubbles scroll bottom is fixed.
-	setInnerTopSkip(getTopScrollSkip(), _scrollBottomFixed);
-	if (_select && !_select->animating()) {
-		_scrollBottomFixed = true;
+	setInnerTopSkip(topScrollSkip(), _scrollBottomFixed);
+	if (_select) {
+		_select->moveToLeft(0, topSelectSkip());
+		if (!_select->animating()) {
+			_scrollBottomFixed = true;
+		}
 	}
 }
 
@@ -183,7 +191,7 @@ void PeerListBox::prepare() {
 	_controller->setDelegate(this);
 
 	_controller->boxHeightValue(
-	) | rpl::start_with_next([=](int height) {
+	) | rpl::on_next([=](int height) {
 		setDimensions(_controller->contentWidth(), height);
 	}, lifetime());
 
@@ -195,12 +203,21 @@ void PeerListBox::prepare() {
 	}
 
 	content()->scrollToRequests(
-	) | rpl::start_with_next([this](Ui::ScrollToRequest request) {
+	) | rpl::on_next([this](Ui::ScrollToRequest request) {
 		scrollToY(request.ymin, request.ymax);
 	}, lifetime());
 
 	if (_init) {
 		_init(this);
+	}
+
+	{
+		setDimensions(
+			_controller->contentWidth(),
+			std::clamp(
+				content()->height(),
+				st::boxMaxListHeight,
+				st::boxMaxListHeight * 3));
 	}
 }
 
@@ -232,8 +249,6 @@ void PeerListBox::resizeEvent(QResizeEvent *e) {
 
 	if (_select) {
 		_select->resizeToWidth(width());
-		_select->moveToLeft(0, 0);
-
 		updateScrollSkips();
 	}
 
@@ -341,6 +356,16 @@ const style::PeerList &PeerListController::computeListSt() const {
 
 const style::MultiSelect &PeerListController::computeSelectSt() const {
 	return _selectSt ? *_selectSt : st::defaultMultiSelect;
+}
+
+void PeerListController::showFinished() {
+	if (const auto onstack = _showFinished) {
+		onstack();
+	}
+}
+
+void PeerListController::setShowFinishedCallback(Fn<void()> callback) {
+	_showFinished = std::move(callback);
 }
 
 bool PeerListController::hasComplexSearch() const {
@@ -708,7 +733,7 @@ void PeerListRow::elementsPaint(
 }
 
 QString PeerListRow::generateName() {
-	return peer()->name();
+	return peer()->userpicPaintingPeer()->name();
 }
 
 QString PeerListRow::generateShortName() {
@@ -718,7 +743,7 @@ QString PeerListRow::generateShortName() {
 		? tr::lng_replies_messages(tr::now)
 		: _isVerifyCodesChat
 		? tr::lng_verification_codes(tr::now)
-		: peer()->shortName();
+		: peer()->userpicPaintingPeer()->shortName();
 }
 
 Ui::PeerUserpicView &PeerListRow::ensureUserpicView() {
@@ -734,7 +759,7 @@ PaintRoundImageCallback PeerListRow::generatePaintUserpicCallback(
 	const auto replies = _isRepliesMessagesChat;
 	const auto peer = this->peer();
 	auto userpic = saved ? Ui::PeerUserpicView() : ensureUserpicView();
-	if (forceRound && peer->isForum()) {
+	if (forceRound && (peer->isForum() || peer->isMonoforum())) {
 		return ForceRoundUserpicCallback(peer);
 	}
 	return [=](Painter &p, int x, int y, int outerWidth, int size) mutable {
@@ -804,6 +829,9 @@ int PeerListRow::paintNameIconGetWidth(
 			? st::dialogsPremiumIcon.over
 			: st::dialogsPremiumIcon.icon),
 		.scam = &(selected ? st::dialogsScamFgOver : st::dialogsScamFg),
+		.direct = &(selected
+			? st::windowSubTextFgOver
+			: st::windowSubTextFg),
 		.premiumFg = &(selected
 			? st::dialogsVerifiedIconBgOver
 			: st::dialogsVerifiedIconBg),
@@ -873,6 +901,7 @@ void PeerListRow::paintUserpic(
 	} else if (const auto callback = generatePaintUserpicCallback(false)) {
 		callback(p, x, y, outerWidth, st.photoSize);
 	}
+	paintUserpicOverlay(p, st, x, y, outerWidth);
 }
 
 // Emulates Ui::RoundImageCheckbox::paint() in a checked state.
@@ -912,7 +941,13 @@ void PeerListRow::paintDisabledCheckUserpic(
 
 		p.setPen(userpicBorderPen);
 		p.setBrush(Qt::NoBrush);
-		p.drawEllipse(userpicEllipse);
+		if (peer()->forum()) {
+			const auto radius = userpicDiameter
+				* Ui::ForumUserpicRadiusMultiplier();
+			p.drawRoundedRect(userpicEllipse, radius, radius);
+		} else {
+			p.drawEllipse(userpicEllipse);
+		}
 
 		p.setPen(iconBorderPen);
 		p.setBrush(st.disabledCheckFg);
@@ -967,10 +1002,11 @@ void PeerListRow::setCheckedInternal(bool checked, anim::type animated) {
 }
 
 void PeerListRow::setCustomizedCheckSegments(
-		std::vector<Ui::OutlineSegment> segments) {
+		std::vector<Ui::OutlineSegment> segments,
+		bool liveBadge) {
 	Expects(_checkbox != nullptr);
 
-	_checkbox->setCustomizedSegments(std::move(segments));
+	_checkbox->setCustomizedSegments(std::move(segments), liveBadge);
 }
 
 void PeerListRow::finishCheckedAnimation() {
@@ -985,14 +1021,14 @@ PeerListContent::PeerListContent(
 , _controller(controller)
 , _rowHeight(_st.item.height) {
 	_controller->session().downloaderTaskFinished(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		update();
 	}, lifetime());
 
 	using UpdateFlag = Data::PeerUpdate::Flag;
 	_controller->session().changes().peerUpdates(
 		UpdateFlag::Name | UpdateFlag::Photo | UpdateFlag::EmojiStatus
-	) | rpl::start_with_next([=](const Data::PeerUpdate &update) {
+	) | rpl::on_next([=](const Data::PeerUpdate &update) {
 		if (update.flags & UpdateFlag::Name) {
 			handleNameChanged(update.peer);
 		}
@@ -1002,7 +1038,7 @@ PeerListContent::PeerListContent(
 	}, lifetime());
 
 	style::PaletteChanged(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		invalidatePixmapsCache();
 	}, lifetime());
 
@@ -1370,10 +1406,10 @@ void PeerListContent::initDecorateWidget(Ui::RpWidget *widget) {
 		widget->events(
 		) | rpl::filter([=](not_null<QEvent*> e) {
 			return (e->type() == QEvent::Enter) && widget->isVisible();
-		}) | rpl::start_with_next([=] {
+		}) | rpl::on_next([=] {
 			mouseLeftGeometry();
 		}, widget->lifetime());
-		widget->heightValue() | rpl::skip(1) | rpl::start_with_next([=] {
+		widget->heightValue() | rpl::skip(1) | rpl::on_next([=] {
 			resizeToWidth(width());
 		}, widget->lifetime());
 	}
@@ -1444,7 +1480,8 @@ void PeerListContent::setSearchMode(PeerListSearchMode mode) {
 					_loadingAnimation = Ui::CreateLoadingPeerListItemWidget(
 						this,
 						_st.item,
-						2);
+						2,
+						_controller->computeListSt().bg->c);
 				}
 			}
 		} else {
@@ -1978,8 +2015,12 @@ PeerListContent::SkipResult PeerListContent::selectSkip(int direction) {
 	_selected.index.value = newSelectedIndex;
 	_selected.element = 0;
 	if (newSelectedIndex >= 0) {
-		auto top = (newSelectedIndex > 0) ? getRowTop(RowIndex(newSelectedIndex)) : 0;
+		auto top = (newSelectedIndex > 0) ? getRowTop(RowIndex(newSelectedIndex)) : _aboveHeight;
 		auto bottom = (newSelectedIndex + 1 < rowsCount) ? getRowTop(RowIndex(newSelectedIndex + 1)) : height();
+		_scrollToRequests.fire({ top, bottom });
+	} else if (!_selected.index.value && direction < 0) {
+		auto top = 0;
+		auto bottom = _aboveHeight;
 		_scrollToRequests.fire({ top, bottom });
 	}
 

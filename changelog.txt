@@ -1,3 +1,461 @@
+6.7.2 (03.04.26)
+
+- System audio capture for desktop sharing on macOS.
+- Split voice and audio playback speeds.
+- Unread media dot for voice messages in dialog list.
+- Add 'x' button to AI Tools promo toast.
+- Fix long forward messages preview in box.
+- Fix custom emoji reaction search by category.
+- Fix double context menu in photo sending confirmation.
+- Fix possible crash in middle-elision.
+- Fix possible crash in GIFs search.
+
+6.7.1 (01.04.26)
+
+- Fix crash in emoji panel animation.
+
+6.7 (01.04.26)
+
+- AI Text Editor for messages.
+- Enhanced Polls with media, locations and suggested options.
+- Bots can create and managed other Bots on your behalf.
+- Drawing tools in image editor (brush, marker, eraser, arrow).
+- Trim recorded voice messages.
+- Per-file captions when sending multiple files.
+- Audio sharing in calls on Linux.
+
+6.6.4 beta (16.03.26)
+
+- Fix launch on Linux.
+
+6.6.3 beta (12.03.26)
+
+- Drawing tools in image editor (brush, marker, eraser, arrow).
+- Draw-to-reply button in media viewer.
+- Trim recorded voice messages.
+- Per-file captions when sending multiple files.
+- Audio sharing in calls on Linux.
+- Ripple effects for reactions, send and reply buttons.
+- Fix saved music shuffled playing.
+
+6.6.2 (03.03.26)
+
+- Fix editing of media files.
+- Fix admin rights in legacy groups for tag editing.
+- Fix opening emoji packs from custom emoji click.
+
+6.6.1 (02.03.26)
+
+- Fix crash in legacy groups members list.
+- Fix display of member tags in legacy groups.
+- Make fast reply button appear instantly.
+- Allow hiding fast reply button.
+
+6.6 (01.03.26)
+
+- Member Tags in groups.
+- Disable Sharing in Private Chats.
+- Timestamps for Polls.
+- Log In With Telegram.
+- Time and Date Formatting.
+
+6.5.1 (09.02.26)
+
+- Drag-n-drop chats to folders.
+- Fix crash in adding Recommended folders.
+- Fix crash in crafting gifts selection layer.
+- Fix disappeared Login Email button in Settings.
+- Fix Tab focusing chats search when autocompleting hashtags or mentions.
+
+6.5 (06.02.26)
+
+- Leaving Groups to a New Admin.
+- Log In With Telegram.
+- Gift Crafting.
+- Colored Buttons for Bots.
+- Search in Settings.
+
+6.4.4 beta (29.01.26)
+
+- Fix crash in topic group opening.
+- Show correct profile colors preview when edit.
+- Strip quote entities in media viewer.
+
+6.4.3 beta (28.01.26)
+
+- Search in Settings.
+
+6.4.2 (08.01.26)
+
+- Fix non-closing popup menu items.
+- Fix crash in my profile section resize.
+- Fix some text glitches because of render optimizations.
+
+6.4.1 (05.01.26)
+
+- Fix context menu double activations.
+- Fix text rendering in animating bubbles.
+
+6.4 (03.01.26)
+
+- AI Summaries for posts in channels.
+
+6.3.10 beta (22.12.25)
+
+- Fix user info showing from large group messages.
+- Fix sent state of outgoing messages in forums.
+- Show who sent your unique collectible gifts.
+- Update Qt on all platforms.
+
+6.3.9 (15.12.25)
+
+- Fix possible crash in audio playback speed menu.
+- Fix possible crash in forum or bot topic deletion.
+
+6.3.8 (15.12.25)
+
+- Fix crash on older Linux.
+
+6.3.7 (12.12.25)
+
+- Fix login with passkey visibility on Windows.
+- Improve gift upgrading experience.
+
+6.3.6 (06.12.25)
+
+- Fix crash in media viewer.
+- Fix crash in experimental settings.
+
+6.3.5 (05.12.25)
+
+- Offer stars or TON for unique gifts.
+- Preview gift auctions before they start.
+- Support passkey login on Windows.
+
+6.3.4 (26.11.25)
+
+- Show active auctions above chats list.
+- Add star sending effects in live stories.
+- Fix back button in group member profile view.
+- Export separate topics message history.
+- Export audio files saved to profile.
+- Many different crash fixes.
+
+6.3.3 (21.11.25)
+
+- Some more improvements for gift auctions.
+
+6.3.2 (20.11.25)
+
+- Improved support for gift auctions.
+- Reorder stories in stories albums in My Profile.
+- Bug fixes in new profile cover design.
+- Add your Saved Music to data export.
+
+6.3.1 (17.11.25)
+
+- Reorder saved music in My Profile.
+- Fix new cover overlapping information in My Profile.
+- Fix opening stories from My Profile.
+- Fix media viewer breaking after viewing Live Stories.
+- Fix several possible crashes.
+
+6.3 (15.11.25)
+
+- Support for Gift auctions.
+- Support for Live stories.
+- New profile pages design.
+
+6.2.6 beta (07.11.25)
+
+- Bug fixes in the new profile page design.
+
+6.2.5 beta (28.10.25)
+
+- New profile pages design.
+- Qt 6.10 on Linux.
+
+6.2.4 (22.10.25)
+
+- Highlight links in contact notes.
+- Show menu with screen share controls in wide group call mode.
+- Fix possible crash in saved music removing.
+- Fix crash in theme editor.
+
+6.2.3 (12.10.25)
+
+- Fix crash when viewing messages with hidden senders.
+- Fix possible crash when editing contacts.
+- Fix layout of character count warning in contact notes.
+- Fix icons when editing contacts.
+- Fix color of sending messages animation in complex themes.
+- Fix crash in chat open on Flatpak build.
+
+6.2.2 (10.10.25)
+
+- Fix layer.
+
+6.2.1 (10.10.25)
+
+- Fix sending gifts.
+- Fix possible crash on Linux.
+
+6.2 (10.10.25)
+
+- Comments and reactions in group calls.
+- Notes for contacts.
+- Suggested birthdays.
+- Threads for AI bots.
+- Reorder gifts collections and stories albums.
+- Reorder gifts inside collections.
+- Apply tags instantly when forwarding to Saved Messages.
+- Choose which screen to show notifications on.
+- Nice text message sending animation.
+
+6.1.4 (06.10.25)
+
+- Allow add to folder from recent / top chats.
+- Fix clear history of group chats.
+- Fix several crashes.
+
+6.1.3 (06.09.25)
+
+- Fix dead keys / alt combinations / input methods issues.
+
+6.1.2 (02.09.25)
+
+- Close selected chat in Ctrl+Tab chat switch by 'Q'.
+- Auto-split pasted multiple lines to checklist task creation.
+- Fix color picker in userpic builder.
+
+6.1.1 (01.09.25)
+
+- Ctrl+Tab / Ctrl+Shift+Tab collect chats on every launch.
+- Fix Ctrl+Tab / Ctrl+Shift+Tab shortcut override.
+- Fix possible crashes in saved music.
+- Fix webview error label alignment.
+
+6.1 (31.08.25)
+
+- Music on Profiles.
+- Gift Themes.
+- Gift Value Information.
+- Upgrading Gifts for Other Users.
+
+6.0.3 beta (22.08.25)
+
+- Ctrl+Tab / Ctrl+Shift+Tab for last opened chats switching.
+- New topic dividers for groups with topics and tabs.
+- Adjust volume of notification sounds.
+- Show stars required for the next rating level.
+- IV support on Linux (in case WebView works).
+
+6.0.2 (01.08.25)
+
+- Improve design of profile stars rating.
+
+6.0.1 (01.08.25)
+
+- Fix crashing on Windows 7.
+
+6.0 (31.07.25)
+
+- Public Post Search.
+- Story Albums.
+- Gift Collections.
+- Profile Rating.
+
+5.16.6 (25.07.25)
+
+- Fix bad layout in box buttons.
+- Fix several problems in gift collections.
+
+5.16.5 (23.07.25)
+
+- Age verification support.
+
+5.16.4 (11.07.25)
+
+- Fix problem with negative unread counters.
+- Fix stars values display in statistics.
+- Fix crash in messages fee disabling.
+
+5.16.3 (08.07.25)
+
+- Allow removing / charging fee in channel direct messages.
+- Don't offer creating checklists in channels.
+- Support author channel in gifts.
+
+5.16.2 (04.07.25)
+
+- Fix crash in some checklists.
+- Fix problems with some private chats message sending.
+- Fix chats list preview for rejected/balance-low suggestions.
+
+5.16.1 (02.07.25)
+
+- Fix inline keyboard updating in bot messages.
+- Fix possible crash in fast chat switching.
+- Different minor fixes.
+
+5.16 (01.07.25)
+
+- Create private and group checklists.
+- Suggest Posts in Channels.
+- Monetizing via Suggested Posts.
+
+5.15.4 (12.06.25)
+
+- Fix updating messages in Saved Messages subchats.
+- Fix possible issues with mouse cursor on Linux.
+
+5.15.3 (09.06.25)
+
+- Fix new contact top bar appearance.
+- Remove change photo button for channel direct messages.
+
+5.15.2 (05.06.25)
+
+- Fix sending messages in new forum layout.
+- Add statistics for user stars.
+
+5.15.1 (05.06.25)
+
+- Fix launch on Windows 7.
+- Fix launch on older Linux distributions.
+- Fix crash in group chat message right click.
+- Fix unread counters in channel direct messages.
+- Don't generate "User joined" message in channel direct messages.
+- Fix some other glitches in new forums and channel direct messages.
+
+5.15 (04.06.25)
+
+- Send Direct Messages to Channels.
+- Enable New Tab Layout for Topics.
+- Create Polls with Up To 12 Options.
+
+5.14.3 (18.05.25)
+
+- Fix stale birthday suggestions removing.
+- Fix notification click opening a new window.
+
+5.14.2 (08.05.25)
+
+- Buy Rare Gifts in the Marketplace.
+- Sell Your Gifts for Stars.
+- Set Your Channel to Auto-Translate.
+
+5.14.1 (01.05.25)
+
+- Fix launching on Windows 7.
+
+5.14 (01.05.25)
+
+- Secure Group Calls Made Easy.
+- Automated Business Accounts.
+- New Gifts Settings.
+
+5.13.1 (26.03.25)
+
+- Fix crash in group/channel stories.
+
+5.13 (26.03.25)
+
+- Allow transferring my unique gifts from Send Gift section.
+- Edit type of gifts you accept in Settings > Privacy and Security.
+- Swipe navigation using swipe gesture on touchpads / touchscreens.
+- Choose chat list quick action for swipe or middle click.
+
+5.12.6 beta (20.03.25)
+
+- Allow customizing chats list swipe left action.
+- Fix custom emoji in poll results view.
+- Fix crash in main menu swipe closing.
+
+5.12.5 beta (14.03.25)
+
+- Support swipe navigation on touchscreens.
+- Close main menu by swipe navigation.
+
+5.12.4 beta (12.03.25)
+
+- Touchpad swipe back to go back in navigation history.
+- Touchpad swipe between folders if they're horizontal.
+- Out-of-the-box monochrome tray icon on Linux.
+- Icons telegram{,{,-attention,-mute}-panel} are renamed
+to org.telegram.desktop{,{,-attention,-mute}-symbolic} for
+unified icon lookup in multiple (sometimes sandboxed) builds
+and GTK icon recolorization support.
+- Snap package got icon theming support,
+the icon names are snap.telegram-desktop.{,{,-attention,-mute}-symbolic}
+(notice the name ends with a dot in case of no suffix!).
+
+5.12.3 (10.03.25)
+
+- Fix a couple more crashes.
+- Fix gift disappearing on unpin.
+- Fix country emoji for Fragment numbers.
+
+5.12.2 (09.03.25)
+
+- Fix some crashes.
+
+5.12.1 (08.03.25)
+
+- Fix a crash in some chat switchings.
+- Fix crashes in empty repaint callbacks.
+
+5.12 (07.03.25)
+
+- Set a fee for incoming messages from unknown users.
+- Set a fee for messages in groups or channel comments.
+- Show some information about who's messaging you.
+- Pin gifts on your profile.
+
+5.11.1 (13.02.25)
+
+- Fix arbitrary cropping support in the image editor.
+- Fix crash on round video message playback.
+- Fix complex custom keyboard shortcuts.
+
+5.11 (12.02.25)
+
+- Copy video links at current time.
+- Set custom video covers when posting to channels.
+- Send paid reactions from the name of your channels.
+
+5.10.8 beta (12.02.25)
+
+- Edit keyboard shortcuts in Settings > Chat Settings.
+- Hide controls in calls with incoming video.
+- Fix several crashes.
+
+5.10.7 (27.01.25)
+
+- Fix some phrases for collectible gifts.
+- Fix freeze in sound reencoding on macOS and Linux.
+
+5.10.6 (26.01.25)
+
+- Fix crash in opening users gifts section.
+- Fix unintended sound in reaction notifications.
+- Fix disabling notifications sound on macOS and Linux.
+
+5.10.5 (24.01.25)
+
+- Count all unread topics as a single chat in archive unread counter.
+- Fix common groups section in bots profiles.
+- Fix crash on scheduling messages from Share box.
+- Fix silent notifications on macOS.
+- Add support for 'sound-file' notification hint on Linux.
+
+5.10.4 (22.01.25)
+
+- Add messages search in channel comments.
+- Allow sending your unique gifts to blockchain.
+- Add option for running in backround on Linux.
+- Fix possible freeze on quit on macOS.
+
 5.10.3 (09.01.25)
 
 - Fix a crash in legacy group opening.

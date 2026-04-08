@@ -38,10 +38,10 @@ Game::Game(
 , _title(st::msgMinWidth - _st.padding.left() - _st.padding.right())
 , _description(st::msgMinWidth - _st.padding.left() - _st.padding.right()) {
 	if (!consumed.text.isEmpty()) {
-		const auto context = Core::MarkedTextContext{
+		const auto context = Core::TextContext({
 			.session = &history()->session(),
-			.customEmojiRepaint = [=] { _parent->customEmojiRepaint(); },
-		};
+			.repaint = [=] { _parent->customEmojiRepaint(); },
+		});
 		_description.setMarkedText(
 			st::webPageDescriptionStyle,
 			consumed,
@@ -69,7 +69,10 @@ QSize Game::countOptimalSize() {
 
 	// init attach
 	if (!_attach) {
-		_attach = CreateAttach(_parent, _data->document, _data->photo);
+		_attach = CreateAttach(
+			_parent,
+			_data->document,
+			_data->document ? nullptr : _data->photo);
 	}
 
 	// init strings
@@ -218,12 +221,19 @@ void Game::draw(Painter &p, const PaintContext &context) const {
 	auto inner = outer.marginsRemoved(innerMargin());
 	auto tshift = inner.top();
 	auto paintw = inner.width();
-
-	const auto colorIndex = parent()->contentColorIndex();
 	const auto selected = context.selected();
-	const auto cache = context.outbg
-		? stm->replyCache[st->colorPatternIndex(colorIndex)].get()
-		: st->coloredReplyCache(selected, colorIndex).get();
+	const auto colorIndex = parent()->contentColorIndex();
+	const auto &colorCollectible = parent()->contentColorCollectible();
+	const auto colorPattern = colorCollectible
+		? st->collectiblePatternIndex(colorCollectible)
+		: st->colorPatternIndex(colorIndex);
+	const auto useColorCollectible = colorCollectible && !context.outbg;
+	const auto useColorIndex = !context.outbg;
+	const auto cache = useColorCollectible
+		? st->collectibleReplyCache(selected, colorCollectible).get()
+		: useColorIndex
+		? st->coloredReplyCache(selected, colorIndex).get()
+		: stm->replyCache[colorPattern].get();
 	Ui::Text::ValidateQuotePaintCache(*cache, _st);
 	Ui::Text::FillQuotePaint(p, outer, *cache, _st);
 
@@ -237,9 +247,11 @@ void Game::draw(Painter &p, const PaintContext &context) const {
 	auto lineHeight = UnitedLineHeight();
 	if (_titleLines) {
 		p.setPen(cache->icon);
-		p.setTextPalette(context.outbg
-			? stm->semiboldPalette
-			: st->coloredTextPalette(selected, colorIndex));
+		p.setTextPalette(useColorCollectible
+			? st->collectibleTextPalette(selected, colorCollectible)
+			: useColorIndex
+			? st->coloredTextPalette(selected, colorIndex)
+			: stm->semiboldPalette);
 
 		auto endskip = 0;
 		if (_title.hasSkipBlock()) {
@@ -500,10 +512,10 @@ void Game::parentTextUpdated() {
 	if (const auto media = _parent->data()->media()) {
 		const auto consumed = media->consumedMessageText();
 		if (!consumed.text.isEmpty()) {
-			const auto context = Core::MarkedTextContext{
+			const auto context = Core::TextContext({
 				.session = &history()->session(),
-				.customEmojiRepaint = [=] { _parent->customEmojiRepaint(); },
-			};
+				.repaint = [=] { _parent->customEmojiRepaint(); },
+			});
 			_description.setMarkedText(
 				st::webPageDescriptionStyle,
 				consumed,

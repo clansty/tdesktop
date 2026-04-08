@@ -32,6 +32,7 @@ class Thread;
 class WallPaper;
 struct ForwardDraft;
 class Forum;
+class SavedMessages;
 struct ReportInput;
 } // namespace Data
 
@@ -90,6 +91,8 @@ class TopBar;
 namespace Core {
 class Changelogs;
 } // namespace Core
+
+extern const char kForceComposeSearchOneColumn[];
 
 class MainWidget final
 	: public Ui::RpWidget
@@ -158,7 +161,8 @@ public:
 		const QString &text) const;
 	bool filesOrForwardDrop(
 		not_null<Data::Thread*> thread,
-		not_null<const QMimeData*> data);
+		not_null<const QMimeData*> data,
+		bool forumResolved = false);
 
 	void sendBotCommand(Bot::SendCommandRequest request);
 	void hideSingleUseKeyboard(FullMsgId replyToId);
@@ -244,7 +248,7 @@ private:
 
 	void setCurrentCall(Calls::Call *call);
 	void setCurrentGroupCall(Calls::GroupCall *call);
-	void createCallTopBar();
+	void createCallTopBar(Calls::Call *call, Calls::GroupCall *group);
 	void destroyCallTopBar();
 	void callTopBarHeightUpdated(int callTopBarHeight);
 

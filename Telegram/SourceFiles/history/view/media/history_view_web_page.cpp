@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/media/history_view_web_page.h"
 
+#include "base/unixtime.h"
 #include "core/application.h"
 #include "countries/countries_instance.h"
 #include "base/qt/qt_key_modifiers.h"
@@ -21,7 +22,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_session.h"
 #include "data/data_web_page.h"
 #include "history/view/media/history_view_media_common.h"
-#include "history/view/media/history_view_sticker.h"
+#include "history/view/media/history_view_media_generic.h"
+#include "history/view/media/history_view_unique_gift.h"
 #include "history/view/history_view_cursor_state.h"
 #include "history/view/history_view_message.h"
 #include "history/view/history_view_reply.h"
@@ -53,6 +55,7 @@ constexpr auto kMaxOriginalEntryLines = 8192;
 constexpr auto kFactcheckCollapsedLines = 3;
 constexpr auto kStickerSetLines = 3;
 constexpr auto kFactcheckAboutDuration = 5 * crl::time(1000);
+constexpr auto kSponsoredUserpicLines = 2;
 
 [[nodiscard]] int ArticleThumbWidth(not_null<PhotoData*> thumb, int height) {
 	const auto size = thumb->location(Data::PhotoSize::Thumbnail);
@@ -78,15 +81,11 @@ constexpr auto kFactcheckAboutDuration = 5 * crl::time(1000);
 	const auto spoiler = false;
 	for (const auto &item : data.items) {
 		if (const auto document = std::get_if<DocumentData*>(&item)) {
-			const auto hasQualitiesList = false;
-			const auto skipPremiumEffect = false;
-			result.push_back(std::make_unique<Data::MediaFile>(
-				parent,
-				*document,
-				skipPremiumEffect,
-				hasQualitiesList,
-				spoiler,
-				/*ttlSeconds = */0));
+			using MediaFile = Data::MediaFile;
+			using Args = MediaFile::Args;
+			const auto data = *document;
+			result.push_back(
+				std::make_unique<Data::MediaFile>(parent, data, Args{}));
 		} else if (const auto photo = std::get_if<PhotoData*>(&item)) {
 			result.push_back(std::make_unique<Data::MediaPhoto>(
 				parent,
@@ -198,8 +197,10 @@ constexpr auto kFactcheckAboutDuration = 5 * crl::time(1000);
 
 [[nodiscard]] TextWithEntities PageToPhrase(not_null<WebPageData*> page) {
 	const auto type = page->type;
-	const auto text = Ui::Text::Upper(page->iv
+	const auto text = tr::upper(page->iv
 		? tr::lng_view_button_iv(tr::now)
+		: page->uniqueGift
+		? tr::lng_view_button_collectible(tr::now)
 		: (type == WebPageType::Theme)
 		? tr::lng_view_button_theme(tr::now)
 		: (type == WebPageType::Story)
@@ -224,6 +225,8 @@ constexpr auto kFactcheckAboutDuration = 5 * crl::time(1000);
 		? tr::lng_view_button_voice_chat(tr::now)
 		: (type == WebPageType::Livestream)
 		? tr::lng_view_button_voice_chat_channel(tr::now)
+		: (type == WebPageType::ConferenceCall)
+		? tr::lng_view_button_call(tr::now)
 		: (type == WebPageType::Bot)
 		? tr::lng_view_button_bot(tr::now)
 		: (type == WebPageType::User)
@@ -234,14 +237,26 @@ constexpr auto kFactcheckAboutDuration = 5 * crl::time(1000);
 		? tr::lng_view_button_emojipack(tr::now)
 		: (type == WebPageType::StickerSet)
 		? tr::lng_view_button_stickerset(tr::now)
+		: (type == WebPageType::StoryAlbum)
+		? tr::lng_view_button_storyalbum(tr::now)
+		: (type == WebPageType::GiftCollection)
+		? tr::lng_view_button_collection(tr::now)
+		: (type == WebPageType::NewBot)
+		? tr::lng_view_button_newbot(tr::now)
+		: (type == WebPageType::Auction)
+		? ((page->auction
+			&& page->auction->endDate
+			&& page->auction->endDate <= base::unixtime::now())
+			? tr::lng_auction_preview_view_results(tr::now)
+			: (page->auction
+				&& page->auction->auctionGift->auctionStartDate
+				&& (page->auction->auctionGift->auctionStartDate
+				> base::unixtime::now()))
+			? tr::lng_auction_bar_view(tr::now)
+			: tr::lng_auction_preview_join(tr::now))
 		: QString());
 	if (page->iv) {
-		const auto manager = &page->owner().customEmojiManager();
-		const auto &icon = st::historyIvIcon;
-		const auto padding = st::historyIvIconPadding;
-		return Ui::Text::SingleCustomEmoji(
-			manager->registerInternalEmoji(icon, padding)
-		).append(text);
+		return Ui::Text::IconEmoji(&st::historyIvIcon).append(text);
 	}
 	return { text };
 }
@@ -249,6 +264,7 @@ constexpr auto kFactcheckAboutDuration = 5 * crl::time(1000);
 [[nodiscard]] bool HasButton(not_null<WebPageData*> webpage) {
 	const auto type = webpage->type;
 	return webpage->iv
+		|| webpage->uniqueGift
 		|| (type == WebPageType::Message)
 		|| (type == WebPageType::Group)
 		|| (type == WebPageType::GroupWithRequest)
@@ -261,6 +277,7 @@ constexpr auto kFactcheckAboutDuration = 5 * crl::time(1000);
 		|| (type == WebPageType::User)
 		|| (type == WebPageType::VoiceChat)
 		|| (type == WebPageType::Livestream)
+		|| (type == WebPageType::ConferenceCall)
 		|| (type == WebPageType::BotApp)
 		|| ((type == WebPageType::Theme)
 			&& webpage->document
@@ -269,8 +286,12 @@ constexpr auto kFactcheckAboutDuration = 5 * crl::time(1000);
 			&& (webpage->photo || webpage->document))
 		|| ((type == WebPageType::WallPaper)
 			&& webpage->document
-			&& webpage->document->isWallPaper());
-		//|| (type == WebPageType::StickerSet);
+			&& webpage->document->isWallPaper())
+		// || (type == WebPageType::StickerSet)
+		|| (type == WebPageType::StoryAlbum)
+		|| (type == WebPageType::GiftCollection)
+		|| (type == WebPageType::Auction)
+		|| (type == WebPageType::NewBot);
 }
 
 } // namespace
@@ -285,9 +306,9 @@ WebPage::WebPage(
 	: st::historyPagePreview)
 , _data(data)
 , _flags(flags)
-, _siteName(st::msgMinWidth - _st.padding.left() - _st.padding.right())
-, _title(st::msgMinWidth - _st.padding.left() - _st.padding.right())
-, _description(st::msgMinWidth - _st.padding.left() - _st.padding.right()) {
+, _siteName(st::minPhotoSize - rect::m::sum::h(_st.padding))
+, _title(st::minPhotoSize - rect::m::sum::h(_st.padding))
+, _description(st::minPhotoSize - rect::m::sum::h(_st.padding)) {
 	history()->owner().registerWebPageView(_data, _parent);
 }
 
@@ -312,12 +333,12 @@ void WebPage::setupAdditionalData() {
 			UrlClickHandler::Open(link);
 		});
 		if (!_attach) {
-			const auto maybePhoto = details.mediaPhotoId
-				? session->data().photo(details.mediaPhotoId).get()
-				: nullptr;
 			const auto maybeDocument = details.mediaDocumentId
 				? session->data().document(
 					details.mediaDocumentId).get()
+				: nullptr;
+			const auto maybePhoto = (!maybeDocument && details.mediaPhotoId)
+				? session->data().photo(details.mediaPhotoId).get()
 				: nullptr;
 			_attach = CreateAttach(
 				_parent,
@@ -375,15 +396,17 @@ QSize WebPage::countOptimalSize() {
 
 	const auto sponsored = sponsoredData();
 	const auto factcheck = factcheckData();
+	const auto stickerSet = stickerSetData();
+	const auto specialRightPix = (stickerSet
+		|| (sponsored && !sponsored->hasMedia && _data->photo));
 
 	// Detect _openButtonWidth before counting paddings.
 	_openButton = Ui::Text::String();
 	if ((_data->iv != nullptr || _data->siteName == "Ad") && HasButton(_data)) {
-		const auto context = Core::MarkedTextContext{
+		const auto context = Core::TextContext({
 			.session = &_data->session(),
-			.customEmojiRepaint = [] {},
 			.customEmojiLoopLimit = 1,
-		};
+		});
 		_openButton.setMarkedText(
 			st::semiboldTextStyle,
 			PageToPhrase(_data),
@@ -392,7 +415,7 @@ QSize WebPage::countOptimalSize() {
 	} else if (sponsored && !sponsored->buttonText.isEmpty()) {
 		_openButton.setText(
 			st::semiboldTextStyle,
-			Ui::Text::Upper(sponsored->buttonText));
+			tr::upper(sponsored->buttonText));
 	}
 
 	const auto padding = inBubblePadding() + innerMargin();
@@ -403,7 +426,7 @@ QSize WebPage::countOptimalSize() {
 		_attach = nullptr;
 		const auto item = _parent->data();
 		_collage = PrepareCollageMedia(item, _data->collage);
-		const auto min = st::msgMinWidth - rect::m::sum::h(_st.padding);
+		const auto min = st::minPhotoSize - rect::m::sum::h(_st.padding);
 		_siteName = Ui::Text::String(min);
 		_title = Ui::Text::String(min);
 		_description = Ui::Text::String(min);
@@ -505,35 +528,73 @@ QSize WebPage::countOptimalSize() {
 	}
 
 	// init attach
-	if (!_attach && !_asArticle) {
+	if (!_attach && _data->uniqueGift) {
+		_attach = std::make_unique<MediaGeneric>(
+			_parent,
+			GenerateUniqueGiftPreview(
+				_parent,
+				nullptr,
+				_data->uniqueGift),
+				MediaGenericDescriptor{
+					.maxWidth = st::msgServiceGiftPreview,
+					.paintBgFactory = [=] {
+						return UniqueGiftBg(_parent, _data->uniqueGift);
+					},
+					.expandCurrentWidth = true,
+				});
+	} else if (!_attach && _data->auction) {
+		const auto &gift = _data->auction->auctionGift;
+		const auto backdrop = gift->background
+			? gift->background->backdrop()
+			: Data::UniqueGiftBackdrop();
+		_attach = std::make_unique<MediaGeneric>(
+			_parent,
+			GenerateAuctionPreview(
+				_parent,
+				nullptr,
+				gift,
+				backdrop),
+			MediaGenericDescriptor{
+				.maxWidth = st::msgServiceGiftPreview,
+				.paintBgFactory = [=] {
+					return AuctionBg(
+						_parent,
+						backdrop,
+						gift,
+						_data->auction->auctionGift->auctionStartDate,
+						_data->auction->endDate);
+				},
+				.expandCurrentWidth = true,
+			});
+	} else if (!_attach && !_asArticle) {
 		_attach = CreateAttach(
 			_parent,
 			_data->document,
-			_data->photo,
+			((!_data->document || _data->photoIsVideoCover)
+				? _data->photo
+				: nullptr),
 			_collage,
 			_data->url);
 	}
 
 	// init strings
-	if (_description.isEmpty() && !_data->description.text.isEmpty()) {
+	if (_description.isEmpty()
+		&& !_data->description.text.isEmpty()
+		&& !_data->uniqueGift
+		&& !_data->auction) {
 		const auto &text = _data->description;
-
-		if (isLogEntryOriginal()) {
-			// Fix layout for small bubbles
-			// (narrow media caption edit log entries).
-			_description = Ui::Text::String(st::minPhotoSize
-				- rect::m::sum::h(padding));
-		}
-		using MarkedTextContext = Core::MarkedTextContext;
-		auto context = MarkedTextContext{
+		using Type = Core::TextContextDetails::HashtagMentionType;
+		auto context = Core::TextContext({
 			.session = &history()->session(),
-			.customEmojiRepaint = [=] { _parent->customEmojiRepaint(); },
-		};
-		if (_data->siteName == u"Twitter"_q) {
-			context.type = MarkedTextContext::HashtagMentionType::Twitter;
-		} else if (_data->siteName == u"Instagram"_q) {
-			context.type = MarkedTextContext::HashtagMentionType::Instagram;
-		}
+			.details = {
+				.type = ((_data->siteName == u"Twitter"_q)
+					? Type::Twitter
+					: (_data->siteName == u"Instagram"_q)
+					? Type::Instagram
+					: Type::Telegram),
+			},
+			.repaint = [=] { _parent->customEmojiRepaint(); },
+		});
 		_description.setMarkedText(
 			st::webPageDescriptionStyle,
 			text,
@@ -545,14 +606,14 @@ QSize WebPage::countOptimalSize() {
 		_siteNameLines = 1;
 		_siteName.setMarkedText(
 			st::webPageTitleStyle,
-			Ui::Text::Link(siteName, _data->url),
+			tr::link(siteName, _data->url),
 			Ui::WebpageTextTitleOptions());
 	}
 	if (_title.isEmpty() && !title.isEmpty()) {
 		if (!_siteNameLines && !_data->url.isEmpty()) {
 			_title.setMarkedText(
 				st::webPageTitleStyle,
-				Ui::Text::Link(title, _data->url),
+				tr::link(title, _data->url),
 				Ui::WebpageTextTitleOptions());
 
 		} else {
@@ -587,10 +648,16 @@ QSize WebPage::countOptimalSize() {
 		+ titleMinHeight
 		+ descriptionMinHeight;
 	const auto articlePhotoMaxWidth = _asArticle
-		? st::webPagePhotoDelta
+		? (st::webPagePhotoDelta
 			+ std::max(
 				ArticleThumbWidth(_data->photo, articleMinHeight),
-				lineHeight)
+				lineHeight))
+		: specialRightPix
+		? (st::webPagePhotoDelta
+			+ (lineHeight
+				* (stickerSet
+					? kStickerSetLines
+					: kSponsoredUserpicLines)))
 		: 0;
 
 	if (!_siteName.isEmpty()) {
@@ -636,11 +703,7 @@ QSize WebPage::countOptimalSize() {
 	if (!_openButton.isEmpty()) {
 		const auto w = rect::m::sum::h(st::historyPageButtonPadding)
 			+ _openButton.maxWidth();
-		if (sponsored) {
-			accumulate_max(maxWidth, w);
-		} else {
-			maxWidth += w;
-		}
+		accumulate_max(maxWidth, w);
 	}
 	maxWidth += rect::m::sum::h(padding);
 	minHeight += rect::m::sum::v(padding);
@@ -696,7 +759,6 @@ QSize WebPage::countCurrentSize(int newWidth) {
 	const auto twoTitleLines = 2 * st::webPageTitleFont->height;
 	const auto descriptionLineHeight = st::webPageDescriptionFont->height;
 	if (asArticle() || specialRightPix) {
-		constexpr auto kSponsoredUserpicLines = 2;
 		_pixh = lineHeight
 			* (stickerSet
 				? kStickerSetLines
@@ -881,47 +943,60 @@ void WebPage::draw(Painter &p, const PaintContext &context) const {
 
 	const auto selected = context.selected();
 	const auto view = parent();
-	const auto from = view->data()->contentColorsFrom();
 	const auto colorIndex = factcheck
 		? 0 // red
 		: (sponsored && sponsored->colorIndex)
 		? sponsored->colorIndex
-		: from
-		? from->colorIndex()
-		: view->colorIndex();
-	const auto cache = context.outbg
-		? stm->replyCache[st->colorPatternIndex(colorIndex)].get()
-		: st->coloredReplyCache(selected, colorIndex).get();
+		: view->contentColorIndex();
+	const auto &colorCollectible = factcheck
+		? nullptr
+		: (sponsored && sponsored->colorIndex)
+		? nullptr
+		: view->contentColorCollectible();
+	const auto colorPattern = colorCollectible
+		? st->collectiblePatternIndex(colorCollectible)
+		: st->colorPatternIndex(colorIndex);
+	const auto useColorCollectible = colorCollectible && !context.outbg;
+	const auto useColorIndex = !context.outbg;
+	const auto cache = useColorCollectible
+		? st->collectibleReplyCache(selected, colorCollectible).get()
+		: useColorIndex
+		? st->coloredReplyCache(selected, colorIndex).get()
+		: stm->replyCache[colorPattern].get();
 	const auto backgroundEmojiId = factcheck
 		? DocumentId()
 		: (sponsored && sponsored->backgroundEmojiId)
 		? sponsored->backgroundEmojiId
-		: from
-		? from->backgroundEmojiId()
-		: DocumentId();
-	const auto backgroundEmoji = backgroundEmojiId
-		? st->backgroundEmojiData(backgroundEmojiId).get()
+		: view->contentBackgroundEmojiId();
+	const auto backgroundEmojiData = backgroundEmojiId
+		? st->backgroundEmojiData(backgroundEmojiId, colorCollectible).get()
 		: nullptr;
-	const auto backgroundEmojiCache = backgroundEmoji
-		? &backgroundEmoji->caches[Ui::BackgroundEmojiData::CacheIndex(
+	const auto backgroundEmojiCache = !backgroundEmojiData
+		? nullptr
+		: useColorCollectible
+		? &backgroundEmojiData->collectibleCaches[colorCollectible]
+		: &backgroundEmojiData->caches[Ui::BackgroundEmojiData::CacheIndex(
 			selected,
 			context.outbg,
 			true,
-			colorIndex + 1)]
-		: nullptr;
+			useColorIndex ? (colorIndex + 1) : 0)];
 	Ui::Text::ValidateQuotePaintCache(*cache, _st);
 	Ui::Text::FillQuotePaint(p, outer, *cache, _st);
-
-	const auto settings = &AyuSettings::getInstance();
-	if (!settings->simpleQuotesAndReplies && backgroundEmoji) {
+	if (backgroundEmojiData) {
 		ValidateBackgroundEmoji(
 			backgroundEmojiId,
-			backgroundEmoji,
+			colorCollectible,
+			backgroundEmojiData,
 			backgroundEmojiCache,
 			cache,
 			view);
 		if (!backgroundEmojiCache->frames[0].isNull()) {
-			FillBackgroundEmoji(p, outer, false, *backgroundEmojiCache);
+			FillBackgroundEmoji(
+				p,
+				outer,
+				false,
+				*backgroundEmojiCache,
+				backgroundEmojiData->firstGiftFrame);
 		}
 	} else if (factcheck && factcheck->expandable) {
 		const auto &icon = factcheck->expanded ? _st.collapse : _st.expand;
@@ -1019,9 +1094,11 @@ void WebPage::draw(Painter &p, const PaintContext &context) const {
 	}
 	if (_siteNameLines) {
 		p.setPen(cache->icon);
-		p.setTextPalette(context.outbg
-			? stm->semiboldPalette
-			: st->coloredTextPalette(selected, colorIndex));
+		p.setTextPalette(useColorCollectible
+			? st->collectibleTextPalette(selected, colorCollectible)
+			: useColorIndex
+			? st->coloredTextPalette(selected, colorIndex)
+			: stm->semiboldPalette);
 
 		const auto endskip = _siteName.hasSkipBlock()
 			? _parent->skipBlockWidth()
@@ -1555,6 +1632,15 @@ bool WebPage::enforceBubbleWidth() const {
 	return (_attach != nullptr)
 		&& (_data->document != nullptr)
 		&& (_data->document->isWallPaper() || _data->document->isTheme());
+}
+
+bool WebPage::allowsNarrowBubble() const {
+	return (_attach != nullptr)
+		&& (_data->uniqueGift != nullptr || _data->auction != nullptr);
+}
+
+int WebPage::minBubbleWidthForNarrowBubble() const {
+	return allowsNarrowBubble() ? maxWidth() : 0;
 }
 
 void WebPage::playAnimation(bool autoplay) {

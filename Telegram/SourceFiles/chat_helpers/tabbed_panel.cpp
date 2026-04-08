@@ -12,7 +12,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/ui_utility.h"
 #include "chat_helpers/tabbed_selector.h"
 #include "window/window_session_controller.h"
-#include "mainwindow.h"
+#include "main/main_session.h"
+#include "data/data_session.h"
+#include "data/stickers/data_stickers.h"
 #include "core/application.h"
 #include "base/options.h"
 #include "styles/style_chat_helpers.h"
@@ -68,7 +70,8 @@ TabbedPanel::TabbedPanel(
 	: _ownedSelector.data())
 , _heightRatio(st::emojiPanHeightRatio)
 , _minContentHeight(st::emojiPanMinHeight)
-, _maxContentHeight(st::emojiPanMaxHeight) {
+, _maxContentHeight(st::emojiPanMaxHeight)
+, _shadow(_selector->st().showAnimation.shadow) {
 	Expects(_selector != nullptr);
 
 	_selector->setParent(this);
@@ -86,7 +89,7 @@ TabbedPanel::TabbedPanel(
 		_pauseAnimations.fire(false);
 	});
 	_selector->showRequests(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		showFromSelector();
 	}, lifetime());
 
@@ -103,19 +106,26 @@ TabbedPanel::TabbedPanel(
 	_hideTimer.setCallback([this] { hideByTimerOrLeave(); });
 
 	_selector->checkForHide(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		if (!rect().contains(mapFromGlobal(QCursor::pos()))) {
 			_hideTimer.callOnce(kDelayedHideTimeoutMs);
 		}
 	}, lifetime());
 
 	_selector->cancelled(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		hideAnimated();
 	}, lifetime());
 
+	if (_regularWindow) {
+		_regularWindow->session().data().stickers().gifWithCaptionSent(
+		) | rpl::on_next([=] {
+			hideAnimated();
+		}, lifetime());
+	}
+
 	_selector->slideFinished(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		InvokeQueued(this, [=] {
 			if (_hideAfterSlide) {
 				startOpacityAnimation(true);
@@ -126,7 +136,7 @@ TabbedPanel::TabbedPanel(
 	macWindowDeactivateEvents(
 	) | rpl::filter([=] {
 		return !isHidden() && !preventAutoHide();
-	}) | rpl::start_with_next([=] {
+	}) | rpl::on_next([=] {
 		hideAnimated();
 	}, lifetime());
 
@@ -244,7 +254,7 @@ void TabbedPanel::paintEvent(QPaintEvent *e) {
 		hideFinished();
 	} else {
 		if (!_cache.isNull()) _cache = QPixmap();
-		Ui::Shadow::paint(p, innerRect(), width(), _selector->st().showAnimation.shadow);
+		_shadow.paint(p, innerRect(), st::emojiPanRadius);
 	}
 }
 
@@ -277,7 +287,7 @@ void TabbedPanel::leaveEventHook(QEvent *e) {
 	} else {
 		_hideTimer.callOnce(kHideTimeoutMs);
 	}
-	return TWidget::leaveEventHook(e);
+	return RpWidget::leaveEventHook(e);
 }
 
 void TabbedPanel::otherEnter() {
@@ -292,7 +302,11 @@ void TabbedPanel::otherLeave() {
 	if (_a_opacity.animating()) {
 		hideByTimerOrLeave();
 	} else {
-		_hideTimer.callOnce(0);
+		// In case of animations disabled add some delay before hiding.
+		// Otherwise if emoji suggestions panel is shown in between
+		// (z-order wise) the emoji toggle button and tabbed panel,
+		// we won't be able to move cursor from the button to the panel.
+		_hideTimer.callOnce(anim::Disabled() ? kHideTimeoutMs : 0);
 	}
 }
 
@@ -376,7 +390,8 @@ void TabbedPanel::startShowAnimation() {
 			std::move(image),
 			QRect(
 				inner.topLeft() * style::DevicePixelRatio(),
-				inner.size() * style::DevicePixelRatio()));
+				inner.size() * style::DevicePixelRatio()),
+			st::emojiPanRadius);
 		_showAnimation->setCornerMasks(Images::CornersMask(st::emojiPanRadius));
 		_showAnimation->start();
 	}

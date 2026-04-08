@@ -22,7 +22,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history_item_components.h"
 #include "apiwrap.h"
 #include "storage/storage_account.h"
-#include "settings/settings_premium.h"
+#include "settings/sections/settings_premium.h"
 #include "core/application.h"
 #include "core/core_settings.h"
 #include "main/main_session.h"
@@ -48,7 +48,7 @@ using SetFlag = StickersSetFlag;
 		const Data::PremiumLimits &limits) {
 	const auto defaultLimit = limits.gifsDefault();
 	const auto premiumLimit = limits.gifsPremium();
-	return Ui::Text::Bold(
+	return tr::bold(
 		tr::lng_saved_gif_limit_title(tr::now, lt_count, defaultLimit)
 	).append('\n').append(
 		tr::lng_saved_gif_limit_more(
@@ -56,15 +56,15 @@ using SetFlag = StickersSetFlag;
 			lt_count,
 			premiumLimit,
 			lt_link,
-			Ui::Text::Link(tr::lng_saved_gif_limit_link(tr::now)),
-			Ui::Text::WithEntities));
+			tr::link(tr::lng_saved_gif_limit_link(tr::now)),
+			tr::marked));
 }
 
 [[nodiscard]] TextWithEntities FaveStickersToast(
 		const Data::PremiumLimits &limits) {
 	const auto defaultLimit = limits.stickersFavedDefault();
 	const auto premiumLimit = limits.stickersFavedPremium();
-	return Ui::Text::Bold(
+	return tr::bold(
 		tr::lng_fave_sticker_limit_title(tr::now, lt_count, defaultLimit)
 	).append('\n').append(
 		tr::lng_fave_sticker_limit_more(
@@ -72,8 +72,8 @@ using SetFlag = StickersSetFlag;
 			lt_count,
 			premiumLimit,
 			lt_link,
-			Ui::Text::Link(tr::lng_fave_sticker_limit_link(tr::now)),
-			Ui::Text::WithEntities));
+			tr::link(tr::lng_fave_sticker_limit_link(tr::now)),
+			tr::marked));
 }
 
 void MaybeShowPremiumToast(
@@ -88,8 +88,7 @@ void MaybeShowPremiumToast(
 		return;
 	}
 	const auto filter = [=](const auto ...) {
-		const auto usage = ChatHelpers::WindowUsage::PremiumPromo;
-		if (const auto controller = show->resolveWindow(usage)) {
+		if (const auto controller = show->resolveWindow()) {
 			Settings::ShowPremium(controller, ref);
 		}
 		return false;
@@ -189,6 +188,14 @@ rpl::producer<uint64> Stickers::stickerSetInstalled() const {
 	return _stickerSetInstalled.events();
 }
 
+void Stickers::notifyGifWithCaptionSent() {
+	_gifWithCaptionSent.fire({});
+}
+
+rpl::producer<> Stickers::gifWithCaptionSent() const {
+	return _gifWithCaptionSent.events();
+}
+
 void Stickers::notifyEmojiSetInstalled(uint64 setId) {
 	_emojiSetInstalled.fire(std::move(setId));
 }
@@ -254,7 +261,7 @@ void Stickers::incrementSticker(not_null<DocumentData*> document) {
 				set->emoji[emoji].push_front(document);
 			}
 		} else if (!removedFromEmoji.empty()) {
-			for (const auto emoji : removedFromEmoji) {
+			for (const auto &emoji : removedFromEmoji) {
 				set->emoji[emoji].push_front(document);
 			}
 		} else {
@@ -790,7 +797,7 @@ void Stickers::somethingReceived(
 void Stickers::setPackAndEmoji(
 		StickersSet &set,
 		StickersPack &&pack,
-		const std::vector<TimeId> &&dates,
+		std::vector<TimeId> &&dates,
 		const QVector<MTPStickerPack> &packs) {
 	set.stickers = std::move(pack);
 	set.dates = std::move(dates);
@@ -813,6 +820,25 @@ void Stickers::setPackAndEmoji(
 			set.emoji[emoji] = std::move(p);
 		}
 	}
+}
+
+not_null<StickersSet*> Stickers::collectibleSet() {
+	const auto setId = CollectibleSetId;
+	auto &sets = setsRef();
+	auto it = sets.find(setId);
+	if (it == sets.cend()) {
+		it = sets.emplace(setId, std::make_unique<StickersSet>(
+				&owner(),
+				setId,
+				uint64(0), // accessHash
+				uint64(0), // hash
+				tr::lng_collectible_emoji(tr::now),
+				QString(),
+				0, // count
+				SetFlag::Special,
+				TimeId(0))).first;
+	}
+	return it->second.get();
 }
 
 void Stickers::specialSetReceived(
@@ -1439,7 +1465,7 @@ std::vector<not_null<DocumentData*>> Stickers::getListByEmoji(
 		const auto others = session().api().stickersByEmoji(key);
 		if (others) {
 			result.reserve(result.size() + others->size());
-			for (const auto document : *others) {
+			for (const auto &document : *others) {
 				add(document, CreateOtherSortKey(document));
 			}
 		} else if (!forceAllResults) {

@@ -127,11 +127,15 @@ public:
 
 	void saveAdditional() override;
 
+	void checkHighlightControls(
+		not_null<Window::SessionController*> controller) override;
+
 private:
 	const not_null<::Main::Session*> _session;
 	rpl::variable<Option> _option;
 	rpl::variable<int> _exceptionsNever;
 	bool _hideReadTime = false;
+	QPointer<QWidget> _hideReadTimeButton;
 
 };
 
@@ -263,10 +267,15 @@ public:
 
 	void saveAdditional() override;
 
+	void checkHighlightControls(
+		not_null<Window::SessionController*> controller) override;
+
 private:
 	Fn<void()> _saveAdditional;
 	rpl::variable<Option> _option;
 	rpl::variable<int> _exceptionsNever;
+	QPointer<QWidget> _setPublicButton;
+	QPointer<QWidget> _removePublicButton;
 
 };
 
@@ -317,7 +326,7 @@ public:
 
 };
 
-class BirthdayPrivacyController final : public EditPrivacyController {
+class BirthdayPrivacyController : public EditPrivacyController {
 public:
 	using Option = EditPrivacyBox::Option;
 	using Exception = EditPrivacyBox::Exception;
@@ -355,6 +364,49 @@ public:
 		Exception exception) const override;
 	rpl::producer<QString> exceptionsDescription() const override;
 	bool allowMiniAppsToggle(Exception exception) const override;
+
+	object_ptr<Ui::RpWidget> setupAboveWidget(
+		not_null<Window::SessionController*> controller,
+		not_null<QWidget*> parent,
+		rpl::producer<Option> optionValue,
+		not_null<QWidget*> outerContainer) override;
+	object_ptr<Ui::RpWidget> setupBelowWidget(
+		not_null<Window::SessionController*> controller,
+		not_null<QWidget*> parent,
+		rpl::producer<Option> option) override;
+
+	void saveAdditional() override;
+
+	void checkHighlightControls(
+		not_null<Window::SessionController*> controller) override;
+
+private:
+	struct AdditionalState;
+
+	void ensureAdditionalState(
+		not_null<Window::SessionController*> controller,
+		rpl::lifetime &on);
+
+	AdditionalState *_state = nullptr;
+	QPointer<QWidget> _showIconButton;
+	QPointer<QWidget> _acceptedTypesTitle;
+
+};
+
+class SavedMusicPrivacyController final : public EditPrivacyController {
+public:
+	using Option = EditPrivacyBox::Option;
+	using Exception = EditPrivacyBox::Exception;
+
+	Key key() const override;
+
+	rpl::producer<QString> title() const override;
+	rpl::producer<QString> optionsTitleKey() const override;
+	rpl::producer<QString> exceptionButtonTextKey(
+		Exception exception) const override;
+	rpl::producer<QString> exceptionBoxTitle(
+		Exception exception) const override;
+	rpl::producer<QString> exceptionsDescription() const override;
 
 };
 

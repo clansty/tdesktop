@@ -24,8 +24,7 @@ constexpr auto kFileSizeLimit = 2'000 * int64(1024 * 1024);
 // Load files up to 4'000 MB.
 constexpr auto kFileSizePremiumLimit = 4'000 * int64(1024 * 1024);
 
-extern const char kOptionSendLargePhotos[];
-
+[[nodiscard]] int PhotoSideLimit(bool large);
 [[nodiscard]] int PhotoSideLimit();
 
 enum class SendMediaType {
@@ -193,8 +192,11 @@ struct FilePrepareResult {
 	PreparedPhotoThumbs photoThumbs;
 	TextWithTags caption;
 	bool spoiler = false;
+	bool forceFile = false;
 
 	std::vector<MTPInputDocument> attachedStickers;
+
+	std::shared_ptr<FilePrepareResult> videoCover;
 
 	void setFileData(const QByteArray &filedata);
 	void setThumbData(const QByteArray &thumbdata);
@@ -217,42 +219,53 @@ public:
 		QByteArray content = {},
 		QByteArray format = {});
 
-	FileLoadTask(
-		not_null<Main::Session*> session,
-		const QString &filepath,
-		const QByteArray &content,
-		std::unique_ptr<Ui::PreparedFileInformation> information,
-		SendMediaType type,
-		const FileLoadTo &to,
-		const TextWithTags &caption,
-		bool spoiler,
-		std::shared_ptr<SendingAlbum> album = nullptr,
-		uint64 idOverride = 0);
-	FileLoadTask(
-		not_null<Main::Session*> session,
-		const QByteArray &voice,
-		crl::time duration,
-		const VoiceWaveform &waveform,
-		bool video,
-		const FileLoadTo &to,
-		const TextWithTags &caption);
+	struct Args {
+		not_null<Main::Session*> session;
+		QString filepath;
+		QByteArray content;
+		std::unique_ptr<Ui::PreparedFileInformation> information;
+		std::unique_ptr<FileLoadTask> videoCover;
+		SendMediaType type;
+		FileLoadTo to;
+		TextWithTags caption;
+		bool spoiler = false;
+		std::shared_ptr<SendingAlbum> album;
+		bool forceFile = false;
+		bool sendLargePhotos = false;
+		uint64 idOverride = 0;
+		QString displayName;
+	};
+
+	struct VoiceArgs {
+		not_null<Main::Session*> session;
+		QByteArray voice;
+		crl::time duration = 0;
+		VoiceWaveform waveform;
+		bool video = false;
+		FileLoadTo to;
+		TextWithTags caption;
+	};
+
+	explicit FileLoadTask(Args &&args);
+	explicit FileLoadTask(VoiceArgs &&args);
 	~FileLoadTask();
 
 	uint64 fileid() const {
 		return _id;
 	}
 
-	struct Args {
+	struct ProcessArgs {
 		bool generateGoodThumbnail = true;
 	};
-	void process(Args &&args);
+	void process(ProcessArgs &&args);
 
 	void process() override {
 		process({});
 	}
 	void finish() override;
 
-	FilePrepareResult *peekResult() const;
+	[[nodiscard]] auto peekResult() const
+		-> const std::shared_ptr<FilePrepareResult> &;
 
 private:
 	static bool CheckForSong(
@@ -280,13 +293,17 @@ private:
 	FileLoadTo _to;
 	const std::shared_ptr<SendingAlbum> _album;
 	QString _filepath;
+	QString _displayName;
 	QByteArray _content;
+	std::unique_ptr<FileLoadTask> _videoCover;
 	std::unique_ptr<Ui::PreparedFileInformation> _information;
 	crl::time _duration = 0;
 	VoiceWaveform _waveform;
 	SendMediaType _type;
 	TextWithTags _caption;
 	bool _spoiler = false;
+	bool _forceFile = false;
+	bool _sendLargePhotos = false;
 
 	std::shared_ptr<FilePrepareResult> _result;
 

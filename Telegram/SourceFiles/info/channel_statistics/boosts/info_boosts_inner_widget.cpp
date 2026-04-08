@@ -106,7 +106,7 @@ void FillOverview(
 		sub->setTextColorOverride(st::windowSubTextFg->c);
 
 		primary->geometryValue(
-		) | rpl::start_with_next([=](const QRect &g) {
+		) | rpl::on_next([=](const QRect &g) {
 			const auto &padding = st::statisticsOverviewSecondValuePadding;
 			second->moveToLeft(
 				rect::right(g) + padding.left(),
@@ -150,7 +150,7 @@ void FillOverview(
 	container->showChildren();
 	container->resize(container->width(), topLeftLabel->height() * 5);
 	container->sizeValue(
-	) | rpl::start_with_next([=](const QSize &s) {
+	) | rpl::on_next([=](const QSize &s) {
 		const auto halfWidth = s.width() / 2;
 		{
 			const auto &p = st::boostsOverviewValuePadding;
@@ -174,7 +174,7 @@ void FillShareLink(
 		std::shared_ptr<Ui::Show> show,
 		const QString &link,
 		not_null<PeerData*> peer) {
-	const auto weak = Ui::MakeWeak(content);
+	const auto weak = base::make_weak(content);
 	const auto copyLink = crl::guard(weak, [=] {
 		QGuiApplication::clipboard()->setText(link);
 		show->showToast(tr::lng_channel_public_link_copied(tr::now));
@@ -185,14 +185,14 @@ void FillShareLink(
 
 	const auto label = content->lifetime().make_state<Ui::InviteLinkLabel>(
 		content,
-		rpl::single(link),
+		rpl::single(base::duplicate(link).replace(u"https://"_q, QString())),
 		nullptr);
 	content->add(
 		label->take(),
 		st::boostsLinkFieldPadding);
 
 	label->clicks(
-	) | rpl::start_with_next(copyLink, label->lifetime());
+	) | rpl::on_next(copyLink, label->lifetime());
 	{
 		const auto wrap = content->add(
 			object_ptr<Ui::FixedHeightWidget>(
@@ -213,7 +213,7 @@ void FillShareLink(
 		share->setClickedCallback(shareLink);
 
 		wrap->widthValue(
-		) | rpl::start_with_next([=](int width) {
+		) | rpl::on_next([=](int width) {
 			const auto buttonWidth = (width - st::inviteLinkButtonsSkip) / 2;
 			copy->setFullWidth(buttonWidth);
 			share->setFullWidth(buttonWidth);
@@ -286,9 +286,9 @@ void InnerWidget::load() {
 		_showFinished.events());
 
 	_showFinished.events(
-	) | rpl::take(1) | rpl::start_with_next([=] {
+	) | rpl::take(1) | rpl::on_next([=] {
 		api->request(
-		) | rpl::start_with_error_done([](const QString &error) {
+		) | rpl::on_error_done([](const QString &error) {
 		}, [=] {
 			_state = api->boostStatus();
 			_loaded.fire(true);
@@ -307,6 +307,7 @@ void InnerWidget::fill() {
 			delete Ui::VerticalLayout::widgetAt(0);
 		}
 		load();
+		_showFinished.fire({});
 	});
 
 	{
@@ -391,7 +392,9 @@ void InnerWidget::fill() {
 		}
 
 		Ui::AddSkip(inner);
-		Ui::AddDivider(inner);
+		Ui::AddDividerText(
+			inner,
+			tr::lng_boosts_prepaid_giveaway_title_subtext());
 		Ui::AddSkip(inner);
 	}
 
@@ -408,7 +411,7 @@ void InnerWidget::fill() {
 						.from = _peer->id,
 						.to = user->id,
 						.date = TimeId(boost.date.toSecsSinceEpoch()),
-						.months = boost.expiresAfterMonths,
+						.days = boost.expiresAfterMonths * 30,
 					};
 					_show->showBox(Box(GiftCodePendingBox, _controller, d));
 				} else {
@@ -456,12 +459,12 @@ void InnerWidget::fill() {
 				inner,
 				object_ptr<Ui::CustomWidthSlider>(
 					inner,
-					st::dialogsSearchTabs)),
-			st::boxRowPadding);
-		if (const auto shadow = Ui::CreateChild<Ui::PlainShadow>(inner)) {
+					st::dialogsSearchTabs)));
+		if (!hasOneTab) {
+			const auto shadow = Ui::CreateChild<Ui::PlainShadow>(inner);
 			shadow->show();
 			slider->geometryValue(
-			) | rpl::start_with_next([=](const QRect &r) {
+			) | rpl::on_next([=](const QRect &r) {
 				shadow->setGeometry(
 					inner->x(),
 					rect::bottom(r) - shadow->height(),
@@ -493,7 +496,7 @@ void InnerWidget::fill() {
 
 		rpl::single(hasOneTab ? (hasGifts ? 1 : 0) : 0) | rpl::then(
 			slider->entity()->sectionActivated()
-		) | rpl::start_with_next([=](int index) {
+		) | rpl::on_next([=](int index) {
 			boostsWrap->toggle(!index, anim::type::instant);
 			giftsWrap->toggle(index, anim::type::instant);
 		}, inner->lifetime());

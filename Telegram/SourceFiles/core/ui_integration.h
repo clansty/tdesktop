@@ -19,7 +19,7 @@ class ElementDelegate;
 
 namespace Core {
 
-struct MarkedTextContext {
+struct TextContextDetails {
 	enum class HashtagMentionType : uchar {
 		Telegram,
 		Twitter,
@@ -28,9 +28,15 @@ struct MarkedTextContext {
 
 	Main::Session *session = nullptr;
 	HashtagMentionType type = HashtagMentionType::Telegram;
-	Fn<void()> customEmojiRepaint;
+};
+
+struct TextContextArgs {
+	not_null<Main::Session*> session;
+	TextContextDetails details;
+	Fn<void()> repaint;
 	int customEmojiLoopLimit = 0;
 };
+[[nodiscard]] Ui::Text::MarkedContext TextContext(TextContextArgs &&args);
 
 class UiIntegration final : public Ui::Integration {
 public:
@@ -44,12 +50,14 @@ public:
 
 	void textActionsUpdated() override;
 	void activationFromTopPanel() override;
+	void touchCounterIncrement() override;
+	int touchCounterNow() override;
 
 	bool screenIsLocked() override;
 
 	std::shared_ptr<ClickHandler> createLinkHandler(
 		const EntityLinkData &data,
-		const std::any &context) override;
+		const Ui::Text::MarkedContext &context) override;
 	bool handleUrlClick(
 		const QString &url,
 		const QVariant &context) override;
@@ -57,10 +65,6 @@ public:
 	rpl::producer<> forcePopupMenuHideRequests() override;
 	const Ui::Emoji::One *defaultEmojiVariant(
 		const Ui::Emoji::One *emoji) override;
-	std::unique_ptr<Ui::Text::CustomEmoji> createCustomEmoji(
-		QStringView data,
-		const std::any &context) override;
-	Fn<void()> createSpoilerRepaint(const std::any &context) override;
 
 	QString phraseContextCopyText() override;
 	QString phraseContextCopyEmail() override;
@@ -77,6 +81,7 @@ public:
 	QString phraseFormattingBlockquote() override;
 	QString phraseFormattingMonospace() override;
 	QString phraseFormattingSpoiler() override;
+	QString phraseFormattingDate() override;
 	QString phraseButtonOk() override;
 	QString phraseButtonClose() override;
 	QString phraseButtonCancel() override;
@@ -90,6 +95,12 @@ public:
 	QString phraseBotAllowWriteTitle() override;
 	QString phraseBotAllowWriteConfirm() override;
 	QString phraseQuoteHeaderCopy() override;
+	QString phraseMinimize() override;
+	QString phraseMaximize() override;
+	QString phraseRestore() override;
+
+private:
+	int _touchCounter = 0;
 
 };
 

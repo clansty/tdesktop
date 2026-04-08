@@ -26,19 +26,28 @@ struct ConfigFields;
 namespace Support {
 class Helper;
 class Templates;
+class FastButtonsBots;
 } // namespace Support
 
 namespace Data {
 class Session;
 class Changes;
+class GiftAuctions;
 class RecentPeers;
+class RecentSharedMediaGifts;
 class ScheduledMessages;
 class SponsoredMessages;
 class TopPeers;
 class Factchecks;
 class LocationPickers;
 class Credits;
+class PromoSuggestions;
+class Passkeys;
 } // namespace Data
+
+namespace Settings {
+class FaqSuggestions;
+} // namespace Settings
 
 namespace HistoryView::Reactions {
 class CachedIconFactory;
@@ -79,6 +88,19 @@ class Domain;
 class SessionSettings;
 class SendAsPeers;
 
+struct FreezeInfo {
+	TimeId since = 0;
+	TimeId until = 0;
+	QString appealUrl;
+
+	explicit operator bool() const {
+		return since != 0;
+	}
+	friend inline bool operator==(
+		const FreezeInfo &,
+		const FreezeInfo &) = default;
+};
+
 class Session final : public base::has_weak_ptr {
 public:
 	Session(
@@ -117,6 +139,12 @@ public:
 	}
 	[[nodiscard]] Data::RecentPeers &recentPeers() const {
 		return *_recentPeers;
+	}
+	[[nodiscard]] Data::RecentSharedMediaGifts &recentSharedGifts() const {
+		return *_recentSharedGifts;
+	}
+	[[nodiscard]] Data::GiftAuctions &giftAuctions() const {
+		return *_giftAuctions;
 	}
 	[[nodiscard]] Data::SponsoredMessages &sponsoredMessages() const {
 		return *_sponsoredMessages;
@@ -174,6 +202,15 @@ public:
 	}
 	[[nodiscard]] InlineBots::AttachWebView &attachWebView() const {
 		return *_attachWebView;
+	}
+	[[nodiscard]] Data::PromoSuggestions &promoSuggestions() const {
+		return *_promoSuggestions;
+	}
+	[[nodiscard]] Data::Passkeys &passkeys() const {
+		return *_passkeys;
+	}
+	[[nodiscard]] Settings::FaqSuggestions &faqSuggestions() const {
+		return *_faqSuggestions;
 	}
 	[[nodiscard]] auto cachedReactionIconFactory() const
 	-> HistoryView::Reactions::CachedIconFactory & {
@@ -233,12 +270,18 @@ public:
 	[[nodiscard]] bool supportMode() const;
 	[[nodiscard]] Support::Helper &supportHelper() const;
 	[[nodiscard]] Support::Templates &supportTemplates() const;
+	[[nodiscard]] Support::FastButtonsBots &fastButtonsBots() const;
+
+	[[nodiscard]] FreezeInfo frozen() const;
+	[[nodiscard]] rpl::producer<FreezeInfo> frozenValue() const;
 
 	[[nodiscard]] auto colorIndicesValue()
 		-> rpl::producer<Ui::ColorIndicesCompressed>;
 
 private:
 	static constexpr auto kDefaultSaveDelay = crl::time(1000);
+
+	void appConfigRefreshed();
 
 	const UserId _userId;
 	const not_null<Account*> _account;
@@ -263,6 +306,8 @@ private:
 	const std::unique_ptr<SendAsPeers> _sendAsPeers;
 	const std::unique_ptr<InlineBots::AttachWebView> _attachWebView;
 	const std::unique_ptr<Data::RecentPeers> _recentPeers;
+	const std::unique_ptr<Data::RecentSharedMediaGifts> _recentSharedGifts;
+	const std::unique_ptr<Data::GiftAuctions> _giftAuctions;
 	const std::unique_ptr<Data::ScheduledMessages> _scheduledMessages;
 	const std::unique_ptr<Data::SponsoredMessages> _sponsoredMessages;
 	const std::unique_ptr<Data::TopPeers> _topPeers;
@@ -270,11 +315,15 @@ private:
 	const std::unique_ptr<Data::Factchecks> _factchecks;
 	const std::unique_ptr<Data::LocationPickers> _locationPickers;
 	const std::unique_ptr<Data::Credits> _credits;
+	const std::unique_ptr<Data::PromoSuggestions> _promoSuggestions;
+	const std::unique_ptr<Data::Passkeys> _passkeys;
+	const std::unique_ptr<Settings::FaqSuggestions> _faqSuggestions;
 
 	using ReactionIconFactory = HistoryView::Reactions::CachedIconFactory;
 	const std::unique_ptr<ReactionIconFactory> _cachedReactionIconFactory;
 
 	const std::unique_ptr<Support::Helper> _supportHelper;
+	const std::unique_ptr<Support::FastButtonsBots> _fastButtonsBots;
 
 	std::shared_ptr<QImage> _selfUserpicView;
 	rpl::variable<bool> _premiumPossible = false;
@@ -284,6 +333,8 @@ private:
 
 	base::flat_set<not_null<Window::SessionController*>> _windows;
 	base::Timer _saveSettingsTimer;
+
+	rpl::variable<FreezeInfo> _frozen;
 
 	QByteArray _tmpPassword;
 	TimeId _tmpPasswordValidUntil = 0;

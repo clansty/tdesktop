@@ -43,7 +43,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/cached_round_corners.h"
 #include "base/unixtime.h"
 #include "base/random.h"
-#include "base/qt/qt_common_adapters.h"
+#include "base/qt/qt_key_modifiers.h"
 #include "boxes/sticker_set_box.h"
 #include "window/window_adaptive.h"
 #include "window/window_session_controller.h"
@@ -228,7 +228,7 @@ FieldAutocomplete::FieldAutocomplete(
 	_inner->setGeometry(rect());
 
 	_inner->scrollToRequested(
-	) | rpl::start_with_next([=](Inner::ScrollTo data) {
+	) | rpl::on_next([=](Inner::ScrollTo data) {
 		_scroll->scrollToY(data.top, data.bottom);
 	}, lifetime());
 
@@ -238,7 +238,7 @@ FieldAutocomplete::FieldAutocomplete(
 	hide();
 
 	_scroll->geometryChanged(
-	) | rpl::start_with_next(crl::guard(_inner, [=] {
+	) | rpl::on_next(crl::guard(_inner, [=] {
 		_inner->onParentGeometryChanged();
 	}), lifetime());
 }
@@ -499,7 +499,7 @@ void FieldAutocomplete::updateFiltered(bool resetScroll) {
 					sorted.emplace(byOnline(user), user);
 				}
 			}
-			for (const auto user : _chat->lastAuthors) {
+			for (const auto &user : _chat->lastAuthors) {
 				if (user->isInaccessible()) continue;
 				if (!listAllSuggestions && filterNotPassedByName(user)) continue;
 				if (indexOfInFirstN(mrows, user, recentInlineBots) >= 0) continue;
@@ -516,7 +516,7 @@ void FieldAutocomplete::updateFiltered(bool resetScroll) {
 					_channel->session().api().chatParticipants().requestAdmins(_channel);
 				} else {
 					mrows.reserve(mrows.size() + _channel->mgInfo->admins.size());
-					for (const auto &[userId, rank] : _channel->mgInfo->admins) {
+					for (const auto &userId : _channel->mgInfo->admins) {
 						if (const auto user = _channel->owner().userLoaded(userId)) {
 							if (user->isInaccessible()) continue;
 							if (!listAllSuggestions && filterNotPassedByName(user)) continue;
@@ -530,7 +530,7 @@ void FieldAutocomplete::updateFiltered(bool resetScroll) {
 					_channel);
 			} else {
 				mrows.reserve(mrows.size() + _channel->mgInfo->lastParticipants.size());
-				for (const auto user : _channel->mgInfo->lastParticipants) {
+				for (const auto &user : _channel->mgInfo->lastParticipants) {
 					if (user->isInaccessible()) continue;
 					if (!listAllSuggestions && filterNotPassedByName(user)) continue;
 					if (indexOfInFirstN(mrows, user, recentInlineBots) >= 0) continue;
@@ -584,7 +584,7 @@ void FieldAutocomplete::updateFiltered(bool resetScroll) {
 			bots.emplace(_user, &_user->botInfo->commands);
 		} else if (_channel && _channel->isMegagroup()) {
 			if (_channel->mgInfo->bots.empty()) {
-				if (!_channel->mgInfo->botStatus) {
+				if (_channel->mgInfo->botStatus == Data::BotStatus::Unknown) {
 					_channel->session().api().chatParticipants().requestBots(
 						_channel);
 				}
@@ -614,7 +614,7 @@ void FieldAutocomplete::updateFiltered(bool resetScroll) {
 				};
 			};
 			brows.reserve(cnt);
-			int32 botStatus = _chat ? _chat->botStatus : ((_channel && _channel->isMegagroup()) ? _channel->mgInfo->botStatus : -1);
+			const auto botStatus = _chat ? _chat->botStatus : ((_channel && _channel->isMegagroup()) ? _channel->mgInfo->botStatus : Data::BotStatus::NoBots);
 			if (_chat) {
 				for (const auto &user : _chat->lastAuthors) {
 					if (!user->isBot()) {
@@ -626,7 +626,7 @@ void FieldAutocomplete::updateFiltered(bool resetScroll) {
 					}
 					for (const auto &command : *i->second) {
 						if (!listAllSuggestions) {
-							auto toFilter = (hasUsername || botStatus == 0 || botStatus == 2)
+							auto toFilter = (hasUsername || botStatus != Data::BotStatus::NoBots)
 								? command.command + '@' + PrimaryUsername(user)
 								: command.command;
 							if (!toFilter.startsWith(_filter, Qt::CaseInsensitive)/* || toFilter.size() == _filter.size()*/) {
@@ -644,8 +644,7 @@ void FieldAutocomplete::updateFiltered(bool resetScroll) {
 					for (const auto &command : *i->second) {
 						if (!listAllSuggestions) {
 							const auto toFilter = (hasUsername
-									|| botStatus == 0
-									|| botStatus == 2)
+									|| botStatus != Data::BotStatus::NoBots)
 								? command.command + '@' + PrimaryUsername(user)
 								: command.command;
 							if (!toFilter.startsWith(_filter, Qt::CaseInsensitive)/* || toFilter.size() == _filter.size()*/) continue;
@@ -910,12 +909,12 @@ FieldAutocomplete::Inner::Inner(
 , _premiumMark(_session, st::stickersPremiumLock)
 , _previewTimer([=] { showPreview(); }) {
 	_session->downloaderTaskFinished(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		update();
 	}, lifetime());
 
 	_show->adjustShadowLeft(
-	) | rpl::start_with_next([=](bool adjust) {
+	) | rpl::on_next([=](bool adjust) {
 		_adjustShadowLeft = adjust;
 		update();
 	}, lifetime());
@@ -1130,8 +1129,8 @@ void FieldAutocomplete::Inner::paintEvent(QPaintEvent *e) {
 				}
 
 				auto toHighlight = row.command;
-				int32 botStatus = _parent->chat() ? _parent->chat()->botStatus : ((_parent->channel() && _parent->channel()->isMegagroup()) ? _parent->channel()->mgInfo->botStatus : -1);
-				if (hasUsername || botStatus == 0 || botStatus == 2) {
+				const auto botStatus = _parent->chat() ? _parent->chat()->botStatus : ((_parent->channel() && _parent->channel()->isMegagroup()) ? _parent->channel()->mgInfo->botStatus : Data::BotStatus::NoBots);
+				if (hasUsername || botStatus != Data::BotStatus::NoBots) {
 					toHighlight += '@' + PrimaryUsername(user);
 				}
 				user->loadUserpic();
@@ -1299,10 +1298,9 @@ bool FieldAutocomplete::Inner::chooseAtIndex(
 				? _parent->chat()->botStatus
 				: ((_parent->channel() && _parent->channel()->isMegagroup())
 					? _parent->channel()->mgInfo->botStatus
-					: -1);
+					: Data::BotStatus::NoBots);
 
-			const auto insertUsername = (botStatus == 0
-				|| botStatus == 2
+			const auto insertUsername = (botStatus != Data::BotStatus::NoBots
 				|| _parent->filter().indexOf('@') > 0);
 			const auto commandString = QString("/%1%2").arg(
 				command,
@@ -1488,7 +1486,7 @@ void FieldAutocomplete::Inner::setupLottie(StickerSuggestion &suggestion) {
 		getLottieRenderer());
 
 	suggestion.lottie->updates(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		repaintSticker(document);
 	}, _stickersLifetime);
 }
@@ -1662,12 +1660,13 @@ void InitFieldAutocomplete(
 	const auto field = descriptor.field;
 
 	field->rawTextEdit()->installEventFilter(raw);
-	field->customTab(true);
 
 	raw->mentionChosen(
-	) | rpl::start_with_next([=](FieldAutocomplete::MentionChosen data) {
+	) | rpl::on_next([=](FieldAutocomplete::MentionChosen data) {
 		const auto user = data.user;
-		if (data.mention.isEmpty()) {
+		const auto ctrlClick = base::IsCtrlPressed()
+			&& data.method == FieldAutocomplete::ChooseMethod::ByClick;
+		if (data.mention.isEmpty() || ctrlClick) {
 			field->insertTag(
 				user->firstName.isEmpty() ? user->name() : user->firstName,
 				PrepareMentionTag(user));
@@ -1680,7 +1679,7 @@ void InitFieldAutocomplete(
 	const auto setText = descriptor.setText;
 
 	raw->hashtagChosen(
-	) | rpl::start_with_next([=](FieldAutocomplete::HashtagChosen data) {
+	) | rpl::on_next([=](FieldAutocomplete::HashtagChosen data) {
 		field->insertTag(data.hashtag);
 	}, raw->lifetime());
 
@@ -1691,7 +1690,7 @@ void InitFieldAutocomplete(
 		? &peer->owner().shortcutMessages()
 		: nullptr;
 	raw->botCommandChosen(
-	) | rpl::start_with_next([=](FieldAutocomplete::BotCommandChosen data) {
+	) | rpl::on_next([=](FieldAutocomplete::BotCommandChosen data) {
 		if (!features().autocompleteCommands) {
 			return;
 		}
@@ -1715,7 +1714,7 @@ void InitFieldAutocomplete(
 
 	if (const auto stickerChoosing = descriptor.stickerChoosing) {
 		raw->choosingProcesses(
-		) | rpl::start_with_next([=](FieldAutocomplete::Type type) {
+		) | rpl::on_next([=](FieldAutocomplete::Type type) {
 			if (type == FieldAutocomplete::Type::Stickers) {
 				stickerChoosing();
 			}
@@ -1723,13 +1722,14 @@ void InitFieldAutocomplete(
 	}
 	if (const auto chosen = descriptor.stickerChosen) {
 		raw->stickerChosen(
-		) | rpl::start_with_next(chosen, raw->lifetime());
+		) | rpl::on_next(chosen, raw->lifetime());
 	}
 
 	field->tabbed(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=](not_null<bool*> handled) {
 		if (!raw->isHidden()) {
 			raw->chooseSelected(FieldAutocomplete::ChooseMethod::ByTab);
+			*handled = true;
 		}
 	}, raw->lifetime());
 
@@ -1747,7 +1747,8 @@ void InitFieldAutocomplete(
 			&& peer->isUser()
 			&& !peer->asUser()->isBot()
 			&& (!shortcutMessages
-				|| shortcutMessages->shortcuts().list.empty())) {
+				|| shortcutMessages->shortcuts().list.empty()
+				|| peer->starsPerMessageChecked() != 0)) {
 			parsed = {};
 		}
 		raw->showFiltered(peer, parsed.query, parsed.fromStart);
@@ -1771,15 +1772,15 @@ void InitFieldAutocomplete(
 	};
 
 	raw->refreshRequests(
-	) | rpl::start_with_next(check, raw->lifetime());
+	) | rpl::on_next(check, raw->lifetime());
 
 	raw->stickersUpdateRequests(
-	) | rpl::start_with_next(updateStickersByEmoji, raw->lifetime());
+	) | rpl::on_next(updateStickersByEmoji, raw->lifetime());
 
 	peer->owner().botCommandsChanges(
 	) | rpl::filter([=](not_null<PeerData*> changed) {
 		return (peer == changed);
-	}) | rpl::start_with_next([=] {
+	}) | rpl::on_next([=] {
 		if (raw->clearFilteredBotCommands()) {
 			check();
 		}
@@ -1787,7 +1788,7 @@ void InitFieldAutocomplete(
 
 	peer->owner().stickers().updated(
 		Data::StickersType::Stickers
-	) | rpl::start_with_next(updateStickersByEmoji, raw->lifetime());
+	) | rpl::on_next(updateStickersByEmoji, raw->lifetime());
 
 	QObject::connect(
 		field->rawTextEdit(),
@@ -1796,7 +1797,7 @@ void InitFieldAutocomplete(
 		check,
 		Qt::QueuedConnection);
 
-	field->changes() | rpl::start_with_next(
+	field->changes() | rpl::on_next(
 		updateStickersByEmoji,
 		raw->lifetime());
 
@@ -1804,11 +1805,11 @@ void InitFieldAutocomplete(
 		Data::PeerUpdate::Flag::Rights
 	) | rpl::filter([=](const Data::PeerUpdate &update) {
 		return (update.peer == peer);
-	}) | rpl::start_with_next(updateStickersByEmoji, raw->lifetime());
+	}) | rpl::on_next(updateStickersByEmoji, raw->lifetime());
 
 	if (shortcutMessages) {
 		shortcutMessages->shortcutsChanged(
-		) | rpl::start_with_next(check, raw->lifetime());
+		) | rpl::on_next(check, raw->lifetime());
 	}
 
 	raw->setSendMenuDetails(std::move(descriptor.sendMenuDetails));

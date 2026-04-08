@@ -65,6 +65,9 @@ public:
 	// For setting up megagroup sticker set.
 	static constexpr auto MegagroupSetId = 0xFFFFFFFFFFFFFFEFULL;
 
+	// For collectible emoji statuses.
+	static constexpr auto CollectibleSetId = 0xFFFFFFFFFFFFFFF8ULL;
+
 	void notifyUpdated(StickersType type);
 	[[nodiscard]] rpl::producer<StickersType> updated() const;
 	[[nodiscard]] rpl::producer<> updated(StickersType type) const;
@@ -75,6 +78,8 @@ public:
 	[[nodiscard]] rpl::producer<> savedGifsUpdated() const;
 	void notifyStickerSetInstalled(uint64 setId);
 	[[nodiscard]] rpl::producer<uint64> stickerSetInstalled() const;
+	void notifyGifWithCaptionSent();
+	[[nodiscard]] rpl::producer<> gifWithCaptionSent() const;
 	void notifyEmojiSetInstalled(uint64 setId);
 	[[nodiscard]] rpl::producer<uint64> emojiSetInstalled() const;
 
@@ -244,6 +249,8 @@ public:
 	[[nodiscard]] auto getEmojiListFromSet(not_null<DocumentData*> document)
 		-> std::optional<std::vector<not_null<EmojiPtr>>>;
 
+	[[nodiscard]] not_null<StickersSet*> collectibleSet();
+
 	not_null<StickersSet*> feedSet(const MTPStickerSet &data);
 	not_null<StickersSet*> feedSet(const MTPStickerSetCovered &data);
 	not_null<StickersSet*> feedSetFull(const MTPDmessages_stickerSet &data);
@@ -286,7 +293,7 @@ private:
 	void setPackAndEmoji(
 		StickersSet &set,
 		StickersPack &&pack,
-		const std::vector<TimeId> &&dates,
+		std::vector<TimeId> &&dates,
 		const QVector<MTPStickerPack> &packs);
 	void somethingReceived(
 		const QVector<MTPStickerSet> &list,
@@ -301,6 +308,7 @@ private:
 	rpl::event_stream<StickersType> _recentUpdated;
 	rpl::event_stream<> _savedGifsUpdated;
 	rpl::event_stream<uint64> _stickerSetInstalled;
+	rpl::event_stream<> _gifWithCaptionSent;
 	rpl::event_stream<uint64> _emojiSetInstalled;
 	crl::time _lastUpdate = 0;
 	crl::time _lastRecentUpdate = 0;

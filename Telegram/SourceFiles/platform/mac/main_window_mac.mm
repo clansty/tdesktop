@@ -369,7 +369,7 @@ void MainWindow::createGlobalMenu() {
 	{
 		auto callback = [=] {
 			ensureWindowShown();
-			controller().show(Box<AboutBox>());
+			controller().show(Box(AboutBox));
 		};
 		main->addAction(
 			tr::lng_mac_menu_about_telegram(
@@ -518,17 +518,33 @@ void MainWindow::createGlobalMenu() {
 		QKeySequence::SelectAll);
 	psSelectAll->setShortcutContext(Qt::WidgetShortcut);
 
-	edit->addSeparator();
-	edit->addAction(
-		tr::lng_mac_menu_emoji_and_symbols(
-			tr::now,
-			Ui::Text::FixAmpersandInAction),
-		this,
-		[] { [NSApp orderFrontCharacterPalette:nil]; },
-		QKeySequence(Qt::MetaModifier | Qt::ControlModifier | Qt::Key_Space)
-	)->setShortcutContext(Qt::WidgetShortcut);
+	if (!Platform::IsMac26_0OrGreater()) {
+		edit->addSeparator();
+		edit->addAction(
+			tr::lng_mac_menu_emoji_and_symbols(
+				tr::now,
+				Ui::Text::FixAmpersandInAction),
+			this,
+			[] { [NSApp orderFrontCharacterPalette:nil]; },
+			QKeySequence(Qt::MetaModifier
+				| Qt::ControlModifier
+				| Qt::Key_Space)
+		)->setShortcutContext(Qt::WidgetShortcut);
+	}
 
 	QMenu *window = psMainMenu.addMenu(tr::lng_mac_menu_window(tr::now));
+
+	window->addAction(
+		tr::lng_mac_menu_fullscreen(tr::now),
+		this,
+		[=] {
+			NSWindow *nsWindow = [reinterpret_cast<NSView*>(winId()) window];
+			[nsWindow toggleFullScreen:nsWindow];
+		},
+		QKeySequence(Qt::MetaModifier | Qt::ControlModifier | Qt::Key_F)
+	)->setShortcutContext(Qt::WidgetShortcut);
+	window->addSeparator();
+
 	psContacts = window->addAction(tr::lng_mac_menu_contacts(tr::now));
 	connect(psContacts, &QAction::triggered, psContacts, crl::guard(this, [=] {
 		Expects(sessionController() != nullptr && !controller().locked());
@@ -661,6 +677,18 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *evt) {
 }
 
 MainWindow::~MainWindow() {
+}
+
+int32 ScreenNameChecksum(const QString &name) {
+	return Window::DefaultScreenNameChecksum(name);
+}
+
+int32 ScreenNameChecksum(const QScreen *screen) {
+	return ScreenNameChecksum(screen->name());
+}
+
+QString ScreenDisplayLabel(const QScreen *screen) {
+	return screen ? screen->name() : QString();
 }
 
 } // namespace

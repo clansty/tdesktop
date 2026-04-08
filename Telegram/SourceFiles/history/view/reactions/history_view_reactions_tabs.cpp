@@ -48,7 +48,7 @@ not_null<Ui::AbstractButton*> CreateTab(
 	const auto state = result->lifetime().make_state<State>();
 	std::move(
 		selected
-	) | rpl::start_with_next([=](bool selected) {
+	) | rpl::on_next([=](bool selected) {
 		state->selected = selected;
 		state->cache = QImage();
 		result->update();
@@ -58,10 +58,10 @@ not_null<Ui::AbstractButton*> CreateTab(
 		? nullptr
 		: factory(
 			Data::ReactionEntityData(reaction),
-			[=] { result->update(); });
+			{ .repaint = [=] { result->update(); } });
 
 	result->paintRequest(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		const auto factor = style::DevicePixelRatio();
 		const auto height = stm->height;
 		const auto skip = st::reactionsTabIconSkip;

@@ -28,8 +28,8 @@ constexpr auto kSearchPerPage = 50;
 	auto result = MessageIdsList();
 	for (const auto &message : messages) {
 		const auto peerId = PeerFromMessage(message);
-		if (const auto peer = data->peerLoaded(peerId)) {
-			if (const auto lastDate = DateFromMessage(message)) {
+		if (data->peerLoaded(peerId)) {
+			if (DateFromMessage(message)) {
 				const auto item = data->addNewMessage(
 					message,
 					MessageFlags(),
@@ -103,15 +103,16 @@ void MessagesSearch::searchRequest() {
 		_requestId = _history->session().api().request(MTPmessages_Search(
 			MTP_flags((fromPeer ? Flag::f_from_id : Flag())
 				| (savedPeer ? Flag::f_saved_peer_id : Flag())
+				| (_request.topMsgId ? Flag::f_top_msg_id : Flag())
 				| (_request.tags.empty() ? Flag() : Flag::f_saved_reaction)),
-			_history->peer->input,
+			_history->peer->input(),
 			MTP_string(_request.query),
-			(fromPeer ? fromPeer->input : MTP_inputPeerEmpty()),
-			(savedPeer ? savedPeer->input : MTP_inputPeerEmpty()),
+			(fromPeer ? fromPeer->input() : MTP_inputPeerEmpty()),
+			(savedPeer ? savedPeer->input() : MTP_inputPeerEmpty()),
 			MTP_vector_from_range(_request.tags | ranges::views::transform(
 				Data::ReactionToMTP
 			)),
-			MTPint(), // top_msg_id
+			MTP_int(_request.topMsgId), // top_msg_id
 			MTP_inputMessagesFilterEmpty(),
 			MTP_int(0), // min_date
 			MTP_int(0), // max_date
@@ -158,6 +159,7 @@ void MessagesSearch::searchReceived(
 			// Don't apply cached data!
 			owner.processUsers(data.vusers());
 			owner.processChats(data.vchats());
+			_history->peer->processTopics(data.vtopics());
 		}
 		auto items = HistoryItemsFromTL(&owner, data.vmessages().v);
 		const auto total = int(data.vmessages().v.size());
@@ -167,6 +169,7 @@ void MessagesSearch::searchReceived(
 			// Don't apply cached data!
 			owner.processUsers(data.vusers());
 			owner.processChats(data.vchats());
+			_history->peer->processTopics(data.vtopics());
 		}
 		auto items = HistoryItemsFromTL(&owner, data.vmessages().v);
 		// data.vnext_rate() is used only in global search.
@@ -177,17 +180,14 @@ void MessagesSearch::searchReceived(
 			// Don't apply cached data!
 			owner.processUsers(data.vusers());
 			owner.processChats(data.vchats());
-		}
-		if (const auto channel = _history->peer->asChannel()) {
-			channel->ptsReceived(data.vpts().v);
-			if (_requestId != 0) {
-				// Don't apply cached data!
-				channel->processTopics(data.vtopics());
+			if (const auto channel = _history->peer->asChannel()) {
+				channel->ptsReceived(data.vpts().v);
+			} else {
+				LOG(("API Error: "
+					"received messages.channelMessages when no channel "
+					"was passed!"));
 			}
-		} else {
-			LOG(("API Error: "
-				"received messages.channelMessages when no channel "
-				"was passed!"));
+			_history->peer->processTopics(data.vtopics());
 		}
 		auto items = HistoryItemsFromTL(&owner, data.vmessages().v);
 		const auto total = int(data.vcount().v);

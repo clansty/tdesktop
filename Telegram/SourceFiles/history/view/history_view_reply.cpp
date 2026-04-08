@@ -11,9 +11,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/ui_integration.h"
 #include "data/stickers/data_custom_emoji.h"
 #include "data/data_channel.h"
+#include "data/data_document.h"
 #include "data/data_peer.h"
+#include "data/data_photo.h"
+#include "data/data_poll.h"
 #include "data/data_session.h"
 #include "data/data_story.h"
+#include "data/data_todo_list.h"
 #include "data/data_user.h"
 #include "history/view/history_view_item_preview.h"
 #include "history/history.h"
@@ -25,6 +29,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/chat/chat_style.h"
 #include "ui/effects/ripple_animation.h"
 #include "ui/effects/spoiler_mess.h"
+#include "ui/text/custom_emoji_helper.h"
 #include "ui/text/text_options.h"
 #include "ui/text/text_utilities.h"
 #include "ui/painter.h"
@@ -32,6 +37,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_session_controller.h"
 #include "styles/style_chat.h"
 #include "styles/style_dialogs.h"
+#include "styles/style_polls.h"
 
 // AyuGram includes
 #include "ayu/ayu_settings.h"
@@ -42,10 +48,94 @@ namespace {
 
 constexpr auto kNonExpandedLinesLimit = 5;
 
+[[nodiscard]] QImage MakeTaskImage() {
+	const auto diameter = st::normalFont->ascent;
+	const auto line = st::historyPollRadio.thickness;
+	const auto size = 2 * line + diameter;
+	const auto ratio = style::DevicePixelRatio();
+	auto result = QImage(
+		QSize(size, size) * ratio,
+		QImage::Format_ARGB32_Premultiplied);
+	result.fill(Qt::transparent);
+	result.setDevicePixelRatio(ratio);
+
+	auto p = QPainter(&result);
+	PainterHighQualityEnabler hq(p);
+
+	p.setOpacity(st::historyPollRadioOpacity);
+
+	const auto rect = QRectF(line, line, diameter, diameter).marginsRemoved(
+		QMarginsF(line / 2., line / 2., line / 2., line / 2.));
+	auto pen = QPen(QColor(255, 255, 255));
+	pen.setWidth(line);
+	p.setPen(pen);
+	p.drawEllipse(rect);
+
+	p.end();
+
+	return result;
+}
+
+template <typename PaintShape>
+[[nodiscard]] QImage MakeCheckedImage(PaintShape paintShape) {
+	const auto white = QColor(255, 255, 255);
+	const auto black = QColor(0, 0, 0);
+
+	const auto diameter = st::normalFont->ascent;
+	const auto line = st::historyPollRadio.thickness;
+	const auto size = 2 * line + diameter;
+	const auto ratio = style::DevicePixelRatio();
+	auto result = QImage(
+		QSize(size, size) * ratio,
+		QImage::Format_ARGB32_Premultiplied);
+	result.fill(black);
+	result.setDevicePixelRatio(ratio);
+
+	auto p = QPainter(&result);
+	PainterHighQualityEnabler hq(p);
+
+	const auto rect = QRectF(line, line, diameter, diameter).marginsRemoved(
+		QMarginsF(line / 2., line / 2., line / 2., line / 2.));
+	paintShape(p, rect);
+	const auto &icon = st::historyPollInChoiceRight;
+	icon.paint(
+		p,
+		line + (diameter - icon.width()) / 2,
+		line + (diameter - icon.height()) / 2,
+		size,
+		black);
+	p.end();
+
+	return style::colorizeImage(result, white);
+}
+
+[[nodiscard]] QImage MakeTaskDoneImage() {
+	return MakeCheckedImage([](QPainter &p, QRectF rect) {
+		const auto white = QColor(255, 255, 255);
+		const auto line = st::historyPollRadio.thickness;
+		auto pen = QPen(white);
+		pen.setWidth(line);
+		p.setPen(pen);
+		p.setBrush(white);
+		p.drawEllipse(rect);
+	});
+}
+
+[[nodiscard]] QImage MakePollAnswerImage() {
+	return MakeCheckedImage([](QPainter &p, QRectF rect) {
+		const auto white = QColor(255, 255, 255);
+		const auto line = st::historyPollRadio.thickness;
+		p.setPen(Qt::NoPen);
+		p.setBrush(white);
+		p.drawRoundedRect(rect, line * 2, line * 2);
+	});
+}
+
 } // namespace
 
 void ValidateBackgroundEmoji(
 		DocumentId backgroundEmojiId,
+		const std::shared_ptr<Ui::ColorCollectible> &collectible,
 		not_null<Ui::BackgroundEmojiData*> data,
 		not_null<Ui::BackgroundEmojiCache*> cache,
 		not_null<Ui::Text::QuotePaintCache*> quote,
@@ -56,16 +146,43 @@ void ValidateBackgroundEmoji(
 			backgroundEmojiId,
 			crl::guard(view, [=] { view->repaint(); }));
 	}
-	ValidateBackgroundEmoji(backgroundEmojiId, data, cache, quote);
+	if (collectible && data->firstGiftFrame.isNull() && !data->gift) {
+		data->gift = CreateBackgroundGiftInstance(
+			&view->history()->owner(),
+			collectible->giftEmojiId,
+			crl::guard(view, [=] { view->repaint(); }));
+	}
+	ValidateBackgroundEmoji(data, cache, quote);
 }
 
 void ValidateBackgroundEmoji(
-		DocumentId backgroundEmojiId,
 		not_null<Ui::BackgroundEmojiData*> data,
 		not_null<Ui::BackgroundEmojiCache*> cache,
 		not_null<Ui::Text::QuotePaintCache*> quote) {
 	Expects(!data->firstFrameMask.isNull() || data->emoji != nullptr);
 
+	if (data->gift && data->firstGiftFrame.isNull()) {
+		if (data->gift->ready()) {
+			const auto tag = Data::CustomEmojiSizeTag::Normal;
+			const auto size = Data::FrameSizeFromTag(tag);
+			data->firstGiftFrame = QImage(
+				QSize(size, size),
+				QImage::Format_ARGB32_Premultiplied);
+			data->firstGiftFrame.fill(Qt::transparent);
+			data->firstGiftFrame.setDevicePixelRatio(style::DevicePixelRatio());
+			auto p = Painter(&data->firstGiftFrame);
+			data->gift->paint(p, {
+				.textColor = QColor(255, 255, 255),
+				.position = QPoint(0, 0),
+				.internal = {
+					.forceFirstFrame = true,
+				},
+			});
+			p.end();
+
+			data->gift = nullptr;
+		}
+	}
 	if (data->firstFrameMask.isNull()) {
 		if (!cache->frames[0].isNull()) {
 			for (auto &frame : cache->frames) {
@@ -140,16 +257,32 @@ auto CreateBackgroundEmojiInstance(
 		Data::CustomEmojiSizeTag::Isolated);
 }
 
+auto CreateBackgroundGiftInstance(
+	not_null<Data::Session*> owner,
+	DocumentId giftEmojiId,
+	Fn<void()> repaint)
+-> std::unique_ptr<Ui::Text::CustomEmoji> {
+	return owner->customEmojiManager().create(
+		giftEmojiId,
+		repaint,
+		Data::CustomEmojiSizeTag::Normal);
+}
+
 void FillBackgroundEmoji(
 		QPainter &p,
 		const QRect &rect,
 		bool quote,
-		const Ui::BackgroundEmojiCache &cache) {
+		const Ui::BackgroundEmojiCache &cache,
+		const QImage &firstGiftFrame) {
 	p.setClipRect(rect);
 
 	const auto &frames = cache.frames;
 	const auto right = rect.x() + rect.width();
-	const auto paint = [&](int x, int y, int index, float64 opacity) {
+	const auto paintImage = [&](
+			int x,
+			int y,
+			const QImage &frame,
+			float64 opacity) {
 		y = style::ConvertScale(y);
 		if (y >= rect.height()) {
 			return;
@@ -158,10 +291,17 @@ void FillBackgroundEmoji(
 		p.drawImage(
 			right - style::ConvertScale(x + (quote ? 12 : 0)),
 			rect.y() + y,
-			frames[index]);
+			frame);
+	};
+	const auto paint = [&](int x, int y, int index, float64 opacity) {
+		paintImage(x, y, frames[index], opacity);
 	};
 
-	paint(28, 4, 2, 0.32);
+	if (firstGiftFrame.isNull()) {
+		paint(28, 4, 2, 0.32);
+	} else {
+		paintImage(28, 4, firstGiftFrame, 1.);
+	}
 	paint(51, 15, 1, 0.32);
 	paint(64, -2, 0, 0.28);
 	paint(87, 11, 1, 0.24);
@@ -197,6 +337,31 @@ void Reply::update(
 	const auto item = view->data();
 	const auto &fields = data->fields();
 	const auto message = data->resolvedMessage.get();
+	const auto messageMedia = (message
+			&& (fields.todoItemId || !fields.pollOption.isEmpty()))
+		? message->media()
+		: nullptr;
+	const auto messageTodoList = messageMedia
+		? messageMedia->todolist()
+		: nullptr;
+	const auto taskIndex = messageTodoList
+		? int(ranges::find(
+			messageTodoList->items,
+			fields.todoItemId,
+			&TodoListItem::id) - begin(messageTodoList->items))
+		: -1;
+	const auto task = (taskIndex >= 0
+		&& taskIndex < messageTodoList->items.size())
+		? &messageTodoList->items[taskIndex]
+		: nullptr;
+	const auto messagePoll = messageMedia
+		? messageMedia->poll()
+		: message
+		? (message->media() ? message->media()->poll() : nullptr)
+		: nullptr;
+	const auto pollAnswer = (messagePoll && !fields.pollOption.isEmpty())
+		? messagePoll->answerByOption(fields.pollOption)
+		: nullptr;
 	const auto story = data->resolvedStory.get();
 	const auto externalMedia = fields.externalMedia.get();
 	if (!_externalSender) {
@@ -214,12 +379,18 @@ void Reply::update(
 	_hiddenSenderColorIndexPlusOne = (!_colorPeer && message)
 		? (message->originalHiddenSenderInfo()->colorIndex + 1)
 		: 0;
-
+	const auto pollMediaPtr = pollAnswer
+		? &pollAnswer->media
+		: (messagePoll && fields.pollOption.isEmpty())
+		? &messagePoll->attachedMedia
+		: nullptr;
 	const auto hasPreview = (story && story->hasReplyPreview())
 		|| (message
 			&& message->media()
 			&& message->media()->hasReplyPreview())
-		|| (externalMedia && externalMedia->hasReplyPreview());
+		|| (externalMedia && externalMedia->hasReplyPreview())
+		|| (pollMediaPtr
+			&& (pollMediaPtr->photo || pollMediaPtr->document));
 	_hasPreview = hasPreview ? 1 : 0;
 	_displaying = data->displaying() ? 1 : 0;
 	_multiline = data->multiline() ? 1 : 0;
@@ -229,8 +400,28 @@ void Reply::update(
 		&& !fields.quote.empty();
 	_hasQuoteIcon = hasQuoteIcon ? 1 : 0;
 
+	const auto repaint = [=] { item->customEmojiRepaint(); };
+	auto helper = Ui::Text::CustomEmojiHelper(Core::TextContext({
+		.session = &view->history()->session(),
+		.repaint = repaint,
+	}));
 	const auto text = (!_displaying && data->unavailable())
 		? TextWithEntities()
+		: task
+		? Ui::Text::Colorized(task->completionDate
+			? helper.image({
+				.image = MakeTaskDoneImage(),
+				.margin = QMargins(0, st::lineWidth, st::lineWidth, 0),
+			})
+			: helper.image({
+				.image = MakeTaskImage(),
+				.margin = QMargins(0, st::lineWidth, st::lineWidth, 0),
+			})).append(task->text)
+		: pollAnswer
+		? Ui::Text::Colorized(helper.image({
+			.image = MakePollAnswerImage(),
+			.margin = QMargins(0, st::lineWidth, st::lineWidth, 0),
+		})).append(pollAnswer->text)
 		: (message && (fields.quote.empty() || !fields.manualQuote))
 		? message->inReplyText()
 		: !fields.quote.empty()
@@ -247,16 +438,11 @@ void Reply::update(
 			.ignoreTopic = true,
 		}).text
 		: TextWithEntities();
-	const auto repaint = [=] { item->customEmojiRepaint(); };
-	const auto context = Core::MarkedTextContext{
-		.session = &view->history()->session(),
-		.customEmojiRepaint = repaint,
-	};
 	_text.setMarkedText(
 		st::defaultTextStyle,
 		text,
 		_multiline ? Ui::ItemTextDefaultOptions() : Ui::DialogTextOptions(),
-		context);
+		helper.context());
 
 	updateName(view, data);
 
@@ -286,12 +472,15 @@ void Reply::setLinkFrom(
 		not_null<HistoryMessageReply*> data) {
 	const auto weak = base::make_weak(view);
 	const auto &fields = data->fields();
+	const auto isAdminLogEntry = view->data()->isAdminLogEntry();
 	const auto externalChannelId = peerToChannel(fields.externalPeerId);
 	const auto messageId = fields.messageId;
-	const auto quote = fields.manualQuote
-		? fields.quote
-		: TextWithEntities();
-	const auto quoteOffset = fields.quoteOffset;
+	const auto highlight = MessageHighlightId{
+		.quote = fields.manualQuote ? fields.quote : TextWithEntities(),
+		.quoteOffset = int(fields.quoteOffset),
+		.todoItemId = fields.todoItemId,
+		.pollOption = fields.pollOption,
+	};
 	const auto returnToId = view->data()->fullId();
 	const auto externalLink = [=](ClickContext context) {
 		const auto my = context.other.value<ClickHandlerContext>();
@@ -314,8 +503,7 @@ void Reply::setLinkFrom(
 							channel,
 							messageId,
 							returnToId,
-							quote,
-							quoteOffset
+							highlight
 						)->onClick(context);
 					} else {
 						controller->showPeerInfo(channel);
@@ -335,8 +523,10 @@ void Reply::setLinkFrom(
 	};
 	const auto message = data->resolvedMessage.get();
 	const auto story = data->resolvedStory.get();
-	_link = message
-		? JumpToMessageClickHandler(message, returnToId, quote, quoteOffset)
+	_link = isAdminLogEntry
+		? std::make_shared<LambdaClickHandler>(externalLink)
+		: message
+		? JumpToMessageClickHandler(message, returnToId, highlight)
 		: story
 		? JumpToStoryClickHandler(story)
 		: (data->external()
@@ -454,26 +644,26 @@ void Reply::updateName(
 		: 0;
 	auto nameFull = TextWithEntities();
 	if (displayAsExternal && !groupNameAdded && !fields.storyId) {
-		nameFull.append(PeerEmoji(history, sender));
+		nameFull.append(PeerEmoji(sender));
 	}
 	nameFull.append(name);
 	if (groupNameAdded) {
-		nameFull.append(' ').append(PeerEmoji(history, externalPeer));
+		nameFull.append(' ').append(PeerEmoji(externalPeer));
 		nameFull.append(externalPeer->name());
 	} else if (originalNameAdded) {
-		nameFull.append(' ').append(ForwardEmoji(&history->owner()));
-		nameFull.append(forwarded->originalSender
+		nameFull.append(' ').append(
+			st::historyReplyForward
+		).append(forwarded->originalSender
 			? forwarded->originalSender->name()
 			: forwarded->originalHiddenSenderInfo->name);
 	}
 	if (!viaBotUsername.isEmpty()) {
 		nameFull.append(u" @"_q).append(viaBotUsername);
 	}
-	const auto context = Core::MarkedTextContext{
+	const auto context = Core::TextContext({
 		.session = &history->session(),
-		.customEmojiRepaint = [] {},
 		.customEmojiLoopLimit = 1,
-	};
+	});
 	_name.setMarkedText(
 		st::fwdTextStyle,
 		nameFull,
@@ -484,6 +674,7 @@ void Reply::updateName(
 	}
 	const auto nameMaxWidth = previewSkip
 		+ _name.maxWidth()
+		+ st::messageGiftIconSkip
 		+ (_hasQuoteIcon
 			? st::messageTextStyle.blockquote.icon.width()
 			: 0);
@@ -614,14 +805,24 @@ void Reply::paint(
 	const auto colorIndexPlusOne = _colorPeer
 		? (_colorPeer->colorIndex() + 1)
 		: _hiddenSenderColorIndexPlusOne;
+	const auto &colorCollectible = _colorPeer
+		? _colorPeer->colorCollectible()
+		: nullptr;
+	const auto useColorCollectible = colorCollectible && !context.outbg;
 	const auto useColorIndex = colorIndexPlusOne && !context.outbg;
-	const auto colorPattern = colorIndexPlusOne
+	const auto colorPattern = colorCollectible
+		? st->collectiblePatternIndex(colorCollectible)
+		: colorIndexPlusOne
 		? st->colorPatternIndex(colorIndexPlusOne - 1)
 		: 0;
 	const auto cache = !inBubble
 		? (_hasQuoteIcon
 			? st->serviceQuoteCache(colorPattern)
 			: st->serviceReplyCache(colorPattern)).get()
+		: useColorCollectible
+		? (_hasQuoteIcon
+			? st->collectibleQuoteCache(selected, colorCollectible)
+			: st->collectibleReplyCache(selected, colorCollectible)).get()
 		: useColorIndex
 		? (_hasQuoteIcon
 			? st->coloredQuoteCache(selected, colorIndexPlusOne - 1)
@@ -632,31 +833,39 @@ void Reply::paint(
 	const auto &quoteSt = _hasQuoteIcon
 		? st::messageTextStyle.blockquote
 		: st::messageQuoteStyle;
-	const auto backgroundEmoji = backgroundEmojiId
-		? st->backgroundEmojiData(backgroundEmojiId).get()
+	const auto backgroundEmojiData = backgroundEmojiId
+		? st->backgroundEmojiData(backgroundEmojiId, colorCollectible).get()
 		: nullptr;
-	const auto backgroundEmojiCache = backgroundEmoji
-		? &backgroundEmoji->caches[Ui::BackgroundEmojiData::CacheIndex(
+	const auto backgroundEmojiCache = !backgroundEmojiData
+		? nullptr
+		: useColorCollectible
+		? &backgroundEmojiData->collectibleCaches[colorCollectible]
+		: &backgroundEmojiData->caches[Ui::BackgroundEmojiData::CacheIndex(
 			selected,
 			context.outbg,
 			inBubble,
-			colorIndexPlusOne)]
-		: nullptr;
+			useColorIndex ? colorIndexPlusOne : 0)];
 	const auto rippleColor = cache->bg;
 	if (!inBubble) {
 		cache->bg = QColor(0, 0, 0, 0);
 	}
 	Ui::Text::ValidateQuotePaintCache(*cache, quoteSt);
 	Ui::Text::FillQuotePaint(p, rect, *cache, quoteSt);
-	if (!Ui::UncoloredQuoteEnabled() && backgroundEmoji) {
+	if (!Ui::UncoloredQuoteEnabled() && backgroundEmojiData) {
 		ValidateBackgroundEmoji(
 			backgroundEmojiId,
-			backgroundEmoji,
+			colorCollectible,
+			backgroundEmojiData,
 			backgroundEmojiCache,
 			cache,
 			view);
 		if (!backgroundEmojiCache->frames[0].isNull()) {
-			FillBackgroundEmoji(p, rect, _hasQuoteIcon, *backgroundEmojiCache);
+			FillBackgroundEmoji(
+				p,
+				rect,
+				_hasQuoteIcon,
+				*backgroundEmojiCache,
+				backgroundEmojiData->firstGiftFrame);
 		}
 	}
 	if (!inBubble) {
@@ -664,9 +873,11 @@ void Reply::paint(
 	}
 
 	if (_ripple.animation) {
-		_ripple.animation->paint(p, x, y, w, &cache->bg2);
+		_ripple.lastPaintedPoint = inBubble ? QPoint(x, y) : QPoint();
+		_ripple.animation->paint(p, x, y, w, &rippleColor);
 		if (_ripple.animation->empty()) {
 			_ripple.animation.reset();
+			_ripple.lastPaintedPoint = {};
 		}
 	}
 
@@ -697,15 +908,42 @@ void Reply::paint(
 					? data->resolvedMessage.get()
 					: nullptr;
 				const auto media = message ? message->media() : nullptr;
-				const auto image = media
-					? media->replyPreview()
-					: !data
-					? nullptr
-					: data->resolvedStory
-					? data->resolvedStory->replyPreview()
-					: data->fields().externalMedia
-					? data->fields().externalMedia->replyPreview()
+				const auto messagePoll = media ? media->poll() : nullptr;
+				const auto pollAnswer = messagePoll
+					? messagePoll->answerByOption(
+						data->fields().pollOption)
 					: nullptr;
+				const auto pollMediaPtr = pollAnswer
+					? &pollAnswer->media
+					: (messagePoll
+						&& data->fields().pollOption.isEmpty())
+					? &messagePoll->attachedMedia
+					: nullptr;
+				const auto image = [&]() -> Image* {
+					if (pollMediaPtr) {
+						if (pollMediaPtr->photo) {
+							return pollMediaPtr->photo->getReplyPreview(
+								message);
+						} else if (pollMediaPtr->document) {
+							return pollMediaPtr->document->getReplyPreview(
+								message);
+						}
+					}
+					if (media) {
+						return media->replyPreview();
+					}
+					if (!data) {
+						return nullptr;
+					}
+					if (data->resolvedStory) {
+						return data->resolvedStory->replyPreview();
+					}
+					if (data->fields().externalMedia) {
+						return data->fields().externalMedia
+							->replyPreview();
+					}
+					return nullptr;
+				}();
 				if (image) {
 					auto to = style::rtlrect(
 						x + st::historyReplyPreviewMargin.left(),
@@ -740,6 +978,7 @@ void Reply::paint(
 				- st::historyReplyPadding.right();
 			const auto namew = textw
 				- previewSkip
+				- st::messageGiftIconSkip
 				- (_hasQuoteIcon
 					? st::messageTextStyle.blockquote.icon.width()
 					: 0);
@@ -747,8 +986,11 @@ void Reply::paint(
 			if (namew > 0) {
 				p.setPen(!inBubble
 					? st->msgImgReplyBarColor()->c
-					: useColorIndex
-					? FromNameFg(context, colorIndexPlusOne - 1)
+					: (colorCollectible || colorIndexPlusOne)
+					? FromNameFg(
+						context,
+						colorIndexPlusOne - 1,
+						colorCollectible)
 					: stm->msgServiceFg->c);
 				_name.drawLeftElided(
 					p,
@@ -764,6 +1006,8 @@ void Reply::paint(
 				view->prepareCustomEmojiPaint(p, context, _text);
 				auto replyToTextPalette = &(!inBubble
 					? st->imgReplyTextPalette()
+					: useColorCollectible
+					? st->collectibleTextPalette(selected, colorCollectible)
 					: useColorIndex
 					? st->coloredTextPalette(selected, colorIndexPlusOne - 1)
 					: stm->replyTextPalette);
@@ -822,7 +1066,11 @@ void Reply::createRippleAnimation(
 		Ui::RippleAnimation::RoundRectMask(
 			size,
 			st::messageQuoteStyle.radius),
-		[=] { view->repaint(); });
+		[=] {
+			view->repaint(_ripple.lastPaintedPoint.isNull()
+				? QRect()
+				: QRect(_ripple.lastPaintedPoint, size));
+		});
 }
 
 void Reply::saveRipplePoint(QPoint point) const {
@@ -841,61 +1089,62 @@ void Reply::stopLastRipple() {
 	}
 }
 
-TextWithEntities Reply::PeerEmoji(
-		not_null<History*> history,
-		PeerData *peer) {
-	return PeerEmoji(&history->owner(), peer);
-}
-
-TextWithEntities Reply::PeerEmoji(
-		not_null<Data::Session*> owner,
-		PeerData *peer) {
+TextWithEntities Reply::PeerEmoji(PeerData *peer) {
 	using namespace std;
 	const auto icon = !peer
-		? pair(&st::historyReplyUser, st::historyReplyUserPadding)
+		? &st::historyReplyUser
 		: peer->isBroadcast()
-		? pair(&st::historyReplyChannel, st::historyReplyChannelPadding)
+		? &st::historyReplyChannel
 		: (peer->isChannel() || peer->isChat())
-		? pair(&st::historyReplyGroup, st::historyReplyGroupPadding)
-		: pair(&st::historyReplyUser, st::historyReplyUserPadding);
-	return Ui::Text::SingleCustomEmoji(
-		owner->customEmojiManager().registerInternalEmoji(
-			*icon.first,
-			icon.second));
-}
-
-TextWithEntities Reply::ForwardEmoji(not_null<Data::Session*> owner) {
-	return Ui::Text::SingleCustomEmoji(
-		owner->customEmojiManager().registerInternalEmoji(
-			st::historyReplyForward,
-			st::historyReplyForwardPadding));
+		? &st::historyReplyGroup
+		: &st::historyReplyUser;
+	return Ui::Text::IconEmoji(icon);
 }
 
 TextWithEntities Reply::ComposePreviewName(
 		not_null<History*> history,
 		not_null<HistoryItem*> to,
-		bool quote) {
+		const FullReplyTo &replyTo) {
 	const auto sender = [&] {
 		if (const auto from = to->displayFrom()) {
 			return not_null(from);
 		}
 		return to->author();
 	}();
+	if (const auto media = (replyTo.todoItemId
+			|| !replyTo.pollOption.isEmpty())
+		? to->media()
+		: nullptr) {
+		if (const auto todolist = media->todolist()) {
+			return tr::lng_preview_reply_to_task(
+				tr::now,
+				lt_title,
+				todolist->title,
+				tr::marked);
+		} else if (const auto poll = media->poll()) {
+			return tr::lng_preview_reply_to_poll_option(
+				tr::now,
+				lt_title,
+				poll->question,
+				tr::marked);
+		}
+	}
 	const auto toPeer = to->history()->peer;
 	const auto displayAsExternal = (to->history() != history);
 	const auto groupNameAdded = displayAsExternal
 		&& (toPeer != sender)
 		&& (toPeer->isChat() || toPeer->isMegagroup());
+	const auto quote = replyTo && !replyTo.quote.empty();
 	const auto shorten = groupNameAdded || quote;
 
 	auto nameFull = TextWithEntities();
 	using namespace HistoryView;
 	if (displayAsExternal && !groupNameAdded) {
-		nameFull.append(Reply::PeerEmoji(history, sender));
+		nameFull.append(Reply::PeerEmoji(sender));
 	}
 	nameFull.append(shorten ? sender->shortName() : sender->name());
 	if (groupNameAdded) {
-		nameFull.append(' ').append(Reply::PeerEmoji(history, toPeer));
+		nameFull.append(' ').append(Reply::PeerEmoji(toPeer));
 		nameFull.append(toPeer->name());
 	}
 	return (quote
@@ -904,7 +1153,7 @@ TextWithEntities Reply::ComposePreviewName(
 			tr::now,
 			lt_name,
 			nameFull,
-			Ui::Text::WithEntities);
+			tr::marked);
 
 }
 

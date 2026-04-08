@@ -19,15 +19,15 @@ rpl::producer<bool> Show::adjustShadowLeft() const {
 }
 
 ResolveWindow ResolveWindowDefault() {
-	return [](not_null<Main::Session*> session, WindowUsage usage)
+	return [](not_null<Main::Session*> session)
 	-> Window::SessionController* {
 		const auto check = [&](Window::Controller *window) {
-			if (const auto controller = window->sessionController()) {
-				if (&controller->session() == session) {
-					return controller;
-				}
-			}
-			return (Window::SessionController*)nullptr;
+			const auto controller = window
+				? window->sessionController()
+				: nullptr;
+			return (controller && (&controller->session() == session))
+				? controller
+				: nullptr;
 		};
 		auto &app = Core::App();
 		const auto account = not_null(&session->account());
@@ -45,8 +45,8 @@ ResolveWindow ResolveWindowDefault() {
 	};
 }
 
-Window::SessionController *Show::resolveWindow(WindowUsage usage) const {
-	return ResolveWindowDefault()(&session(), usage);
+Window::SessionController *Show::resolveWindow() const {
+	return ResolveWindowDefault()(&session());
 }
 
 } // namespace ChatHelpers

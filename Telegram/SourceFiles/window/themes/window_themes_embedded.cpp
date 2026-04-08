@@ -14,9 +14,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/core_settings.h"
 #include "ui/style/style_palette_colorizer.h"
 
-// AyuGram includes
-#include "ayu/features/messageshot/message_shot.h"
-
+#include <QtGui/QGuiApplication>
+#include <QtGui/QPalette>
 
 namespace Window {
 namespace Theme {
@@ -179,6 +178,16 @@ style::colorizer ColorizerFrom(
 	return result;
 }
 
+std::optional<QColor> SystemAccentColor() {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 6, 0)
+	constexpr auto kAccentRole = QPalette::ColorRole::Accent;
+#else
+	constexpr auto kAccentRole = QPalette::ColorRole::Highlight;
+#endif
+	const auto accent = QGuiApplication::palette().color(kAccentRole);
+	return accent.isValid() ? std::make_optional(accent) : std::nullopt;
+}
+
 style::colorizer ColorizerForTheme(const QString &absolutePath) {
 	if (!IsEmbeddedTheme(absolutePath)) {
 		return {};
@@ -191,8 +200,14 @@ style::colorizer ColorizerForTheme(const QString &absolutePath) {
 	if (i == end(schemes)) {
 		return {};
 	}
-	const auto &colors = Core::App().settings().themesAccentColors();
-	if (const auto accent = AyuFeatures::MessageShot::isChoosingTheme() ? AyuFeatures::MessageShot::getSelectedColorFromDefault() : colors.get(i->type)) {
+	const auto &settings = Core::App().settings();
+	if (settings.systemAccentColorEnabled()) {
+		if (const auto accent = SystemAccentColor()) {
+			return ColorizerFrom(*i, *accent);
+		}
+	}
+	const auto &colors = settings.themesAccentColors();
+	if (const auto accent = colors.get(i->type)) {
 		return ColorizerFrom(*i, *accent);
 	}
 	return {};

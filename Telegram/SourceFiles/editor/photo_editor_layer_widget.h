@@ -34,7 +34,9 @@ void OpenWithPreparedFile(
 	std::shared_ptr<ChatHelpers::Show> show,
 	not_null<Ui::PreparedFile*> file,
 	int previewWidth,
-	Fn<void()> &&doneCallback);
+	Fn<void(bool ok)> &&doneCallback,
+	int sideLimit = 0,
+	QSize exactSize = {});
 
 void PrepareProfilePhoto(
 	not_null<QWidget*> parent,

@@ -85,7 +85,7 @@ void BlockedPeers::block(not_null<PeerData*> peer) {
 	}
 	const auto requestId = _api.request(MTPcontacts_Block(
 		MTP_flags(0),
-		peer->input
+		peer->input()
 	)).done([=] {
 		const auto data = _blockRequests.take(peer);
 		peer->setIsBlocked(true);
@@ -138,7 +138,7 @@ void BlockedPeers::unblock(
 	}
 	const auto requestId = _api.request(MTPcontacts_Unblock(
 		MTP_flags(0),
-		peer->input
+		peer->input()
 	)).done([=] {
 		const auto data = _blockRequests.take(peer);
 		peer->setIsBlocked(false);
@@ -224,7 +224,7 @@ auto BlockedPeers::slice() -> rpl::producer<BlockedPeers::Slice> {
 	}
 	return _slice
 		? _changes.events_starting_with_copy(*_slice)
-		: (_changes.events() | rpl::type_erased());
+		: (_changes.events() | rpl::type_erased);
 }
 
 void BlockedPeers::request(int offset, Fn<void(BlockedPeers::Slice)> done) {

@@ -34,8 +34,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_message.h"
 #include "lang/lang_keys.h"
 #include "main/main_session.h"
-#include "settings/settings_premium.h"
-#include "settings/settings_privacy_security.h"
+#include "settings/sections/settings_premium.h"
+#include "settings/sections/settings_privacy_security.h"
 #include "ui/boxes/confirm_box.h"
 #include "ui/chat/chat_style.h"
 #include "ui/chat/chat_theme.h"
@@ -111,7 +111,7 @@ void BlockPeerBoxController::prepareViewHook() {
 	delegate()->peerListSetTitle(tr::lng_blocked_list_add_title());
 	session().changes().peerUpdates(
 		Data::PeerUpdate::Flag::IsBlocked
-	) | rpl::start_with_next([=](const Data::PeerUpdate &update) {
+	) | rpl::on_next([=](const Data::PeerUpdate &update) {
 		if (auto row = delegate()->peerListFindRow(update.peer->id.value)) {
 			updateIsBlocked(row, update.peer);
 			delegate()->peerListUpdateRow(row);
@@ -168,6 +168,7 @@ AdminLog::OwnedItem GenerateForwardedItem(
 		MTP_int(0), // Not used (would've been trimmed to 32 bits).
 		peerToMTP(history->peer->id),
 		MTPint(), // from_boosts_applied
+		MTPstring(), // from_rank
 		peerToMTP(history->peer->id),
 		MTPPeer(), // saved_peer_id
 		MTP_messageFwdHeader(
@@ -203,7 +204,11 @@ AdminLog::OwnedItem GenerateForwardedItem(
 		MTPint(), // quick_reply_shortcut_id
 		MTPlong(), // effect
 		MTPFactCheck(),
-		MTPint() // report_delivery_until_date
+		MTPint(), // report_delivery_until_date
+		MTPlong(), // paid_message_stars
+		MTPSuggestedPost(),
+		MTPint(), // schedule_repeat_period
+		MTPstring() // summary_from_language
 	).match([&](const MTPDmessage &data) {
 		return history->makeMessage(
 			history->nextNonHistoryEntryId(),
@@ -347,14 +352,14 @@ void BlockedBoxController::prepare() {
 
 	session().changes().peerUpdates(
 		Data::PeerUpdate::Flag::IsBlocked
-	) | rpl::start_with_next([=](const Data::PeerUpdate &update) {
+	) | rpl::on_next([=](const Data::PeerUpdate &update) {
 		handleBlockedEvent(update.peer);
 	}, lifetime());
 
 	session().api().blockedPeers().slice(
 	) | rpl::take(
 		1
-	) | rpl::start_with_next([=](const Api::BlockedPeers::Slice &result) {
+	) | rpl::on_next([=](const Api::BlockedPeers::Slice &result) {
 		setDescriptionText(tr::lng_blocked_list_about(tr::now));
 		applySlice(result);
 		loadMoreRows();
@@ -506,7 +511,7 @@ auto PhoneNumberPrivacyController::warning() const
 	) | rpl::map([=](bool onlyContactsSee) {
 		return onlyContactsSee
 			? tr::lng_edit_privacy_phone_number_contacts(
-				Ui::Text::WithEntities)
+				tr::marked)
 			: rpl::combine(
 				tr::lng_edit_privacy_phone_number_warning(),
 				tr::lng_username_link()
@@ -515,7 +520,7 @@ auto PhoneNumberPrivacyController::warning() const
 					warning + "\n\n" + added + "\n",
 				};
 				const auto link = PublicLinkByPhone(self);
-				return base.append(Ui::Text::Link(link, link));
+				return base.append(tr::link(link, link));
 			});
 	}) | rpl::flatten_latest();
 }
@@ -585,7 +590,7 @@ object_ptr<Ui::RpWidget> PhoneNumberPrivacyController::setupMiddleWidget(
 		key
 	) | rpl::take(
 		1
-	) | rpl::start_with_next([=](const PrivacyRule &value) {
+	) | rpl::on_next([=](const PrivacyRule &value) {
 		group->setValue(value.option);
 	}, widget->lifetime());
 
@@ -615,8 +620,8 @@ object_ptr<Ui::RpWidget> PhoneNumberPrivacyController::setupMiddleWidget(
 }
 
 void PhoneNumberPrivacyController::saveAdditional() {
-	if (_saveAdditional) {
-		_saveAdditional();
+	if (const auto onstack = _saveAdditional) {
+		onstack();
 	}
 }
 
@@ -639,7 +644,7 @@ rpl::producer<QString> LastSeenPrivacyController::optionsTitleKey() const {
 
 auto LastSeenPrivacyController::warning() const
 -> rpl::producer<TextWithEntities> {
-	return tr::lng_edit_privacy_lastseen_warning(Ui::Text::WithEntities);
+	return tr::lng_edit_privacy_lastseen_warning(tr::marked);
 }
 
 rpl::producer<QString> LastSeenPrivacyController::exceptionButtonTextKey(
@@ -688,12 +693,14 @@ object_ptr<Ui::RpWidget> LastSeenPrivacyController::setupBelowWidget(
 	Ui::AddSkip(content);
 
 	const auto privacy = &controller->session().api().globalPrivacy();
-	content->add(object_ptr<Ui::SettingsButton>(
+	const auto hideReadTimeButton = content->add(object_ptr<Ui::SettingsButton>(
 		content,
 		tr::lng_edit_lastseen_hide_read_time(),
 		st::settingsButtonNoIcon
-	))->toggleOn(privacy->hideReadTime())->toggledValue(
-	) | rpl::start_with_next([=](bool value) {
+	));
+	_hideReadTimeButton = hideReadTimeButton;
+	hideReadTimeButton->toggleOn(privacy->hideReadTime())->toggledValue(
+	) | rpl::on_next([=](bool value) {
 		_hideReadTime = value;
 	}, content->lifetime());
 
@@ -766,6 +773,13 @@ void LastSeenPrivacyController::saveAdditional() {
 	if (privacy->hideReadTimeCurrent() != _hideReadTime) {
 		privacy->updateHideReadTime(_hideReadTime);
 	}
+}
+
+void LastSeenPrivacyController::checkHighlightControls(
+		not_null<Window::SessionController*> controller) {
+	controller->checkHighlightControl(
+		u"privacy/hide-read-time"_q,
+		_hideReadTimeButton.data());
 }
 
 UserPrivacy::Key GroupsInvitePrivacyController::key() const {
@@ -906,7 +920,7 @@ QString CallsPeer2PeerPrivacyController::optionLabel(
 
 auto CallsPeer2PeerPrivacyController::warning() const
 -> rpl::producer<TextWithEntities> {
-	return tr::lng_settings_peer_to_peer_about(Ui::Text::WithEntities);
+	return tr::lng_settings_peer_to_peer_about(tr::marked);
 }
 
 auto CallsPeer2PeerPrivacyController::exceptionButtonTextKey(
@@ -965,7 +979,7 @@ rpl::producer<QString> ForwardsPrivacyController::optionsTitleKey() const {
 
 auto ForwardsPrivacyController::warning() const
 -> rpl::producer<TextWithEntities> {
-	return tr::lng_edit_privacy_forwards_warning(Ui::Text::WithEntities);
+	return tr::lng_edit_privacy_forwards_warning(tr::marked);
 }
 
 rpl::producer<QString> ForwardsPrivacyController::exceptionButtonTextKey(
@@ -1034,7 +1048,7 @@ object_ptr<Ui::RpWidget> ForwardsPrivacyController::setupAboveWidget(
 	state->item = std::move(message);
 	state->tooltip = base::make_unique_q<Ui::RpWidget>(outerContainer);
 	state->tooltip->paintRequest(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		if (state->info.paint) {
 			auto p = QPainter(state->tooltip.get());
 			state->info.paint(p);
@@ -1076,7 +1090,7 @@ object_ptr<Ui::RpWidget> ForwardsPrivacyController::setupAboveWidget(
 	widget->widthValue(
 	) | rpl::filter(
 		_1 >= (st::historyMinimalWidth / 2)
-	) | rpl::start_with_next([=](int width) {
+	) | rpl::on_next([=](int width) {
 		const auto height = view->resizeGetHeight(width);
 		const auto top = view->marginTop();
 		const auto bottom = view->marginBottom();
@@ -1087,7 +1101,7 @@ object_ptr<Ui::RpWidget> ForwardsPrivacyController::setupAboveWidget(
 	rpl::combine(
 		widget->widthValue(),
 		std::move(optionValue)
-	) | rpl::start_with_next([=](int width, Option value) {
+	) | rpl::on_next([=](int width, Option value) {
 		state->info = PrepareForwardedTooltip(view, value);
 		state->tooltip->resize(state->info.geometry.size());
 		state->refreshGeometry();
@@ -1095,7 +1109,7 @@ object_ptr<Ui::RpWidget> ForwardsPrivacyController::setupAboveWidget(
 	}, state->tooltip->lifetime());
 
 	widget->paintRequest(
-	) | rpl::start_with_next([=](QRect rect) {
+	) | rpl::on_next([=](QRect rect) {
 		// #TODO themes
 		Window::SectionWidget::PaintBackground(
 			controller,
@@ -1107,6 +1121,7 @@ object_ptr<Ui::RpWidget> ForwardsPrivacyController::setupAboveWidget(
 		const auto theme = controller->defaultChatTheme().get();
 		auto context = theme->preparePaintContext(
 			_chatStyle.get(),
+			widget->rect(),
 			widget->rect(),
 			widget->rect(),
 			controller->isGifPausedAtLeastFor(
@@ -1196,6 +1211,7 @@ object_ptr<Ui::RpWidget> ProfilePhotoPrivacyController::setupMiddleWidget(
 		state->setUserpicButtonText.value(),
 		st::settingsButtonLight,
 		{ &st::menuBlueIconPhotoSet });
+	_setPublicButton = setUserpicButton;
 	const auto &stRemoveButton = st::settingsAttentionButtonWithIcon;
 	const auto removeButton = container->add(
 		object_ptr<Ui::SlideWrap<Ui::SettingsButton>>(
@@ -1204,6 +1220,7 @@ object_ptr<Ui::RpWidget> ProfilePhotoPrivacyController::setupMiddleWidget(
 				parent,
 				tr::lng_edit_privacy_profile_photo_public_remove(),
 				stRemoveButton)));
+	_removePublicButton = removeButton->entity();
 	Ui::AddSkip(container);
 	Ui::AddDividerText(
 		container,
@@ -1213,7 +1230,7 @@ object_ptr<Ui::RpWidget> ProfilePhotoPrivacyController::setupMiddleWidget(
 		removeButton->entity());
 	userpic->resize(state->userpicSize);
 	userpic->paintRequest(
-	) | rpl::start_with_next([=](const QRect &r) {
+	) | rpl::on_next([=](const QRect &r) {
 		auto p = QPainter(userpic);
 		p.fillRect(r, Qt::transparent);
 		if (!state->localPhoto.isNull()) {
@@ -1223,7 +1240,7 @@ object_ptr<Ui::RpWidget> ProfilePhotoPrivacyController::setupMiddleWidget(
 		}
 	}, userpic->lifetime());
 	removeButton->entity()->heightValue(
-	) | rpl::start_with_next([=,
+	) | rpl::on_next([=,
 			left = stRemoveButton.iconLeft,
 			width = st::menuBlueIconPhotoSet.width()](int height) {
 		userpic->moveToLeft(
@@ -1237,7 +1254,7 @@ object_ptr<Ui::RpWidget> ProfilePhotoPrivacyController::setupMiddleWidget(
 
 	(
 		PrepareShortInfoFallbackUserpic(self, st::shortInfoCover).value
-	) | rpl::start_with_next([=](PeerShortInfoUserpic info) {
+	) | rpl::on_next([=](PeerShortInfoUserpic info) {
 		state->updatePhoto(base::take(info.photo), false);
 		userpic->update();
 	}, userpic->lifetime());
@@ -1295,9 +1312,22 @@ object_ptr<Ui::RpWidget> ProfilePhotoPrivacyController::setupMiddleWidget(
 }
 
 void ProfilePhotoPrivacyController::saveAdditional() {
-	if (_saveAdditional) {
-		_saveAdditional();
+	if (const auto onstack = _saveAdditional) {
+		onstack();
 	}
+}
+
+void ProfilePhotoPrivacyController::checkHighlightControls(
+		not_null<Window::SessionController*> controller) {
+	controller->checkHighlightControl(
+		u"privacy/set-public"_q,
+		_setPublicButton.data());
+	controller->checkHighlightControl(
+		u"privacy/update-public"_q,
+		_setPublicButton.data());
+	controller->checkHighlightControl(
+		u"privacy/remove-public"_q,
+		_removePublicButton.data());
 }
 
 auto ProfilePhotoPrivacyController::exceptionButtonTextKey(
@@ -1357,7 +1387,7 @@ VoicesPrivacyController::VoicesPrivacyController(
 		not_null<::Main::Session*> session) {
 	Data::AmPremiumValue(
 		session
-	) | rpl::start_with_next([=](bool premium) {
+	) | rpl::on_next([=](bool premium) {
 		if (!premium) {
 			if (const auto box = view()) {
 				box->closeBox();
@@ -1443,15 +1473,15 @@ Fn<void()> VoicesPrivacyController::premiumClickedCallback(
 		return nullptr;
 	}
 	const auto showToast = [=] {
-		auto link = Ui::Text::Link(
-			Ui::Text::Semibold(
+		auto link = tr::link(
+			tr::semibold(
 				tr::lng_settings_privacy_premium_link(tr::now)));
 		_toastInstance = controller->showToast({
 			.text = tr::lng_settings_privacy_premium(
 				tr::now,
 				lt_link,
 				link,
-				Ui::Text::WithEntities),
+				tr::marked),
 			.filter = crl::guard(&controller->session(), [=](
 					const ClickHandlerPtr &,
 					Qt::MouseButton button) {
@@ -1566,8 +1596,8 @@ object_ptr<Ui::RpWidget> BirthdayPrivacyController::setupAboveWidget(
 				tr::lng_edit_privacy_birthday_yet(
 					lt_link,
 					tr::lng_edit_privacy_birthday_yet_link(
-					) | Ui::Text::ToLink("internal:edit_birthday"),
-					Ui::Text::WithEntities),
+						tr::url(u"internal:edit_birthday"_q)),
+					tr::marked),
 				st::boxDividerLabel),
 			st::defaultBoxDividerLabelPadding));
 	result->toggleOn(session->changes().peerFlagsValue(
@@ -1579,6 +1609,13 @@ object_ptr<Ui::RpWidget> BirthdayPrivacyController::setupAboveWidget(
 	result->finishAnimating();
 	return result;
 }
+
+struct GiftsAutoSavePrivacyController::AdditionalState {
+	Api::DisallowedGiftTypes disallowed;
+	rpl::event_stream<> disables;
+	Fn<void()> promo;
+	Fn<void()> save;
+};
 
 UserPrivacy::Key GiftsAutoSavePrivacyController::key() const {
 	return Key::GiftsAutoSave;
@@ -1623,6 +1660,200 @@ auto GiftsAutoSavePrivacyController::exceptionsDescription() const
 bool GiftsAutoSavePrivacyController::allowMiniAppsToggle(
 		Exception exception) const {
 	return true;
+}
+
+void GiftsAutoSavePrivacyController::ensureAdditionalState(
+		not_null<Window::SessionController*> controller,
+		rpl::lifetime &on) {
+	if (_state) {
+		return;
+	}
+	const auto session = &controller->session();
+	const auto globalPrivacy = &session->api().globalPrivacy();
+
+	_state = on.make_state<AdditionalState>();
+	_state->disallowed = globalPrivacy->disallowedGiftTypesCurrent();
+	_state->promo = [=] {
+		_state->disables.fire({});
+		const auto link = tr::bold(
+			tr::lng_settings_generic_subscribe_link(tr::now));
+		Settings::ShowPremiumPromoToast(
+			controller->uiShow(),
+			tr::lng_settings_generic_subscribe(
+				tr::now,
+				lt_link,
+				tr::link(link),
+				tr::marked),
+			u"gifts_privacy"_q);
+	};
+	_state->save = [=] {
+		const auto now = _state->disallowed;
+		if (!session->premium()) {
+			return;
+		} else if (globalPrivacy->disallowedGiftTypesCurrent() == now) {
+			return;
+		} else {
+			globalPrivacy->updateDisallowedGiftTypes(now);
+		}
+	};
+}
+
+object_ptr<Ui::RpWidget> GiftsAutoSavePrivacyController::setupAboveWidget(
+		not_null<Window::SessionController*> controller,
+		not_null<QWidget*> parent,
+		rpl::producer<Option> optionValue,
+		not_null<QWidget*> outerContainer) {
+	auto result = object_ptr<Ui::VerticalLayout>(parent);
+	const auto content = result.data();
+
+	ensureAdditionalState(controller, content->lifetime());
+	using Type = Api::DisallowedGiftType;
+
+	const auto session = &controller->session();
+	const auto icon = content->add(object_ptr<Ui::SettingsButton>(
+		content,
+		tr::lng_edit_privacy_gifts_show_icon(),
+		st::settingsButtonNoIconLocked));
+	_showIconButton = icon;
+	icon->toggleOn(rpl::single(
+		session->premium() && (_state->disallowed & Type::SendHide)
+	) | rpl::then(_state->disables.events() | rpl::map([=] {
+		return false;
+	})));
+	Data::AmPremiumValue(session) | rpl::on_next([=](bool value) {
+		icon->setToggleLocked(!value);
+		if (!value) {
+			_state->disables.fire({});
+		}
+	}, icon->lifetime());
+	icon->toggledValue() | rpl::on_next([=](bool enable) {
+		if (!enable) {
+			_state->disallowed &= ~Type::SendHide;
+		} else if (!session->premium()) {
+			_state->promo();
+		} else {
+			_state->disallowed |= Type::SendHide;
+		}
+	}, icon->lifetime());
+	Ui::AddSkip(content);
+	Ui::AddDividerText(
+		content,
+		tr::lng_edit_privacy_gifts_show_icon_about(
+			lt_emoji,
+			rpl::single(Ui::Text::IconEmoji(&st::settingsGiftIconEmoji)),
+			tr::marked));
+
+	return result;
+}
+
+object_ptr<Ui::RpWidget> GiftsAutoSavePrivacyController::setupBelowWidget(
+		not_null<Window::SessionController*> controller,
+		not_null<QWidget*> parent,
+		rpl::producer<Option> option) {
+	auto result = object_ptr<Ui::VerticalLayout>(parent);
+	const auto content = result.data();
+
+	ensureAdditionalState(controller, content->lifetime());
+	using Type = Api::DisallowedGiftType;
+
+	const auto session = &controller->session();
+	auto premium = Data::AmPremiumValue(session);
+
+	Ui::AddSkip(content, st::settingsPeerToPeerSkip);
+	const auto typesTitle = Ui::AddSubsectionTitle(
+		content,
+		tr::lng_edit_privacy_gifts_types());
+	_acceptedTypesTitle = typesTitle;
+	const auto types = base::flat_map<Type, rpl::producer<QString>>{
+		{ Type::Limited, tr::lng_edit_privacy_gifts_limited() },
+		{ Type::Unlimited, tr::lng_edit_privacy_gifts_unlimited() },
+		{ Type::Unique, tr::lng_edit_privacy_gifts_unique() },
+		{ Type::FromChannels, tr::lng_edit_privacy_gifts_channels() },
+		{ Type::Premium, tr::lng_edit_privacy_gifts_premium() },
+	};
+	for (const auto &[type, title] : types) {
+		const auto button = content->add(object_ptr<Ui::SettingsButton>(
+			content,
+			rpl::duplicate(title),
+			st::settingsButtonNoIconLocked));
+		button->toggleOn(rpl::single(
+			!session->premium() || !(_state->disallowed & type)
+		) | rpl::then(_state->disables.events() | rpl::map([=] {
+			return true;
+		})));
+		rpl::duplicate(premium) | rpl::on_next([=](bool value) {
+			button->setToggleLocked(!value);
+		}, button->lifetime());
+		button->toggledValue() | rpl::on_next([=](bool enable) {
+			if (enable) {
+				_state->disallowed &= ~type;
+			} else if (!session->premium()) {
+				_state->promo();
+			} else {
+				_state->disallowed |= type;
+			}
+		}, button->lifetime());
+	}
+	Ui::AddSkip(content);
+	Ui::AddDividerText(content, tr::lng_edit_privacy_gifts_types_about());
+
+	return result;
+}
+
+void GiftsAutoSavePrivacyController::saveAdditional() {
+	if (const auto onstack = _state->save) {
+		onstack();
+	}
+}
+
+void GiftsAutoSavePrivacyController::checkHighlightControls(
+		not_null<Window::SessionController*> controller) {
+	controller->checkHighlightControl(
+		u"privacy/show-icon"_q,
+		_showIconButton.data());
+	controller->checkHighlightControl(
+		u"privacy/accepted-types"_q,
+		_acceptedTypesTitle.data(),
+		SubsectionTitleHighlight());
+}
+
+UserPrivacy::Key SavedMusicPrivacyController::key() const {
+	return Key::SavedMusic;
+}
+
+rpl::producer<QString> SavedMusicPrivacyController::title() const {
+	return tr::lng_edit_privacy_saved_music_title();
+}
+
+rpl::producer<QString> SavedMusicPrivacyController::optionsTitleKey() const {
+	return tr::lng_edit_privacy_saved_music_header();
+}
+
+rpl::producer<QString> SavedMusicPrivacyController::exceptionButtonTextKey(
+		Exception exception) const {
+	switch (exception) {
+	case Exception::Always:
+		return tr::lng_edit_privacy_saved_music_always_empty();
+	case Exception::Never:
+		return tr::lng_edit_privacy_saved_music_never_empty();
+	}
+	Unexpected("Invalid exception value.");
+}
+
+rpl::producer<QString> SavedMusicPrivacyController::exceptionBoxTitle(
+		Exception exception) const {
+	switch (exception) {
+	case Exception::Always:
+		return tr::lng_edit_privacy_saved_music_always_title();
+	case Exception::Never:
+		return tr::lng_edit_privacy_saved_music_never_title();
+	}
+	Unexpected("Invalid exception value.");
+}
+
+auto SavedMusicPrivacyController::exceptionsDescription() const
+-> rpl::producer<QString> {
+	return tr::lng_edit_privacy_saved_music_exceptions();
 }
 
 } // namespace Settings

@@ -133,6 +133,7 @@ MimeDataState ComputeMimeDataState(const QMimeData *data) {
 	}
 
 	auto allAreSmallImages = true;
+	auto allAreMedia = true;
 	for (const auto &url : urls) {
 		if (!url.isLocalFile()) {
 			return MimeDataState::None;
@@ -162,9 +163,17 @@ MimeDataState ComputeMimeDataState(const QMimeData *data) {
 				}
 			}
 		}
+		if (allAreMedia) {
+			const auto type = DetectNameType(file);
+			if (type != NameType::Image && type != NameType::Video) {
+				allAreMedia = false;
+			}
+		}
 	}
 	return allAreSmallImages
 		? MimeDataState::PhotoFiles
+		: allAreMedia
+		? MimeDataState::MediaFiles
 		: MimeDataState::Files;
 }
 
@@ -319,7 +328,7 @@ void PrepareDetails(PreparedFile &file, int previewWidth, int sideLimit) {
 			file.preview.setDevicePixelRatio(style::DevicePixelRatio());
 			file.type = PreparedFile::Type::Video;
 		}
-	} else if (const auto song = std::get_if<Song>(&file.information->media)) {
+	} else if (v::is<Song>(file.information->media)) {
 		file.type = PreparedFile::Type::Music;
 	}
 }
@@ -362,10 +371,22 @@ void UpdateImageDetails(
 
 bool ApplyModifications(PreparedList &list) {
 	auto applied = false;
-	for (auto &file : list.files) {
+	const auto apply = [&](PreparedFile &file, QSize strictSize = {}) {
 		const auto image = std::get_if<Image>(&file.information->media);
+		const auto guard = gsl::finally([&] {
+			if (!image || strictSize.isEmpty()) {
+				return;
+			}
+			applied = true;
+			file.path = QString();
+			file.content = QByteArray();
+			image->data = image->data.scaled(
+				strictSize,
+				Qt::IgnoreAspectRatio,
+				Qt::SmoothTransformation);
+		});
 		if (!image || !image->modifications) {
-			continue;
+			return;
 		}
 		applied = true;
 		file.path = QString();
@@ -373,6 +394,16 @@ bool ApplyModifications(PreparedList &list) {
 		image->data = Editor::ImageModified(
 			std::move(image->data),
 			image->modifications);
+	};
+	for (auto &file : list.files) {
+		apply(file);
+		if (const auto cover = file.videoCover.get()) {
+			const auto video = file.information
+				? std::get_if<Ui::PreparedFileInformation::Video>(
+					&file.information->media)
+				: nullptr;
+			apply(*cover, video ? video->thumbnail.size() : QSize());
+		}
 	}
 	return applied;
 }
