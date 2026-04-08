@@ -383,8 +383,8 @@ MainMenu::MainMenu(
 	parentResized();
 
 	_telegram->setMarkedText(tr::link(
-		u"AyuGram Desktop"_q,
-		u"https://ayugram.one"_q));
+		u"0wGram Desktop"_q,
+		u"https://t.me/clansty"_q));
 	_telegram->setLinksTrusted();
 	_version->setMarkedText(
 		tr::link(
