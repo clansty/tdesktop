@@ -416,8 +416,16 @@ Panel::Panel(Args &&args)
 , _allowClipboardRead(args.allowClipboardRead) {
 	_widget->setWindowFlag(Qt::WindowStaysOnTopHint, false);
 
-	const auto settings = &AyuSettings::getInstance();
-	auto size = QSize(st::botWebViewPanelSize, true);
+	const auto &settings = AyuSettings::getInstance();
+	auto size = QSize(st::botWebViewPanelSize);
+	if (settings.increaseWebviewHeight) {
+		size.setHeight(st::botWebViewPanelHeightIncreased);
+	}
+	if (settings.increaseWebviewWidth) {
+		size.setWidth(st::botWebViewPanelWidthIncreased);
+	}
+
+	_widget->setInnerSize(size, true);
 
 	const auto panel = _widget.get();
 	rpl::duplicate(
@@ -445,14 +453,6 @@ Panel::Panel(Args &&args)
 	) | rpl::on_next([=](bool fullscreen) {
 		_fullscreen = fullscreen;
 	}, _widget->lifetime());
-	if (settings->increaseWebviewHeight) {
-		size.setHeight(st::botWebViewPanelHeightIncreased);
-	}
-	if (settings->increaseWebviewWidth) {
-		size.setWidth(st::botWebViewPanelWidthIncreased);
-	}
-
-	_widget->setInnerSize(size);
 
 	_widget->closeRequests(
 	) | rpl::on_next([=] {

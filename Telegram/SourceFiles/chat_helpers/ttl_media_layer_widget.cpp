@@ -196,12 +196,12 @@ PreviewWrap::PreviewWrap(
 		}
 	}, lifetime());
 
-	const auto settings = &AyuSettings::getInstance();
+	const auto &settings = AyuSettings::getInstance();
 
 	{
 		const auto close = Ui::CreateChild<Ui::RoundButton>(
 			this,
-			item->out() || settings->saveDeletedMessages
+			item->out() || settings.saveDeletedMessages
 				? tr::lng_close()
 				: tr::lng_ttl_voice_close_in(),
 			st::ttlMediaButton);
@@ -235,8 +235,8 @@ PreviewWrap::PreviewWrap(
 					) | rpl::map(tr::rich),
 					tr::rich)
 			: (isRound
-				? tr::lng_ttl_round_tooltip_in
-				: tr::lng_ttl_voice_tooltip_in)(tr::rich);
+				? settings.saveDeletedMessages ? tr::ayu_ExpiringVideoMessageNote : tr::lng_ttl_round_tooltip_in
+				: settings.saveDeletedMessages ? tr::ayu_ExpiringVoiceMessageNote : tr::lng_ttl_voice_tooltip_in)(tr::rich);
 		const auto tooltip = Ui::CreateChild<Ui::ImportantTooltip>(
 			this,
 			object_ptr<Ui::PaddingWrap<Ui::FlatLabel>>(

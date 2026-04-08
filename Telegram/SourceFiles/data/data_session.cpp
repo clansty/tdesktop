@@ -87,8 +87,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 // AyuGram includes
 #include "ayu/ayu_settings.h"
-#include "ayu/ayu_state.h"
 #include "ayu/data/messages_storage.h"
+#include "ayu/features/filters/filters_controller.h"
+#include "ayu/utils/telegram_helpers.h"
 
 
 namespace Data {
@@ -325,7 +326,9 @@ Session::Session(not_null<Main::Session*> session)
 			}
 		}, _lifetime);
 
-		if (!GetEnhancedBool("hide_stories")) {
+		// AyuGram disableStories
+		const auto &settings = AyuSettings::getInstance();
+		if (!settings.disableStories) {
 			_stories->loadMore(Data::StorySourcesList::NotHidden);
 		}
 	});
@@ -896,7 +899,8 @@ not_null<PeerData*> Session::processChat(const MTPChat &data) {
 			| Flag::Forbidden
 			| Flag::CallActive
 			| Flag::CallNotEmpty
-			| Flag::NoForwards;
+			| Flag::NoForwards
+			| Flag::AyuNoForwards;
 		const auto flagsSet = (data.is_left() ? Flag::Left : Flag())
 			| (data.is_creator() ? Flag::Creator : Flag())
 			| (data.is_deactivated() ? Flag::Deactivated : Flag())
@@ -906,7 +910,8 @@ not_null<PeerData*> Session::processChat(const MTPChat &data) {
 					&& chat->groupCall()->fullCount() > 0))
 				? Flag::CallNotEmpty
 				: Flag())
-			| (data.is_noforwards() ? Flag::NoForwards : Flag());
+			| (data.is_noforwards() ? Flag::NoForwards : Flag())
+			| (data.is_ayuNoforwards() ? Flag::AyuNoForwards : Flag());
 		chat->setFlags((chat->flags() & ~flagsMask) | flagsSet);
 		chat->count = data.vparticipants_count().v;
 
@@ -1032,6 +1037,7 @@ not_null<PeerData*> Session::processChat(const MTPChat &data) {
 				? (Flag::Left | Flag::Creator)
 				: Flag())
 			| Flag::NoForwards
+			| Flag::AyuNoForwards
 			| Flag::JoinToWrite
 			| Flag::RequestToJoin
 			| Flag::Forum
@@ -1082,6 +1088,7 @@ not_null<PeerData*> Session::processChat(const MTPChat &data) {
 					| (data.is_creator() ? Flag::Creator : Flag()))
 				: Flag())
 			| (data.is_noforwards() ? Flag::NoForwards : Flag())
+			| (data.is_ayuNoforwards() ? Flag::AyuNoForwards : Flag())
 			| (data.is_join_to_send() ? Flag::JoinToWrite : Flag())
 			| (data.is_join_request() ? Flag::RequestToJoin : Flag())
 			| ((data.is_forum() && data.is_megagroup())
@@ -2731,22 +2738,24 @@ void Session::updateEditedMessage(const MTPMessage &data) {
 	}
 
 	// AyuGram saveMessagesHistory
-	const auto settings = &AyuSettings::getInstance();
+	const auto &settings = AyuSettings::getInstance();
 	HistoryMessageEdition edit;
 
 	if (data.type() != mtpc_message) {
 		goto proceed;
 	}
 	edit = HistoryMessageEdition(_session, data.c_message());
-	if (settings->saveMessagesHistory && !existing->isLocal() && !existing->author()->isSelf() && !edit.isEditHide) {
+	if (settings.saveMessagesHistory && !existing->isLocal() && !existing->author()->isSelf() && !edit.isEditHide) {
 		const auto msg = existing->originalText();
 
 		if (edit.textWithEntities == msg || msg.empty()) {
 			goto proceed;
 		}
 
-		AyuMessages::addEditedMessage(edit, existing);
+		AyuMessages::addEditedMessage(existing);
 	}
+
+	FiltersController::invalidate(existing);
 
 proceed:
 
@@ -2887,12 +2896,12 @@ void Session::unregisterMessageTTL(
 }
 
 void Session::checkTTLs() {
-	const auto settings = &AyuSettings::getInstance();
+	const auto &settings = AyuSettings::getInstance();
 
 	_ttlCheckTimer.cancel();
 	const auto now = base::unixtime::now();
 
-	if (settings->saveDeletedMessages) {
+	if (settings.saveDeletedMessages) {
 		auto toBeRemoved = ranges::views::take_while(
 			_ttlMessages,
 			[now](const auto &pair) {
@@ -2900,8 +2909,13 @@ void Session::checkTTLs() {
 			}) | ranges::views::transform([](const auto &pair) {
 				return pair.second;
 			}) | ranges::views::join;
-		for (auto &item : toBeRemoved) {
-			item->setAyuHint(settings->deletedMark);
+
+		auto itemsToProcess = toBeRemoved | ranges::to_vector;
+		for (const auto &item : itemsToProcess) {
+			// remove message from `_ttlMessages` to avoid calling this method infinitely
+			item->applyTTL(0);
+
+			processMessageDelete(item);
 		}
 	} else {
 		while (!_ttlMessages.empty() && _ttlMessages.begin()->first <= now) {
@@ -2969,12 +2983,7 @@ void Session::processMessagesDeleted(
 		if (list && i != list->end()) {
 			const auto history = i->second->history();
 
-			const auto settings = &AyuSettings::getInstance();
-			if (!settings->saveDeletedMessages) {
-				i->second->destroy();
-			} else {
-				i->second->setAyuHint(settings->deletedMark);
-			}
+			processMessageDelete(i->second);
 
 			if (!history->chatListMessageKnown()) {
 				historiesToCheck.emplace(history);
@@ -2994,12 +3003,7 @@ void Session::processNonChannelMessagesDeleted(const QVector<MTPint> &data) {
 		if (const auto item = nonChannelMessage(messageId.v)) {
 			const auto history = item->history();
 
-			const auto settings = &AyuSettings::getInstance();
-			if (!settings->saveDeletedMessages) {
-				item->destroy();
-			} else {
-				item->setAyuHint(settings->deletedMark);
-			}
+			processMessageDelete(item);
 
 			if (!history->chatListMessageKnown()) {
 				historiesToCheck.emplace(history);

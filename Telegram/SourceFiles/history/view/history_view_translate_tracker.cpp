@@ -24,6 +24,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session.h"
 #include "spellcheck/platform/platform_language.h"
 
+// AyuGram includes
+#include "ayu/features/translator/ayu_translator.h"
+
+
 namespace HistoryView {
 namespace {
 
@@ -64,11 +68,7 @@ void TranslateTracker::setup() {
 	}) | rpl::distinct_until_changed();
 
 	using namespace rpl::mappers;
-	_trackingLanguage = rpl::combine(
-		Core::App().settings().translateChatEnabledValue(),
-		Data::AmPremiumValue(&_history->session()),
-		std::move(autoTranslationValue),
-		_1 && (_2 || _3));
+	_trackingLanguage = Core::App().settings().translateChatEnabledValue();
 	_trackingLanguage.value() | rpl::on_next([=](bool tracking) {
 		_trackingLifetime.destroy();
 		if (tracking) {
@@ -244,8 +244,7 @@ void TranslateTracker::cancelSentRequest() {
 				item->translationShowRequiresRequest({});
 			}
 		}
-		++_requestToken;
-		_requestInProcess = false;
+		Ayu::Translator::TranslateManager::currentInstance()->cancel(_requestId);
 	}
 }
 
@@ -275,8 +274,39 @@ void TranslateTracker::requestSome() {
 			break;
 		}
 	}
-	if (_requested.empty()) {
-		return;
+	using Flag = MTPmessages_TranslateText::Flag;
+	_requestId = Ayu::Translator::TranslateManager::currentInstance()->request(
+		&peer->session(),
+		MTP_flags(Flag::f_peer | Flag::f_id),
+		peer->input(),
+		MTP_vector<MTPint>(list),
+		MTPVector<MTPTextWithEntities>(),
+		MTP_string(to.twoLetterCode())
+	).done([=](const MTPmessages_TranslatedText &result) {
+		requestDone(to, result.data().vresult().v);
+	}).fail([=] {
+		requestDone(to, {});
+	}).send();
+}
+
+void TranslateTracker::requestDone(
+		LanguageId to,
+		const QVector<MTPTextWithEntities> &list) {
+	auto index = 0;
+	const auto session = &_history->session();
+	const auto owner = &session->data();
+	for (const auto &id : base::take(_requested)) {
+		if (const auto item = owner->message(id)) {
+			const auto data = (index >= list.size())
+				? nullptr
+				: &list[index].data();
+			auto text = data ? TextWithEntities{
+				qs(data->vtext()),
+				Api::EntitiesFromMTP(session, data->ventities().v)
+			} : TextWithEntities();
+			item->translationDone(to, std::move(text));
+		}
+		++index;
 	}
 	const auto owner = &session->data();
 	auto requests = std::vector<Ui::TranslateProviderRequest>();

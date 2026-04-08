@@ -66,6 +66,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 // AyuGram includes
 #include "ayu/ayu_settings.h"
 #include "ayu/utils/telegram_helpers.h"
+#include "ayu/features/forward/ayu_forward.h"
 
 
 class ShareBox::Inner final : public Ui::RpWidget {
@@ -1757,23 +1758,50 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(
 		const auto showRecentForwardsToSelf = result.size() == 1
 			&& result.front()->peer()->isSelf()
 			&& history->session().premium();
-		for (const auto &thread : result) {
-			const auto peer = thread->peer();
-			const auto threadHistory = thread->owningHistory();
-			const auto forum = threadHistory->asForum();
-			const auto needNewTopic = forum
-				&& forum->bot()
-				&& Data::IsBotUserCreatesTopics(peer)
-				&& !thread->asTopic();
-			const auto effectiveThread = [&]() -> not_null<Data::Thread*> {
-				if (needNewTopic) {
-					const auto topic = forum->reserveNewBotTopic();
-					Assert(topic != nullptr);
-					return topic;
-				}
-				return thread;
-			}();
+		const auto requestType = Data::Histories::RequestType::Send;
 
+
+		// AyuGram-changed
+		const auto dismiss = [=]
+		{
+			if (show->valid()) {
+				show->hideLayer();
+			}
+		};
+
+
+		if (AyuForward::isFullAyuForwardNeeded(items.front())) {
+			crl::async([=]{
+				for (const auto thread : result) {
+					AyuForward::forwardMessages(
+					&history->owner().session(),
+					Api::SendAction(thread, options),
+					false,
+					Data::ResolvedForwardDraft(items, forwardOptions));
+				}
+			});
+
+			dismiss();
+			return;
+		}
+		if (AyuForward::isAyuForwardNeeded(items)) {
+			crl::async([=]
+			{
+				for (const auto thread : result) {
+					AyuForward::intelligentForward(
+						&history->owner().session(),
+						Api::SendAction(thread, options),
+						Data::ResolvedForwardDraft(items, forwardOptions));
+				}
+			});
+
+			dismiss();
+			return;
+		}
+		// AyuGram-changed
+
+
+		for (const auto thread : result) {
 			if (!comment.text.isEmpty()) {
 				auto message = Api::MessageToSend(
 					Api::SendAction(effectiveThread, options));
@@ -1869,29 +1897,11 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(
 						}
 						show->hideLayer();
 					}
-				}
-			};
-			const auto requestFail = [=](
-					const MTP::Error &error,
-					mtpRequestId requestKey) {
-				const auto type = error.type();
-				if (type.startsWith(
-						u"ALLOW_PAYMENT_REQUIRED_"_q)) {
-					show->showToast(
-						u"Payment requirements changed. "
-						"Please, try again."_q);
-				} else if (type
-					== u"VOICE_MESSAGES_FORBIDDEN"_q) {
-					show->showToast(
-						tr::lng_restricted_send_voice_messages(
-							tr::now,
-							lt_user,
-							peer->name()));
-				}
-				state->requests.remove(requestKey);
-				if (state->requests.empty()) {
-					if (show->valid()) {
-						show->hideLayer();
+
+					const auto &settings = AyuSettings::getInstance();
+					if (!settings.sendReadMessages && settings.markReadAfterAction && history->lastMessage())
+					{
+						readHistory(history->lastMessage());
 					}
 				}
 			};

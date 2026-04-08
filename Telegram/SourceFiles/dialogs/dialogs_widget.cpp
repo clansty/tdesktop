@@ -1402,14 +1402,14 @@ void Widget::setupMainMenuToggle() {
 	Window::OtherAccountsUnreadState(
 		&controller()->session().account()
 	) | rpl::on_next([=](const Window::OthersUnreadState &state) {
-		const auto icon = !state.count
+		auto icon = !state.count
 			? nullptr
 			: !state.allMuted
 			? &st::dialogsMenuToggleUnread
 			: &st::dialogsMenuToggleUnreadMuted;
 
-		const auto settings = &AyuSettings::getInstance();
-		if (settings->hideNotificationCounters) {
+		const auto &settings = AyuSettings::getInstance();
+		if (settings.hideNotificationCounters) {
 			icon = nullptr;
 		}
 
@@ -1418,31 +1418,15 @@ void Widget::setupMainMenuToggle() {
 }
 
 void Widget::setupStories() {
-	if (GetEnhancedBool("hide_stories")) {
+	// AyuGram disableStories
+	const auto &settings = AyuSettings::getInstance();
+	if (settings.disableStories) {
 		return;
 	}
 	_stories->verticalScrollEvents(
 	) | rpl::on_next([=](not_null<QWheelEvent*> e) {
 		_scroll->viewportEvent(e);
 	}, _stories->lifetime());
-
-	if (!Core::App().settings().storiesClickTooltipHidden()) {
-		// Don't create tooltip
-		// until storiesClickTooltipHidden can be returned to false.
-		const auto hideTooltip = [=] {
-			Core::App().settings().setStoriesClickTooltipHidden(true);
-			Core::App().saveSettingsDelayed();
-		};
-		InvokeQueued(_stories.get(), [=] {
-			_stories->setShowTooltip(
-				controller()->content(),
-				rpl::combine(
-					Core::App().settings().storiesClickTooltipHiddenValue(),
-					shownValue(),
-					!rpl::mappers::_1 && rpl::mappers::_2),
-				hideTooltip);
-		});
-	}
 
 	_storiesContents.fire(Stories::ContentForSession(
 		&controller()->session(),
@@ -2422,10 +2406,14 @@ void Widget::updateStoriesVisibility() {
 	if (!_stories) {
 		return;
 	}
-	const auto widthAnimation = !_widthAnimationCache.isNull();
-	const auto suggestionsAnimation = widthAnimation
-		&& (!_suggestions || !_hidingSuggestions.empty());
-	const auto hiddenInstant = _showAnimation
+
+	const auto &settings = AyuSettings::getInstance();
+	if (settings.disableStories) {
+		_stories->setVisible(false);
+		return;
+	}
+
+	const auto hidden = (_showAnimation != nullptr)
 		|| _openedForum
 		|| (widthAnimation && !suggestionsAnimation)
 		|| _childList

@@ -43,6 +43,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QBuffer>
 #include <QtGui/QImageWriter>
 
+// AyuGram includes
+#include "ayu/utils/telegram_helpers.h"
+
+
 namespace {
 
 constexpr auto kThumbnailQuality = 95;
@@ -142,9 +146,10 @@ struct PreparedFileThumbnail {
 		uint64 randomId) {
 	auto caption = item->originalText();
 	TextUtilities::Trim(caption);
+	const auto captionNormalized = reverseLocalPremiumEmoji(caption, item->history());
 	auto sentEntities = Api::EntitiesToMTP(
 		&item->history()->session(),
-		caption.entities,
+		captionNormalized.entities,
 		Api::ConvertOption::SkipLocal);
 	const auto flags = !sentEntities.v.isEmpty()
 		? MTPDinputSingleMedia::Flag::f_entities

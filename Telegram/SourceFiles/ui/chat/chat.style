@@ -215,8 +215,8 @@ maxMediaSize: 430px;
 maxStickerSize: 256px;
 maxAnimatedEmojiSize: 112px;
 maxGifSize: 320px;
-maxVideoMessageSize: 320px;
-maxSignatureSize: 262px;
+maxVideoMessageSize: 360px;
+maxSignatureSize: 144px;
 maxWallPaperWidth: 160px;
 maxWallPaperHeight: 240px;
 historyThemeSize: size(272px, 176px);
@@ -416,7 +416,7 @@ botKbTinyButton: BotKeyboardButton {
 botKbScroll: defaultSolidScroll;
 
 historyScrollDateHideTimeout: 1000;
-historyDateFadeDuration: 180;
+historyDateFadeDuration: 200;
 historyDiceToast: Toast(defaultToast) {
 	minWidth: msgMinWidth;
 	maxWidth: 640px;
@@ -459,7 +459,7 @@ historyStatusFgActive: windowActiveTextFg;
 historyStatusFgTyping: historyStatusFgActive;
 
 historyUnreadBarHeight: 32px;
-historyUnreadBarMargin: 8px;
+historyUnreadBarMargin: 3px;
 historyUnreadBarFont: semiboldFont;
 
 historyForwardChooseMargins: margins(30px, 10px, 30px, 10px);
@@ -549,7 +549,7 @@ attachPreviewCaptionRepaintMargin: margins(0px, 2px, 0px, 2px);
 msgFileMinWidth: 268px;
 msgFileTopMinus: 6px;
 
-msgFileOverDuration: 180;
+msgFileOverDuration: 200;
 msgFileRadialLine: 3px;
 
 msgWaveformBar: 2px;
@@ -613,18 +613,12 @@ historyAdminLogCancelSearch: CrossButton {
 	crossFgOver: menuIconFgOver;
 	crossPosition: point(6px, 11px);
 
-	duration: 135;
+	duration: 150;
 	loadingPeriod: 1000;
 	ripple: defaultRippleAnimationBgOver;
 }
 historyAdminLogSearchTop: 11px;
 historyAdminLogSearchSlideDuration: 150;
-historyAdminLogTopBarLeft: 17px;
-historyAdminLogTopBarUserpicSkip: 35px;
-historyAdminLogWhatIsThis: IconButton(historyAttach) {
-	icon: icon {{ "menu/faq", windowActiveTextFg }};
-	iconOver: icon {{ "menu/faq", windowActiveTextFg }};
-}
 
 historyFastShareSize: topPeersSelectorUserpicSize;
 historyFastShareLeft: 13px;

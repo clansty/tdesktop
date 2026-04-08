@@ -64,9 +64,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 // AyuGram includes
 #include "ayu/ayu_settings.h"
-#include "ayu/ayu_state.h"
-#include "ayu/features/messageshot/message_shot.h"
+#include "ayu/features/message_shot/message_shot.h"
 #include "ayu/utils/telegram_helpers.h"
+#include "styles/style_ayu_styles.h"
+
 
 namespace HistoryView {
 namespace {
@@ -703,8 +704,10 @@ QString DateTooltipText(not_null<Element*> view) {
 	if (const auto stars = item->out() ? item->starsPaid() : 0) {
 		dateText += '\n' + tr::lng_you_paid_stars(tr::now, lt_count, stars);
 	}
-	if (const auto msgId = view->data()->fullId().msg) {
-		dateText += '\n' + tr::lng_message_id(tr::now) + QString::number(msgId.bare);
+	if (!item->isLocal()) {
+		dateText += '\n';
+		dateText += "ID: ";
+		dateText += QString::number(item->id.bare);
 	}
 	return dateText;
 }
@@ -728,12 +731,15 @@ void UnreadBar::paint(
 		int y,
 		int w,
 		ElementChatMode mode) const {
+	if (AyuFeatures::MessageShot::isTakingShot()) {
+		return;
+	}
 	const auto previousTranslation = p.transform().dx();
 	if (previousTranslation != 0) {
 		p.translate(-previousTranslation, 0);
 	}
 	const auto st = context.st;
-	const auto bottom = y + height();
+	/*const auto bottom = y + height();
 	y += marginTop();
 	p.fillRect(
 		0,
@@ -746,7 +752,7 @@ void UnreadBar::paint(
 		bottom - st::lineWidth,
 		w,
 		st::lineWidth,
-		st->historyUnreadBarBorder());
+		st->historyUnreadBarBorder());*/
 	p.setFont(st::historyUnreadBarFont);
 	p.setPen(st->historyUnreadBarFg());
 
@@ -760,13 +766,31 @@ void UnreadBar::paint(
 	}
 	w = maxwidth;
 
-	const auto skip = st::historyUnreadBarHeight
-		- 2 * st::lineWidth
-		- st::historyUnreadBarFont->height;
-	p.drawText(
-		(w - width) / 2,
-		y + (skip / 2) + st::historyUnreadBarFont->ascent,
-		text);
+	{
+		auto hq = PainterHighQualityEnabler(p);
+
+		// `width` - width of the text
+		const auto pillWidth = width + 2 * st::unreadPillPadding;
+		const auto pillHeight = height() - marginTop();
+		const auto pillX = (w - pillWidth) / 2;
+		const auto pillY = y + marginTop();
+
+		QPainterPath path;
+		path.addRoundedRect(pillX,
+							pillY,
+							pillWidth,
+							pillHeight,
+							static_cast<double>(pillHeight) / 2,
+							static_cast<double>(pillHeight) / 2);
+		p.fillPath(path, st->historyUnreadBarBg());
+
+		const auto textY = pillY
+			+ (pillHeight - st::historyUnreadBarFont->height) / 2
+			+ st::historyUnreadBarFont->ascent;
+
+		p.drawText((w - width) / 2, textY, text);
+	}
+
 	if (previousTranslation != 0) {
 		p.translate(previousTranslation, 0);
 	}
@@ -2071,7 +2095,7 @@ void Element::destroyUnreadBar() {
 }
 
 int Element::displayedDateHeight() const {
-	if (AyuFeatures::MessageShot::isTakingShot()) {
+	if (AyuFeatures::MessageShot::isTakingShot() || isMessageHidden(data())) {
 		return 0;
 	}
 
@@ -2645,10 +2669,10 @@ Element *Element::previousInBlocks() const {
 
 Element *Element::previousDisplayedInBlocks() const {
 	auto result = previousInBlocks();
-	while (result && (result->data()->isEmpty() || result->isHidden())) {
+	while (result && ((result->data()->isEmpty() || result->isHidden()) && !isMessageHidden(data()))) {
 		result = result->previousInBlocks();
 	}
-	return result;
+	return result == this ? nullptr : result;
 }
 
 Element *Element::nextInBlocks() const {
@@ -2666,10 +2690,10 @@ Element *Element::nextInBlocks() const {
 
 Element *Element::nextDisplayedInBlocks() const {
 	auto result = nextInBlocks();
-	while (result && (result->data()->isEmpty() || result->isHidden())) {
+	while (result && ((result->data()->isEmpty() || result->isHidden()) && !isMessageHidden(data()))) {
 		result = result->nextInBlocks();
 	}
-	return result;
+	return result == this ? nullptr : result;
 }
 
 void Element::drawInfo(

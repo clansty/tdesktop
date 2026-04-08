@@ -38,6 +38,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <IOKit/IOKitLib.h>
 #include <IOKit/hidsystem/ev_keymap.h>
 
+// AyuGram includes
+#include "ayu/ayu_settings.h"
+
 using Platform::Q2NSString;
 using Platform::NS2QString;
 
@@ -188,13 +191,26 @@ ApplicationDelegate *_sharedDelegate = nil;
 namespace Platform {
 
 void SetApplicationIcon(const QIcon &icon) {
-	NSImage *image = nil;
-	if (!icon.isNull()) {
-		auto pixmap = icon.pixmap(1024, 1024);
-		pixmap.setDevicePixelRatio(style::DevicePixelRatio());
-		image = Q2NSImage(pixmap.toImage());
-	}
-	[[NSApplication sharedApplication] setApplicationIconImage:image];
+	const auto &settings = AyuSettings::getInstance();
+    if (settings.appIcon.isEmpty()) {
+        return;
+    }
+
+	const auto name = QString("AppIcon-") + settings.appIcon[0].toUpper() + settings.appIcon.mid(1);
+    @autoreleasepool {
+        if (name == QString("AppIcon-Default")) {
+            NSApplication.sharedApplication.applicationIconImage = nil;
+            return;
+        }
+        
+        // NSString *iconPath = [NSBundle.mainBundle pathForResource:Q2NSString(name) ofType:@"icns"];
+        // NSImage *icon = [[NSImage alloc] initWithContentsOfFile:iconPath];
+		NSImage *icon = [NSBundle.mainBundle imageForResource:Q2NSString(name)];
+
+        if (icon) {
+            NSApplication.sharedApplication.applicationIconImage = icon;
+        }
+    }
 }
 
 } // namespace Platform

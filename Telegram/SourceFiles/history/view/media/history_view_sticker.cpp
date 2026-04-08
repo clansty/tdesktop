@@ -358,7 +358,14 @@ void Sticker::paintAnimationFrame(
 	const auto &image = _lastFrameCached.isNull()
 		? frame.image
 		: _lastFrameCached;
-	const auto prepared = (!_lastFrameCached.isNull() && context.selected())
+
+	const auto rounding = Ui::BubbleRounding{
+		.topLeft = Ui::BubbleCornerRounding::Small,
+		.topRight = Ui::BubbleCornerRounding::Small,
+		.bottomLeft = Ui::BubbleCornerRounding::Small,
+		.bottomRight = Ui::BubbleCornerRounding::Small,
+	};
+	auto prepared = (!_lastFrameCached.isNull() && context.selected())
 		? Images::Colored(
 			base::duplicate(image),
 			context.st->msgStickerOverlay()->c)
@@ -485,7 +492,7 @@ QPixmap Sticker::paintedPixmap(const PaintContext &context) const {
 		? nullptr
 		: _dataMedia->getStickerLarge();
 	if (image) {
-		return image->pix(useSize, { .colored = colored });
+		return image->pix(useSize, { .colored = colored, .options = roundOptions });
 	//
 	// Inline thumbnails can't have alpha channel.
 	//

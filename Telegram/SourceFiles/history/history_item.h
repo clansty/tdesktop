@@ -210,6 +210,8 @@ public:
 	void setRealShortcutId(BusinessShortcutId id);
 	void setCustomServiceLink(ClickHandlerPtr link);
 
+	[[nodiscard]] bool isAyuNoForwards() const;
+
 	void addLogEntryOriginal(
 		WebPageId localId,
 		const QString &label,
@@ -436,6 +438,9 @@ public:
 		MsgId replyToTop,
 		bool isForumPost);
 	void setPostAuthor(const QString &author);
+	void setDeleted();
+	bool isDeleted() const;
+	void applyTTL(TimeId destroyAt);
 	void setAyuHint(const QString &hint);
 	void setRealId(MsgId newId);
 	void incrementReplyToTopCounter();
@@ -606,6 +611,10 @@ public:
 		return _ttlDestroyAt;
 	}
 
+	[[nodiscard]] int unsupportedTTL() const {
+		return _unsupportedTTL;
+	}
+
 	[[nodiscard]] int boostsApplied() const {
 		return _boostsApplied;
 	}
@@ -705,8 +714,6 @@ private:
 	void applyTTL(const MTPDmessage &data);
 	void applyTTL(const MTPDmessageService &data);
 
-	void applyTTL(TimeId destroyAt);
-
 	// For an invoice button we replace the button text with a "Receipt" key.
 	// It should show the receipt for the payed invoice. Still let mobile apps do that.
 	void replaceBuyWithReceiptInMarkup();
@@ -749,6 +756,9 @@ private:
 	crl::time _reactionsLastRefreshed = 0;
 	TextWithEntities _blockMsg;
 	TextWithEntities _originalMsg;
+
+	bool _deleted = false;
+	int _unsupportedTTL = 0;
 
 	TimeId _date = 0;
 	TimeId _ttlDestroyAt = 0;

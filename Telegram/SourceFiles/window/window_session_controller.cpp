@@ -2032,7 +2032,9 @@ void SessionController::activateFirstChatsFilter() {
 		return;
 	}
 	_filtersActivated = true;
-	if (!GetEnhancedBool("hide_all_chats")) {
+
+	const auto &settings = AyuSettings::getInstance();
+	if (!settings.hideAllChatsFolder) {
 		setActiveChatsFilter(session().data().chatsFilters().defaultId());
 	}
 }

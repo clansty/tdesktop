@@ -609,8 +609,8 @@ bool UserData::isFake() const {
 
 bool UserData::isPremium() const {
 	if (id) {
-		auto settings = &AyuSettings::getInstance();
-		if (settings->localPremium) {
+		const auto &settings = AyuSettings::getInstance();
+		if (settings.localPremium) {
 			if (getSession(id.value)) {
 				return true;
 			}

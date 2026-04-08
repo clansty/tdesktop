@@ -66,6 +66,7 @@ ComposeIcons {
 	menuGifAdd: icon;
 	menuGifRemove: icon;
 	menuMute: icon;
+	menuUnmute: icon;
 	menuSchedule: icon;
 	menuWhenOnline: icon;
 	menuSpoiler: icon;
@@ -422,7 +423,7 @@ stickersScroll: ScrollArea(boxScroll) {
 	deltab: 9px;
 }
 stickersRowDisabledOpacity: 0.4;
-stickersRowDuration: 180;
+stickersRowDuration: 200;
 
 emojiStatusDefault: icon {{ "emoji/stickers_premium", emojiIconFg }};
 
@@ -442,10 +443,10 @@ emojiPanWidth: 345px;
 emojiPanMinHeight: 278px;
 emojiPanMaxHeight: 640px;
 emojiPanHeightRatio: 0.75;
-emojiPanShowDuration: 180;
-emojiPanDuration: 180;
+emojiPanShowDuration: 200;
+emojiPanDuration: 200;
 emojiPanHover: windowBgOver;
-emojiPanSlideDuration: 180;
+emojiPanSlideDuration: 200;
 emojiPanArea: size(34px, 32px);
 emojiPanRadius: 8px;
 emojiPanReactionsPreviewPadding: margins(10px, 20px, 10px, 20px);
@@ -466,7 +467,7 @@ defaultTabbedSearchCancel: CrossButton {
 	crossFgOver: menuIconFg;
 	crossPosition: point(1px, 3px);
 
-	duration: 135;
+	duration: 150;
 	loadingPeriod: 1000;
 	ripple: emptyRippleAnimation;
 }
@@ -552,7 +553,7 @@ stickerPanRemoveSet: IconButton(hashtagClose) {
 	rippleAreaPosition: point(0px, 0px);
 }
 stickerIconMove: 400;
-stickerPreviewDuration: 135;
+stickerPreviewDuration: 150;
 stickerPreviewMin: 0.1;
 mediaPreviewPhotoSkip: 48px;
 
@@ -652,6 +653,7 @@ defaultComposeIcons: ComposeIcons {
 	menuGifAdd: menuIconGif;
 	menuGifRemove: menuIconDelete;
 	menuMute: menuIconMute;
+	menuUnmute: menuIconUnmute;
 	menuSchedule: menuIconSchedule;
 	menuWhenOnline: menuIconWhenOnline;
 	menuSpoiler: menuIconSpoiler;
@@ -902,7 +904,7 @@ defaultMessageBar: MessageBar {
 	text: defaultTextStyle;
 	textFg: historyComposeAreaFg;
 	textPalette: historyComposeAreaPalette;
-	duration: 150;
+	duration: 160;
 }
 
 historyComposeButton: FlatButton {

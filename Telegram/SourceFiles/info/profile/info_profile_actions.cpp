@@ -111,6 +111,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ayu/ayu_settings.h"
 #include "ayu/ui/utils/ayu_profile_values.h"
 #include "ayu/utils/telegram_helpers.h"
+#include "base/event_filter.h"
+#include "styles/style_ayu_styles.h"
+#include "ui/widgets/tooltip.h"
 #include "ui/text/text_entity.h"
 
 
@@ -196,17 +199,16 @@ base::options::toggle ShowChannelJoinedBelowAbout({
 					.sessionWindow = weak,
 				}));
 			return;
-		} else if (peer->isForum()) {
-			QGuiApplication::clipboard()->setText(link);
-			Ui::Toast::Show(tr::lng_username_copied(tr::now));
-		} else if (!link.isEmpty()) {
-			const auto last = link.lastIndexOf('/');
-			const auto mention = '@' + link.mid(last + 1);
-			QGuiApplication::clipboard()->setText(mention);
-			Ui::Toast::Show(tr::lng_username_copied(tr::now));
-		} else {
-			QGuiApplication::clipboard()->setText("@"+peer->username());
-			Ui::Toast::Show(tr::lng_username_copied(tr::now));
+		} else if (!link.startsWith(u"https://"_q)) {
+			link = peer->session().createInternalLinkFull(peer->username())
+				+ addToLink;
+		}
+		if (!link.isEmpty()) {
+			TextUtilities::SetClipboardText({ link });
+			if (const auto strong = weak.get()) {
+				strong->showToast(
+					tr::lng_channel_public_link_copied(tr::now));
+			}
 		}
 	};
 }
@@ -675,6 +677,7 @@ base::options::toggle ShowChannelJoinedBelowAbout({
 		object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
 			inner,
 			object_ptr<Ui::VerticalLayout>(inner)));
+	other->ease = anim::easeOutCubic;
 	other->toggleOn(state->expanded.value(), anim::type::normal);
 	constexpr auto kSlideDuration = float64(st::slideWrapDuration);
 	other->setDuration(kSlideDuration);
@@ -690,7 +693,7 @@ base::options::toggle ShowChannelJoinedBelowAbout({
 		timingArrow->paintRequest() | rpl::on_next([=] {
 			auto p = QPainter(timingArrow);
 			const auto progress = other->animating()
-				? (crl::now() - arrowAnimation->started()) / kSlideDuration
+				? anim::easeOutCubic(1., (crl::now() - arrowAnimation->started()) / kSlideDuration)
 				: 1.;
 
 			const auto path = Ui::ToggleUpDownArrowPath(
@@ -1422,7 +1425,87 @@ bool SetClickContext(
 	return false;
 }
 
+void AddRegistrationOrCreationButton(const not_null<Window::SessionController*> controller,
+									 not_null<PeerData*> peer,
+									 TextWithLabel &idInfo,
+									 const auto fitLabelToButton) {
+	if (peer->isBot() || peer->isServiceUser()) {
+		return;
+	}
+
+	const auto registrationDateButton = Ui::CreateChild<Ui::IconButton>(
+		idInfo.text->parentWidget(),
+		st::infoProfileLabeledButtonRegistrationDate);
+	const auto rightSkip = st::infoProfileLabeledButtonQrRightSkip;
+	fitLabelToButton(registrationDateButton, idInfo.text, rightSkip);
+	fitLabelToButton(registrationDateButton, idInfo.subtext, rightSkip);
+	registrationDateButton->setClickedCallback([=, show = controller->uiShow()]
+	{
+		const auto weak = QPointer<Ui::IconButton>(registrationDateButton);
+		getRegistrationDate(
+			peer,
+			[=](const TextWithEntities &result)
+			{
+				if (result.empty() || !weak) {
+					return;
+				}
+				const auto parent = weak->window();
+				const auto tooltip = Ui::CreateChild<Ui::ImportantTooltip>(
+					parent,
+					Ui::MakeNiceTooltipLabel(
+						parent,
+						rpl::single(result),
+						st::boxWideWidth,
+						st::registrationDateImportantTooltipLabel),
+					st::defaultImportantTooltip);
+				tooltip->toggleFast(false);
+
+				const auto geometry = Ui::MapFrom(
+					parent,
+					weak.data(),
+					weak->rect());
+				const auto countPosition = [=](QSize size)
+				{
+					const auto left = geometry.x()
+						+ (geometry.width() - size.width()) / 2;
+					const auto right = parent->width()
+						- st::normalFont->spacew;
+					return QPoint(
+						std::max(std::min(left, right - size.width()), 0),
+						geometry.y() - size.height() - st::normalFont->descent);
+				};
+				tooltip->pointAt(geometry, RectPart::Top, countPosition);
+
+				const auto weakTooltip = QPointer(tooltip);
+				tooltip->setHiddenCallback([weakTooltip]
+				{
+					if (weakTooltip) {
+						weakTooltip->deleteLater();
+					}
+				});
+
+				base::install_event_filter(
+					tooltip,
+					qApp,
+					[weakTooltip](not_null<QEvent*> e)
+					{
+						if (e->type() == QEvent::MouseButtonPress) {
+							if (weakTooltip) {
+								weakTooltip->toggleAnimated(false);
+							}
+						}
+						return base::EventFilterResult::Continue;
+					});
+
+				tooltip->toggleAnimated(true);
+			});
+		return false;
+	});
+}
+
 object_ptr<Ui::RpWidget> DetailsFiller::setupInfo() {
+	const auto &settings = AyuSettings::getInstance();
+
 	auto wrap = object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
 		_wrap,
 		object_ptr<Ui::VerticalLayout>(_wrap));
@@ -1752,6 +1835,34 @@ object_ptr<Ui::RpWidget> DetailsFiller::setupInfo() {
 				QString()
 			).text->setLinksTrusted();
 		}
+
+		if (settings.showPeerId != 0) {
+			const auto dataCenter = getPeerDC(_peer);
+			const auto idLabel = dataCenter.isEmpty() ? QString("ID") : dataCenter;
+
+			auto idDrawableText = IDValue(
+				user
+			) | rpl::map([](TextWithEntities &&text)
+			{
+				return Ui::Text::Code(text.text);
+			});
+			auto idInfo = addInfoOneLine(
+				rpl::single(idLabel),
+				std::move(idDrawableText),
+				tr::ayu_ContextCopyID(tr::now)
+			);
+
+			idInfo.text->setClickHandlerFilter([=](auto &&...)
+			{
+				const auto idText = IDString(user);
+				if (!idText.isEmpty()) {
+					QGuiApplication::clipboard()->setText(idText);
+					controller->showToast(tr::ayu_IDCopiedToast(tr::now));
+				}
+				return false;
+			});
+			AddRegistrationOrCreationButton(controller, _peer, idInfo, fitLabelToButton);
+		}
 	} else {
 		const auto topicRootId = _topic ? _topic->rootId() : 0;
 		const auto addToLink = topicRootId
@@ -1869,7 +1980,7 @@ object_ptr<Ui::RpWidget> DetailsFiller::setupInfo() {
 			addTranslateToMenu(about.text, AboutWithAdvancedValue(_peer));
 		}
 
-		if (settings->showPeerId != 0 && !_topic) {
+		if (settings.showPeerId != 0 && !_topic) {
 			const auto dataCenter = getPeerDC(_peer);
 			const auto idLabel = dataCenter.isEmpty() ? QString("ID") : dataCenter;
 
@@ -1890,14 +2001,14 @@ object_ptr<Ui::RpWidget> DetailsFiller::setupInfo() {
 				const auto idText = IDString(peer);
 				if (!idText.isEmpty()) {
 					QGuiApplication::clipboard()->setText(idText);
-					const auto msg = tr::ayu_IDCopiedToast(tr::now);
-					controller->showToast(msg);
+					controller->showToast(tr::ayu_IDCopiedToast(tr::now));
 				}
 				return false;
 			});
+			AddRegistrationOrCreationButton(controller, _peer, idInfo, fitLabelToButton);
 		}
 
-		if (settings->showPeerId != 0 && _topic) {
+		if (settings.showPeerId != 0 && _topic) {
 			auto idDrawableText = IDValue(
 				_peer->forumTopicFor(topicRootId)->topicRootId()
 			) | rpl::map([](TextWithEntities &&text)
@@ -1912,14 +2023,14 @@ object_ptr<Ui::RpWidget> DetailsFiller::setupInfo() {
 
 			idInfo.text->setClickHandlerFilter([=, peer = _peer](auto &&...)
 			{
-				const auto idText = IDString(peer);
+				const auto idText = IDString(peer->forumTopicFor(topicRootId)->topicRootId());
 				if (!idText.isEmpty()) {
 					QGuiApplication::clipboard()->setText(idText);
-					const auto msg = tr::ayu_IDCopiedToast(tr::now);
-					controller->showToast(msg);
+					controller->showToast(tr::ayu_IDCopiedToast(tr::now));
 				}
 				return false;
 			});
+			AddRegistrationOrCreationButton(controller, _peer, idInfo, fitLabelToButton);
 		}
 	}
 	wrap->toggleOn(tracker.atLeastOneShownValue());

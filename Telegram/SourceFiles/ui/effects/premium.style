@@ -133,7 +133,7 @@ premiumPreviewButtonLabel: FlatLabel(defaultFlatLabel) {
 	textFg: premiumButtonFg;
 	style: semiboldTextStyle;
 }
-premiumSlideDuration: 180;
+premiumSlideDuration: 200;
 premiumVideoStarSize: size(77px, 73px);
 
 premiumPreviewHeight: 312px;

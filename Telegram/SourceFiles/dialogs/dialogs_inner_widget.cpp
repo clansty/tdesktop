@@ -92,6 +92,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtWidgets/QApplication>
 #include <QtCore/QMimeData>
 
+// AyuGram includes
+#include "styles/style_ayu_icons.h"
+
+
 namespace Dialogs {
 namespace {
 
@@ -1594,6 +1598,14 @@ void InnerWidget::paintPeerSearchResult(
 			: context.selected
 			? &st::dialogsVerifiedIconOver
 			: &st::dialogsVerifiedIcon),
+		.exteraOfficial = &ThreeStateIcon(
+			st::dialogsExteraOfficialIcon,
+			context.active,
+			context.selected),
+		.exteraSupporter = &ThreeStateIcon(
+			st::dialogsExteraSupporterIcon,
+			context.active,
+			context.selected),
 		.premium = &ThreeStateIcon(
 			st::dialogsPremiumIcon,
 			context.active,

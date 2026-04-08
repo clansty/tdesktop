@@ -735,12 +735,12 @@ void start() {
 				+ cExeName();
 		}
 
-		//if (!Core::UpdaterDisabled()) {
-		//	return u"org.telegram.desktop._%1"_q.arg(
-		//		Core::Launcher::Instance().instanceHash().constData());
-		//}
+		if (!Core::UpdaterDisabled()) {
+			return u"com.ayugram.desktop._%1"_q.arg(
+				Core::Launcher::Instance().instanceHash().constData());
+		}
 
-		return u"0wgram"_q;
+		return u"com.ayugram.desktop"_q;
 	}());
 
 	LOG(("App ID: %1").arg(QGuiApplication::desktopFileName()));

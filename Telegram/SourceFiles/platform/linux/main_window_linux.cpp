@@ -430,7 +430,7 @@ void MainWindow::createGlobalMenu() {
 			u"0wGram"_q),
 		[=] {
 			ensureWindowShown();
-			controller().show(Box(AboutBox));
+			controller().show(Box(AboutBox, sessionController()));
 		});
 
 	about->setMenuRole(QAction::AboutQtRole);

@@ -96,6 +96,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ayu/ayu_settings.h"
 #include "ayu/ayu_worker.h"
 #include "ayu/utils/telegram_helpers.h"
+#include "ayu/features/forward/ayu_forward.h"
 
 
 namespace {
@@ -466,7 +467,8 @@ void ApiWrap::toggleHistoryArchived(
 		if (archived) {
 			history->setFolder(_session->data().folder(archiveId));
 		} else {
-			if (GetEnhancedBool("hide_all_chats")) {
+			const auto &settings = AyuSettings::getInstance();
+			if (settings.hideAllChatsFolder) {
 				if (const auto window = Core::App().activeWindow()) {
 					if (const auto controller = window->sessionController()) {
 						const auto filters = &_session->data().chatsFilters();
@@ -1381,7 +1383,7 @@ void ApiWrap::migrateFail(not_null<PeerData*> peer, const QString &error) {
 
 void ApiWrap::markContentsRead(
 		const base::flat_set<not_null<HistoryItem*>> &items) {
-	const auto settings = &AyuSettings::getInstance();
+	const auto &settings = AyuSettings::getInstance();
 
 	auto markedIds = QVector<MTPint>();
 	auto channelMarkedIds = base::flat_map<
@@ -1395,7 +1397,7 @@ void ApiWrap::markContentsRead(
 			continue;
 		}
 
-		if (!settings->sendReadMessages && !passthrough) {
+		if (!settings.sendReadMessages && !passthrough) {
 			continue;
 		}
 
@@ -1427,8 +1429,8 @@ void ApiWrap::markContentsRead(not_null<HistoryItem*> item) {
 		return;
 	}
 
-	const auto settings = &AyuSettings::getInstance();
-	if (!settings->sendReadMessages && !passthrough) {
+	const auto &settings = AyuSettings::getInstance();
+	if (!settings.sendReadMessages && !passthrough) {
 		return;
 	}
 
@@ -1860,7 +1862,11 @@ void ApiWrap::joinChannel(not_null<ChannelData*> channel) {
 
 		using Flag = ChannelDataFlag;
 		chatParticipants().loadSimilarPeers(channel);
-		channel->setFlags(channel->flags() | Flag::SimilarExpanded);
+
+		const auto &settings = AyuSettings::getInstance();
+		if (!settings.collapseSimilarChannels) {
+			channel->setFlags(channel->flags() | Flag::SimilarExpanded);
+		}
 	}
 }
 
@@ -3496,6 +3502,22 @@ void ApiWrap::forwardMessages(
 		FnMut<void()> &&successCallback) {
 	Expects(!draft.items.empty());
 
+	const auto fullAyuForward = AyuForward::isFullAyuForwardNeeded(draft.items.front());
+	if (fullAyuForward) {
+		crl::async([=] {
+			AyuForward::forwardMessages(_session, action, false, draft);
+		});
+		return;
+	}
+
+	const auto ayuIntelligentForwardNeeded = AyuForward::isAyuForwardNeeded(draft.items);
+	if (ayuIntelligentForwardNeeded) {
+		crl::async([=] {
+			AyuForward::intelligentForward(_session, action, draft);
+		});
+		return;
+	}
+
 	auto &histories = _session->data().histories();
 
 	for (auto i = begin(draft.items); i != end(draft.items);) {
@@ -3659,7 +3681,15 @@ void ApiWrap::forwardMessages(
 				if (shared && !--shared->requestsLeft) {
 					shared->callback();
 				}
-				if (peer->isSelf() && _session->premium()) {
+
+				const auto &settings = AyuSettings::getInstance();
+				if (!settings.sendReadMessages && settings.markReadAfterAction && history->lastMessage())
+				{
+					readHistory(history->lastMessage());
+				}
+
+				finish();
+				if (peer->isSelf() && session().premium()) {
 					ProcessRecentSelfForwards(
 						_session,
 						result,
@@ -3992,9 +4022,7 @@ void ApiWrap::sendUploadedPhoto(
 		Api::RemoteFileInfo info,
 		Api::SendOptions options) {
 	if (const auto item = _session->data().message(localId)) {
-		// AyuGram useScheduledMessages
-		const auto settings = &AyuSettings::getInstance();
-		if (settings->useScheduledMessages && !options.scheduled) {
+		if (AyuSettings::isUseScheduledMessages() && !options.scheduled) {
 			auto current = base::unixtime::now();
 			options.scheduled = current + 12;
 		}
@@ -4017,9 +4045,7 @@ void ApiWrap::sendUploadedDocument(
 			return;
 		}
 
-		// AyuGram useScheduledMessages
-		const auto settings = &AyuSettings::getInstance();
-		if (settings->useScheduledMessages && !options.scheduled) {
+		if (AyuSettings::isUseScheduledMessages() && !options.scheduled) {
 			auto current = base::unixtime::now();
 			options.scheduled = current + 12;
 		}
@@ -4083,8 +4109,12 @@ void ApiWrap::sendMessage(
 		? replyTo->topicRootId()
 		: Data::ForumTopic::kGeneralId;
 	const auto topic = peer->forumTopicFor(topicRootId);
-	if (!(topic ? Data::CanSendTexts(topic) : Data::CanSendTexts(peer))
-		|| Api::SendDice(message)) {
+
+	const bool canSendTexts = topic
+		? Data::CanSendTexts(topic)
+		: Data::CanSendTexts(peer);
+
+	if ((!canSendTexts && !AyuForward::isForwarding(peer->id)) || Api::SendDice(message)) {
 		return;
 	}
 	local().saveRecentSentHashtags(textWithTags.text);
@@ -4174,9 +4204,10 @@ void ApiWrap::sendMessage(
 			sendFlags |= MTPmessages_SendMessage::Flag::f_silent;
 			mediaFlags |= MTPmessages_SendMedia::Flag::f_silent;
 		}
+		const auto sendingNormalized = reverseLocalPremiumEmoji(sending, history);
 		const auto sentEntities = Api::EntitiesToMTP(
 			_session,
-			sending.entities,
+			sendingNormalized.entities,
 			Api::ConvertOption::SkipLocal);
 		if (!sentEntities.v.isEmpty()) {
 			sendFlags |= MTPmessages_SendMessage::Flag::f_entities;
@@ -4247,8 +4278,6 @@ void ApiWrap::sendMessage(
 					draftMonoforumPeerId,
 					Api::UnixtimeFromMsgId(response.outerMsgId));
 			}
-
-			AyuWorker::markAsOnline(_session);
 		};
 		const auto fail = [=](
 				const MTP::Error &error,
@@ -4343,6 +4372,12 @@ void ApiWrap::sendBotStart(
 		if (chat) {
 			message.textWithTags.text += '@' + bot->username();
 		}
+
+		if (AyuSettings::isUseScheduledMessages()) {
+			auto current = base::unixtime::now();
+			message.action.options.scheduled = current + 12;
+		}
+
 		sendMessage(std::move(message));
 		return;
 	}
@@ -4590,9 +4625,7 @@ void ApiWrap::sendMediaWithRandomId(
 		Api::SendOptions options,
 		uint64 randomId,
 		Fn<void(bool)> done) {
-	// AyuGram useScheduledMessages
-	const auto settings = &AyuSettings::getInstance();
-	if (settings->useScheduledMessages && !options.scheduled) {
+	if (AyuSettings::isUseScheduledMessages() && !options.scheduled) {
 		auto current = base::unixtime::now();
 		options.scheduled = current + 12;
 	}
@@ -4603,9 +4636,10 @@ void ApiWrap::sendMediaWithRandomId(
 
 	auto caption = item->originalText();
 	TextUtilities::Trim(caption);
+	const auto captionNormalized = reverseLocalPremiumEmoji(caption, history);
 	auto sentEntities = Api::EntitiesToMTP(
 		_session,
-		caption.entities,
+		captionNormalized.entities,
 		Api::ConvertOption::SkipLocal);
 
 	const auto updateRecentStickers = Api::HasAttachedStickers(media);
@@ -4667,8 +4701,6 @@ void ApiWrap::sendMediaWithRandomId(
 		if (updateRecentStickers) {
 			requestRecentStickers(std::nullopt, true);
 		}
-
-		AyuWorker::markAsOnline(_session);
 	}, [=](const MTP::Error &error, const MTP::Response &response) {
 		if (done) done(false);
 		sendMessageFail(error, peer, randomId, itemId);
@@ -4696,9 +4728,10 @@ void ApiWrap::sendMultiPaidMedia(
 
 	auto caption = item->originalText();
 	TextUtilities::Trim(caption);
+	const auto captionNormalized = reverseLocalPremiumEmoji(caption, history);
 	auto sentEntities = Api::EntitiesToMTP(
 		_session,
-		caption.entities,
+		captionNormalized.entities,
 		Api::ConvertOption::SkipLocal);
 	const auto starsPaid = std::min(
 		peer->starsPerMessageChecked(),
@@ -4839,9 +4872,7 @@ void ApiWrap::sendAlbumIfReady(not_null<SendingAlbum*> album) {
 		return;
 	}
 
-	// AyuGram useScheduledMessages
-	const auto settings = &AyuSettings::getInstance();
-	if (settings->useScheduledMessages && !album->options.scheduled) {
+	if (AyuSettings::isUseScheduledMessages() && !album->options.scheduled) {
 		auto current = base::unixtime::now();
 		album->options.scheduled = current + 12;
 	}
@@ -4892,8 +4923,6 @@ void ApiWrap::sendAlbumIfReady(not_null<SendingAlbum*> album) {
 			MTP_long(starsPaid)
 		), [=](const MTPUpdates &result, const MTP::Response &response) {
 		_sendingAlbums.remove(groupId);
-
-		AyuWorker::markAsOnline(_session);
 	}, [=](const MTP::Error &error, const MTP::Response &response) {
 		if (const auto album = _sendingAlbums.take(groupId)) {
 			for (const auto &item : (*album)->items) {

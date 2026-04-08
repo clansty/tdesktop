@@ -206,14 +206,13 @@ void SetupExperimental(
 			rpl::duplicate(reloadOptionsRequests));
 	};
 
-	addToggle(ChatHelpers::kOptionTabbedPanelShowOnClick);
+	// addToggle(ChatHelpers::kOptionTabbedPanelShowOnClick);
 	addToggle(Dialogs::kOptionForumHideChatsList);
 	addToggle(Dialogs::Ui::kOptionDialogsMuteIcon);
 	addToggle(Core::kOptionFractionalScalingEnabled);
 	addToggle(Core::kOptionHighDpiDownscale);
 	addToggle(Window::kOptionViewProfileInChatsListContextMenu);
-	addToggle(Dialogs::kOptionCtrlClickChatNewWindow);
-	addToggle(Info::Profile::kOptionShowPeerIdBelowAbout);
+	// addToggle(Info::Profile::kOptionShowPeerIdBelowAbout);
 	addToggle(Info::Profile::kOptionShowChannelJoinedBelowAbout);
 	addToggle(Ui::kOptionUseSmallMsgBubbleRadius);
 	addToggle(Ui::kOptionUncoloredQuote);

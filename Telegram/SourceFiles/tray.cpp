@@ -18,7 +18,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 // AyuGram includes
 #include "ayu/ayu_settings.h"
-#include "ayu/ui/settings/settings_ayu.h"
 #include "ayu/features/streamer_mode/streamer_mode.h"
 #include "lang_auto.h"
 
@@ -107,14 +106,14 @@ void Tray::rebuildMenu() {
 			[=] { toggleSoundNotifications(); });
 	}
 
-	auto settings = &AyuSettings::getInstance();
+	const auto &settings = AyuSettings::getInstance();
 
-	if (settings->showGhostToggleInTray) {
+	if (settings.showGhostToggleInTray) {
 		auto turnGhostModeText = _textUpdates.events(
 		) | rpl::map(
 			[=]
 			{
-				bool ghostModeEnabled = AyuSettings::get_ghostModeEnabled();
+				bool ghostModeEnabled = AyuSettings::isGhostModeActive();
 
 				return ghostModeEnabled
 						   ? tr::ayu_DisableGhostModeTray(tr::now)
@@ -124,15 +123,15 @@ void Tray::rebuildMenu() {
 			std::move(turnGhostModeText),
 			[=]
 			{
-				bool ghostMode = AyuSettings::get_ghostModeEnabled();
+				bool ghostMode = AyuSettings::isGhostModeActive();
 
-				settings->set_ghostModeEnabled(!ghostMode);
+				AyuSettings::set_ghostModeEnabled(!ghostMode);
 
 				AyuSettings::save();
 			});
 	}
 
-	if (settings->showStreamerToggleInTray) {
+	if (settings.showStreamerToggleInTray) {
 		auto turnStreamerModeText = _textUpdates.events(
 		) | rpl::map(
 			[=]

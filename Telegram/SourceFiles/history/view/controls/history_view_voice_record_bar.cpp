@@ -51,12 +51,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_layers.h"
 #include "styles/style_media_player.h"
 
+#include <tgcalls/VideoCaptureInterface.h>
+
 // AyuGram includes
 #include "ayu/ayu_settings.h"
 #include "boxes/abstract_box.h"
 
-
-#include <tgcalls/VideoCaptureInterface.h>
 
 namespace HistoryView::Controls {
 namespace {
@@ -3041,8 +3041,8 @@ void VoiceRecordBar::stopRecording(StopType type, bool ttlBeforeHide) {
 					: 0),
 			};
 
-			auto settings = &AyuSettings::getInstance();
-			if (settings->useScheduledMessages) {
+			const auto &settings = AyuSettings::getInstance();
+			if (AyuSettings::isUseScheduledMessages()) {
 				auto current = base::unixtime::now();
 				options.scheduled = current + 12 + 5;
 			}
@@ -3059,7 +3059,7 @@ void VoiceRecordBar::stopRecording(StopType type, bool ttlBeforeHide) {
 					close();
 				});
 
-			if (settings->voiceConfirmation) {
+			if (settings.voiceConfirmation) {
 				_show->showBox(Ui::MakeConfirmBox(
 					{
 						.text = tr::ayu_ConfirmationVoice(),
@@ -3132,17 +3132,37 @@ void VoiceRecordBar::requestToSendWithOptions(Api::SendOptions options) {
 		if (takeTTLState()) {
 			options.ttlSeconds = std::numeric_limits<int>::max();
 		}
-		if (_listen) {
-			_listen->prepareForSendAnimation();
-			_listen->applyTrimBeforeSend();
+
+		const auto &settings = AyuSettings::getInstance();
+		if (AyuSettings::isUseScheduledMessages()) {
+			auto current = base::unixtime::now();
+			options.scheduled = current + 12 + 5;
 		}
-		_sendVoiceRequests.fire({
-			.bytes = _data.content,
-			.waveform = _data.waveform,
-			.duration = _data.duration,
-			.options = options,
-			.video = !_data.minithumbs.isNull(),
-		});
+		auto sendVoiceCallback = crl::guard(
+			this,
+			[=, this](Fn<void()> &&close)
+			{
+				_sendVoiceRequests.fire({
+					.bytes = _data.content,
+					.waveform = _data.waveform,
+					.duration = _data.duration,
+					.options = options,
+					.video = !_data.minithumbs.isNull(),
+				});
+				close();
+			});
+
+		if (settings.voiceConfirmation) {
+			_show->showBox(Ui::MakeConfirmBox(
+				{
+					.text = tr::ayu_ConfirmationVoice(),
+					.confirmed = std::move(sendVoiceCallback),
+					.confirmText = tr::lng_send_button()
+				}));
+		} else {
+			sendVoiceCallback([]
+			{
+			});
 		}
 	}
 }

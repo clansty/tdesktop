@@ -1,4 +1,4 @@
-﻿/*
+/*
 This file is part of Telegram Desktop,
 the official desktop application for the Telegram messaging service.
 
@@ -97,6 +97,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <QtCore/QCoreApplication>
 #include <QtCore/QMimeData>
+
+// AyuGram includes
+#include "ayu/features/forward/ayu_forward.h"
+
 
 namespace {
 
@@ -580,7 +584,9 @@ bool MainWidget::setForwardDraft(
 			.forward = &items,
 			.ignoreSlowmodeCountdown = true,
 		});
-	if (error) {
+	// allow opening chat that
+	// already have some forward task
+	if (error && !AyuForward::isForwarding(history->peer->id)) {
 		Data::ShowSendErrorToast(_controller, history->peer, error);
 		return false;
 	}
@@ -829,11 +835,11 @@ void MainWidget::searchMessages(
 			const auto account = not_null(&session().account());
 			if (const auto window = Core::App().windowFor(account)) {
 				if (const auto controller = window->sessionController()) {
-					controller->widget()->activate();
 					controller->content()->searchMessages(
 						query,
 						inChat,
 						searchFrom);
+					controller->widget()->activate();
 				}
 			}
 		}

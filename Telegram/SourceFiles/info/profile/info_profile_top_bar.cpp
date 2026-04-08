@@ -108,6 +108,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtGui/QClipboard>
 #include <QtGui/QGuiApplication>
 
+// AyuGram includes
+#include "ayu/utils/telegram_helpers.h"
+
+
 namespace Info::Profile {
 namespace {
 
@@ -299,6 +303,13 @@ TopBar::TopBar(
 	VerifiedContentForPeer(_peer),
 	nullptr,
 	_gifPausedChecker))
+, _exteraBadge(std::make_unique<Badge>(
+	this,
+	st::infoPeerBadge,
+	&_peer->session(),
+	ExteraBadgeTypeFromPeer(_peer),
+	nullptr,
+	_gifPausedChecker))
 , _hasActions(descriptor.source != Source::Stories
 	&& descriptor.source != Source::Preview
 	&& (_wrap.current() != Wrap::Side || !_peer->isNotificationsUser()))
@@ -419,6 +430,17 @@ TopBar::TopBar(
 		badgeUpdates = rpl::merge(
 			std::move(badgeUpdates),
 			_botVerify->updated());
+	}
+	if (_exteraBadge) {
+		const auto isCustomBadge = isCustomBadgePeer(getBareID(_peer));
+		const auto isExtera = isExteraPeer(getBareID(_peer));
+		const auto isSupporter = isSupporterPeer(getBareID(_peer));
+		if (isExtera || isSupporter || isCustomBadge) {
+			_exteraBadge->setPremiumClickCallback(badgeClickHandler(_peer));
+		}
+		badgeUpdates = rpl::merge(
+			std::move(badgeUpdates),
+			_exteraBadge->updated());
 	}
 	_title->naturalWidthValue() | rpl::on_next([=](int w) {
 		_title->resizeToWidth(w);
@@ -600,6 +622,11 @@ void TopBar::adjustColors(const std::optional<QColor> &edgeColor) {
 	_verified->setOverrideStyle(shouldOverrideBadges
 		? _verifiedSt
 		? _verifiedSt.get()
+		: &st::infoColoredPeerBadge
+		: nullptr);
+	_exteraBadge->setOverrideStyle(shouldOverrideBadges
+		? _badgeSt
+		? _badgeSt.get()
 		: &st::infoColoredPeerBadge
 		: nullptr);
 
@@ -1586,6 +1613,7 @@ void TopBar::updateLabelsPosition() {
 	const auto verifiedWidget = _verified ? _verified->widget() : nullptr;
 	const auto badgeWidget = _badge ? _badge->widget() : nullptr;
 	const auto botVerifyWidget = _botVerify ? _botVerify->widget() : nullptr;
+	const auto exteraWidget = _exteraBadge ? _exteraBadge->widget() : nullptr;
 	auto badgesWidth = 0;
 	if (verifiedWidget) {
 		badgesWidth += verifiedWidget->width();
@@ -1598,6 +1626,9 @@ void TopBar::updateLabelsPosition() {
 	}
 	if (verifiedWidget || badgeWidget) {
 		badgesWidth += st::infoVerifiedCheckPosition.x();
+	}
+	if (exteraWidget) {
+		badgesWidth += exteraWidget->width();
 	}
 	const auto titleWidth = width()
 		- interpolatedPadding
@@ -1630,6 +1661,9 @@ void TopBar::updateLabelsPosition() {
 	if (verifiedWidget || badgeWidget) {
 		totalElementsWidth += st::infoVerifiedCheckPosition.x();
 	}
+	if (exteraWidget) {
+		totalElementsWidth += exteraWidget->width();
+	}
 	totalElementsWidth += botVerifySkip;
 
 	auto titleLeft = anim::interpolate(
@@ -1655,6 +1689,13 @@ void TopBar::updateLabelsPosition() {
 			badgeLeft + (badgeWidget ? badgeWidget->width() : 0),
 			badgeTop,
 			badgeBottom);
+	}
+	if (_exteraBadge) {
+		const auto exteraBadgeLeft = badgeLeft
+			+ (badgeWidget ? badgeWidget->width() : 0)
+			+ (badgeWidget || verifiedWidget ? st::infoVerifiedCheckPosition.x() : 0)
+			+ (verifiedWidget ? verifiedWidget->width() : 0);
+		_exteraBadge->move(exteraBadgeLeft, badgeTop, badgeBottom);
 	}
 
 	updateStatusPosition(progressCurrent);

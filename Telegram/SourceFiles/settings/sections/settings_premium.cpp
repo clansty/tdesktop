@@ -1502,9 +1502,9 @@ base::weak_qptr<Ui::RpWidget> Premium::createPinnedToTop(
 			}
 		}
 
-		auto settings = &AyuSettings::getInstance();
-		if (settings->localPremium) {
-			return tr::ayu_LocalPremiumNotice(Ui::Text::RichLangValue);
+		const auto &settings = AyuSettings::getInstance();
+		if (settings.localPremium) {
+			return tr::ayu_LocalPremiumNotice(tr::rich);
 		}
 
 		return rpl::conditional(

@@ -3,14 +3,13 @@
 // We do not and cannot prevent the use of our code,
 // but be respectful and credit the original author.
 //
-// Copyright @Radolyn, 2024
+// Copyright @Radolyn, 2025
 #pragma once
 
 #include <string>
 
 #define ID long long
 
-template<typename TableName>
 class AyuMessageBase
 {
 public:
@@ -31,12 +30,14 @@ public:
 	std::string fwdName;
 	int fwdDate;
 	std::string fwdPostAuthor;
+	std::string postAuthor;
 	int replyFlags;
 	int replyMessageId;
 	ID replyPeerId;
 	int replyTopId;
 	bool replyForumTopic;
 	std::vector<char> replySerialized;
+	std::vector<char> replyMarkupSerialized;
 	int entityCreateDate;
 	std::string text;
 	std::vector<char> textEntities;
@@ -49,9 +50,13 @@ public:
 	std::string mimeType;
 };
 
-using DeletedMessage = AyuMessageBase<struct DeletedMessageTag>;
+class DeletedMessage : public AyuMessageBase
+{
+};
 
-using EditedMessage = AyuMessageBase<struct EditedMessageTag>;
+class EditedMessage : public AyuMessageBase
+{
+};
 
 class DeletedDialog
 {
@@ -73,8 +78,30 @@ public:
 	std::vector<char> id;
 	std::string text;
 	bool enabled;
+	bool reversed;
 	bool caseInsensitive;
-	std::unique_ptr<ID> dialogId; // nullable
+	std::optional<ID> dialogId; // nullable
+
+	bool operator==(const RegexFilter &other) const {
+		return id == other.id &&
+			text == other.text &&
+			caseInsensitive == other.caseInsensitive &&
+			reversed == other.reversed &&
+			dialogId == other.dialogId &&
+			enabled == other.enabled;
+	}
+	[[nodiscard]] QJsonObject toJson() const {
+		QJsonObject json;
+		json["id"] = QString::fromUtf8(id.data());
+		json["text"] = QString::fromStdString(text);
+		json["enabled"] = enabled;
+		json["reversed"] = reversed;
+		json["caseInsensitive"] = caseInsensitive;
+		if (dialogId.has_value()) {
+			json["dialogId"] = dialogId.value();
+		}
+		return json;
+	}
 };
 
 class RegexFilterGlobalExclusion
@@ -83,6 +110,10 @@ public:
 	ID fakeId;
 	ID dialogId;
 	std::vector<char> filterId;
+
+	bool operator==(const RegexFilterGlobalExclusion& other) const {
+		return dialogId == other.dialogId && filterId == other.filterId;
+	}
 };
 
 class SpyMessageRead

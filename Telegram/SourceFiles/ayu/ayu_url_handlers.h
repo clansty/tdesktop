@@ -3,7 +3,7 @@
 // We do not and cannot prevent the use of our code,
 // but be respectful and credit the original author.
 //
-// Copyright @Radolyn, 2024
+// Copyright @Radolyn, 2025
 #pragma once
 
 #include "base/qthelp_regex.h"
@@ -18,7 +18,17 @@ bool ResolveUser(
 	const Match &match,
 	const QVariant &context);
 
+bool ResolveChat(
+	Window::SessionController *controller,
+	const Match &match,
+	const QVariant &context);
+
 bool HandleAyu(
+	Window::SessionController *controller,
+	const Match &match,
+	const QVariant &context);
+
+bool HandleSupport(
 	Window::SessionController *controller,
 	const Match &match,
 	const QVariant &context);

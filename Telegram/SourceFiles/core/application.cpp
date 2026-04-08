@@ -99,10 +99,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtGui/QScreen>
 #include <QtGui/QWindow>
 
+#include <ksandbox.h>
+
 // AyuGram includes
+#include "ayu/ayu_infra.h"
 #include "ayu/features/streamer_mode/streamer_mode.h"
 
-#include <ksandbox.h>
 
 namespace Core {
 namespace {
@@ -294,6 +296,7 @@ void Application::run() {
 	_translator = std::make_unique<Lang::Translator>();
 	QCoreApplication::instance()->installTranslator(_translator.get());
 
+	AyuInfra::init();
 	style::StartManager(cScale());
 	Ui::Accessible::Init();
 	Ui::InitTextOptions();
@@ -1177,8 +1180,7 @@ bool Application::openInternalUrl(const QString &url, QVariant context) {
 }
 
 QString Application::changelogLink() const {
-	const auto base = u"https://github.com/Clansty/tdesktop"_q;
-	return base;
+	return u"https://github.com/AyuGram/AyuGramDesktop/releases"_q;
 }
 
 bool Application::openCustomUrl(

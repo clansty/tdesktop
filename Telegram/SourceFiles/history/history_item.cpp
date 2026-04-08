@@ -76,8 +76,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 // AyuGram includes
 #include "ayu/ayu_settings.h"
 #include "ayu/ayu_state.h"
-#include "ayu/features/messageshot/message_shot.h"
+#include "ayu/features/message_shot/message_shot.h"
 #include "ayu/utils/telegram_helpers.h"
+#include "ui/emoji_config.h"
 
 
 namespace {
@@ -279,7 +280,7 @@ std::unique_ptr<Data::Media> HistoryItem::CreateMedia(
 		});
 	}, [&](const MTPDmessageMediaPhoto &media) -> Result {
 		const auto photo = media.vphoto();
-		if (media.vttl_seconds() && false) {  // AyuGram: show expiring messages
+		if (false) {  // AyuGram: show expiring messages
 			LOG(("App Error: "
 				"Unexpected MTPMessageMediaPhoto "
 				"with ttl_seconds in CreateMedia."));
@@ -463,58 +464,66 @@ HistoryItem::HistoryItem(
 		setReactions(data.vreactions());
 		applyTTL(data);
 	} else {
-		auto peerId = data.vfrom_id() ? peerFromMTP(*data.vfrom_id()) : PeerId(0);
-		auto user = history->session().data().peerLoaded(peerId);
-		auto isBlocked = false;
-
-		if ((GetEnhancedBool("blocked_user_spoiler_mode") && blockExist(peerId.value)) ||
-			(GetEnhancedBool("blocked_user_spoiler_mode") && user && user->isBlocked() ||
-			GetEnhancedBool("blocked_hana_spoiler_mode") && peerId.value == 2084559014)) {
-			isBlocked = true;
-		}
-
-		if (const auto media = data.vmedia()) {
+		auto skipSetText = false;
+		createComponents(data);
+		if (media) {
 			setMedia(*media);
+			if (checked == MediaCheckResult::HasUnsupportedTimeToLive) {
+				media->match(
+					[&](const MTPDmessageMediaPhoto &media)
+					{
+						if (!data.is_media_unread()) {
+							createServiceFromMtp(data);
+							skipSetText = true;
+						}
+
+						const auto time = media.vttl_seconds()->v;
+						setAyuHint(formatTTL(time));
+						_unsupportedTTL = time;
+					},
+					[&](const MTPDmessageMediaDocument &media)
+					{
+						if (!data.is_media_unread()) {
+							createServiceFromMtp(data);
+							skipSetText = true;
+						}
+
+						const auto time = media.vttl_seconds()->v;
+						setAyuHint(formatTTL(time));
+						_unsupportedTTL = time;
+					},
+					[&](const MTPDmessageMediaWebPage &media)
+					{
+					},
+					[&](const MTPDmessageMediaGame &media)
+					{
+					},
+					[&](const MTPDmessageMediaInvoice &media)
+					{
+					},
+					[&](const MTPDmessageMediaPoll &media)
+					{
+					},
+					[&](const MTPDmessageMediaDice &media)
+					{
+					},
+					[&](const MTPDmessageMediaStory &media)
+					{
+					},
+					[&](const auto &)
+					{
+					});
+			}
 		}
-
-		createComponents(data, isBlocked);
-
-		auto textWithEntities = TextWithEntities();
-		
-		auto blkMsg = Lang::GetOriginalValue(tr::lng_blocked_user_hint.base);
-		auto msg = blkMsg + qs(data.vmessage());
-
-		if (GetEnhancedBool("blocked_user_spoiler_mode")) {
-			_blockMsg = TextWithEntities{
-					msg,
-					Api::EntitiesFromMTP(
-							&history->session(),
-							data.ventities().value_or_empty(),
-							blkMsg.length(), qs(data.vmessage()).length())
-			};
-
-			_originalMsg = TextWithEntities{
-					qs(data.vmessage()),
-					Api::EntitiesFromMTP(
-							&history->session(),
-							data.ventities().value_or_empty())
-			};
+		auto textWithEntities = TextWithEntities{
+			qs(data.vmessage()),
+			Api::EntitiesFromMTP(
+				&history->session(),
+				data.ventities().value_or_empty())
+		};
+		if (!skipSetText) {
+			setText(_media ? textWithEntities : EnsureNonEmpty(textWithEntities));
 		}
-
-		if ((GetEnhancedBool("blocked_user_spoiler_mode") && blockExist(peerId.value)) 
-			|| (GetEnhancedBool("blocked_user_spoiler_mode") && user && user->isBlocked()
-			|| GetEnhancedBool("blocked_hana_spoiler_mode") && peerId.value == 2084559014)) {
-			textWithEntities = _blockMsg;
-		} else {
-			textWithEntities = TextWithEntities{
-					qs(data.vmessage()),
-					Api::EntitiesFromMTP(
-							&history->session(),
-							data.ventities().value_or_empty())
-			};
-		}
-
-		setText(_media ? textWithEntities : EnsureNonEmpty(textWithEntities));
 		if (const auto groupedId = data.vgrouped_id()) {
 			setGroupId(
 				MessageGroupId::FromRaw(
@@ -1392,14 +1401,8 @@ QString GenerateServiceTime(TimeId date) {
 void HistoryItem::setServiceText(PreparedServiceText &&prepared) {
 	auto text = std::move(prepared.text);
 
-	const auto settings = &AyuSettings::getInstance();
 	if (date() > 0) {
-		const auto timeString = QString(" (%1)").arg(QLocale().toString(
-			base::unixtime::parse(_date),
-			settings->showMessageSeconds
-				? QLocale::system().timeFormat(QLocale::LongFormat).remove(" t")
-				: QLocale::system().timeFormat(QLocale::ShortFormat)
-		));
+		const auto timeString = QString(" (%1)").arg(formatMessageTime(base::unixtime::parse(_date).time()));
 		if (!text.text.isEmpty() && !text.text.contains(timeString)) {
 			text = text.append(timeString);
 		}
@@ -2027,6 +2030,10 @@ bool HistoryItem::isSponsored() const {
 	return _flags & MessageFlag::Sponsored;
 }
 
+bool HistoryItem::isAyuNoForwards() const {
+	return _flags & MessageFlag::AyuNoForwards;
+}
+
 bool HistoryItem::canLookupMessageAuthor() const {
 	return isRegular()
 		&& !isService()
@@ -2554,6 +2561,12 @@ void HistoryItem::clearMediaAsExpired() {
 	if (!media || !media->ttlSeconds()) {
 		return;
 	}
+
+	const auto &settings = AyuSettings::getInstance();
+	if (settings.saveDeletedMessages) {
+		return;
+	}
+
 	if (const auto document = media->document()) {
 		applyEditionToHistoryCleared();
 		auto text = (document->isVideoFile()
@@ -2822,6 +2835,10 @@ void HistoryItem::setRealId(MsgId newId) {
 }
 
 bool HistoryItem::canPin() const {
+	if (_deleted) {
+		return false;
+	}
+
 	if (!isRegular() || isService()) {
 		return false;
 	} else if (const auto m = media(); m && m->call()) {
@@ -2858,6 +2875,10 @@ bool HistoryItem::isTooOldForEdit(TimeId now) const {
 }
 
 bool HistoryItem::allowsEdit(TimeId now) const {
+	if (_deleted) {
+		return false;
+	}
+
 	return !isService()
 		&& canBeEdited()
 		&& !isTooOldForEdit(now)
@@ -2873,6 +2894,10 @@ bool HistoryItem::allowsEditMedia() const {
 }
 
 bool HistoryItem::canBeEdited() const {
+	if (_deleted) {
+		return false;
+	}
+
 	if ((!isRegular() && !isScheduled() && !isBusinessShortcut())
 		|| Has<HistoryMessageVia>()
 		|| Has<HistoryMessageForwarded>()) {
@@ -2911,9 +2936,9 @@ bool HistoryItem::forbidsForward() const {
 bool HistoryItem::forbidsSaving() const {
 	if (forbidsForward()) {
 		return true;
-	} else if (const auto invoice = _media ? _media->invoice() : nullptr) {
+	}/* else if (const auto invoice = _media ? _media->invoice() : nullptr) {
 		return HasExtendedMedia(*invoice);
-	}
+	}*/
 	return false;
 }
 
@@ -2931,6 +2956,11 @@ bool HistoryItem::canDelete() const {
 		&& !isBusinessShortcut()) {
 		return false;
 	}
+
+	if (isDeleted()) {
+		return true;
+	}
+
 	auto channel = _history->peer->asChannel();
 	if (!channel) {
 		return !isGroupMigrate();
@@ -2989,6 +3019,10 @@ bool HistoryItem::canDeleteForEveryone(TimeId now) const {
 }
 
 bool HistoryItem::suggestReport() const {
+	if (_deleted) {
+		return false;
+	}
+
 	if (out() || isService() || !isRegular()) {
 		return false;
 	} else if (_history->peer->isChannel()) {
@@ -3000,6 +3034,10 @@ bool HistoryItem::suggestReport() const {
 }
 
 bool HistoryItem::suggestBanReport() const {
+	if (_deleted) {
+		return false;
+	}
+
 	const auto channel = _history->peer->asChannel();
 	if (!channel || !channel->canRestrictParticipant(from())) {
 		return false;
@@ -3008,6 +3046,10 @@ bool HistoryItem::suggestBanReport() const {
 }
 
 bool HistoryItem::suggestDeleteAllReport() const {
+	if (_deleted) {
+		return false;
+	}
+
 	auto channel = _history->peer->asChannel();
 	if (!channel || !channel->canDeleteMessages()) {
 		return false;
@@ -3171,6 +3213,10 @@ void HistoryItem::translationDone(LanguageId to, TextWithEntities result) {
 }
 
 bool HistoryItem::canReact() const {
+	if (_deleted) {
+		return false;
+	}
+
 	if (!isRegular()) {
 		return false;
 	} else if (isService()) {
@@ -3624,23 +3670,40 @@ void HistoryItem::setPostAuthor(const QString &postAuthor) {
 	history()->owner().requestItemResize(this);
 }
 
+void HistoryItem::setDeleted() {
+	_deleted = true;
+
+	if (isService()) {
+		const auto &settings = AyuSettings::getInstance();
+		setAyuHint(settings.deletedMark);
+	} else {
+		history()->owner().requestItemViewRefresh(this);
+		history()->owner().requestItemResize(this);
+	}
+}
+
+bool HistoryItem::isDeleted() const {
+	return _deleted;
+}
+
 void HistoryItem::setAyuHint(const QString &hint) {
 	try {
-		if (!(_flags & MessageFlag::HasPostAuthor)) {
-			_flags |= MessageFlag::HasPostAuthor;
-		}
-
 		auto msgsigned = Get<HistoryMessageSigned>();
 		if (hint.isEmpty()) {
 			if (!msgsigned) {
 				return;
 			}
 			RemoveComponents(HistoryMessageSigned::Bit());
+			history()->owner().requestItemViewRefresh(this);
 			history()->owner().requestItemResize(this);
 			return;
 		}
 
 		if (!isService()) {
+			if (!(_flags & MessageFlag::HasPostAuthor)) {
+				_flags |= MessageFlag::HasPostAuthor;
+			}
+
 			if (!msgsigned) {
 				AddComponents(HistoryMessageSigned::Bit());
 				msgsigned = Get<HistoryMessageSigned>();
@@ -3650,7 +3713,7 @@ void HistoryItem::setAyuHint(const QString &hint) {
 			msgsigned->author = hint;
 			msgsigned->isAnonymousRank = !isDiscussionPost()
 				&& this->author()->isMegagroup();
-		} else {
+		} else if (/* isService() && */!_text.empty()) {
 			const auto data = Get<HistoryServiceData>();
 			const auto postfix = QString(" (%1)").arg(hint);
 			if (!_text.text.endsWith(postfix)) { // fix stacking for TTL messages
@@ -3660,8 +3723,11 @@ void HistoryItem::setAyuHint(const QString &hint) {
 				};
 				setServiceText(std::move(prepared));
 			}
+		} else {
+			return;
 		}
 
+		// update bottom info
 		history()->owner().requestItemViewRefresh(this);
 		history()->owner().requestItemResize(this);
 	} catch (...) {
@@ -4056,7 +4122,37 @@ FullReplyTo HistoryItem::replyTo() const {
 }
 
 void HistoryItem::setText(const TextWithEntities &textWithEntities) {
-	for (const auto &entity : textWithEntities.entities) {
+	auto text = textWithEntities;
+
+	static const auto kEmojiLinkRegex = QRegularExpression(
+		QStringLiteral("^tg://emoji\\?id=(\\d+)$"));
+	for (auto &entity : text.entities) {
+		if (entity.type() == EntityType::CustomUrl) {
+			const auto match = kEmojiLinkRegex.match(entity.data());
+			if (match.hasMatch()) {
+				const auto entityText = text.text.mid(
+					entity.offset(),
+					entity.length());
+				int emojiLength = 0;
+				const auto emoji = Ui::Emoji::Find(entityText, &emojiLength);
+				if (emoji && emojiLength == entityText.size()) {
+					const auto emojiId = match.captured(1);
+					auto ok = false;
+					emojiId.toULongLong(&ok);
+					if (ok) {
+						entity = EntityInText(
+							EntityType::CustomEmoji,
+							entity.offset(),
+							entity.length(),
+							emojiId);
+						entity.setLocal();
+					}
+				}
+			}
+		}
+	}
+
+	for (const auto &entity : text.entities) {
 		auto type = entity.type();
 		if (type == EntityType::Url
 			|| type == EntityType::CustomUrl
@@ -4067,9 +4163,9 @@ void HistoryItem::setText(const TextWithEntities &textWithEntities) {
 			break;
 		}
 	}
-	setTextValue((_media && _media->consumeMessageText(textWithEntities))
+	setTextValue((_media && _media->consumeMessageText(text))
 		? TextWithEntities()
-		: std::move(textWithEntities));
+		: std::move(text));
 }
 
 void HistoryItem::setTextValue(TextWithEntities text, bool force) {

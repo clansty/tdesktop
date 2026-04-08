@@ -31,7 +31,10 @@ namespace {
 
 [[nodiscard]] bool HasPremiumClick(const Badge::Content &content) {
 	return content.badge == BadgeType::Premium
-		|| (content.badge == BadgeType::Verified && content.emojiStatusId);
+		|| (content.badge == BadgeType::Verified && content.emojiStatusId)
+		|| (content.badge == BadgeType::Extera)
+		|| (content.badge == BadgeType::ExteraSupporter)
+		|| (content.badge == BadgeType::ExteraCustom);
 }
 
 } // namespace
@@ -107,6 +110,7 @@ void Badge::setContent(Content content) {
 	}());
 	_view->show();
 	switch (_content.badge) {
+	case BadgeType::ExteraCustom:
 	case BadgeType::Verified:
 	case BadgeType::BotVerified:
 	case BadgeType::Premium: {
@@ -211,14 +215,23 @@ void Badge::setContent(Content content) {
 						: st::attentionButtonFg));
 			}, _view->lifetime());
 	} break;
-	case BadgeType::AyuGram:
-	case BadgeType::Extera: {
-		const auto icon = &st::infoExteraBadge;
-		_view->resize(icon->size());
+	case BadgeType::Extera:
+	case BadgeType::ExteraSupporter: {
+		const auto icon = (_content.badge == BadgeType::Extera
+							   ? &st::infoExteraOfficialBadge
+							   : &st::infoExteraSupporterBadge);
+		const auto skip = st::infoVerifiedCheckPosition.x();
+		_view->resize(
+			icon->width() + skip,
+			icon->height());
 		_view->paintRequest(
-		) | rpl::start_with_next([=, check = _view.data()]{
+		) | rpl::on_next([=, check = _view.data()]{
 			Painter p(check);
-			icon->paint(p, 0, 0, check->width());
+			if (_overrideSt) {
+				icon->paint(p, skip, 0, check->width(), _overrideSt->premiumFg->c);
+			} else {
+				icon->paint(p, skip, 0, check->width());
+			}
 		}, _view->lifetime());
 	} break;
 	}

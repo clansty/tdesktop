@@ -51,6 +51,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_widgets.h"
 #include "styles/style_window.h"
 
+// AyuGram includes
+#include "styles/style_ayu_icons.h"
+
+
 namespace Dialogs::Ui {
 
 const char kOptionDialogsMuteIcon[] = "dialogs-mute-icon";
@@ -791,6 +795,14 @@ void PaintRow(
 				: context.selected
 				? &st::dialogsVerifiedIconOver
 				: &st::dialogsVerifiedIcon),
+			.exteraOfficial = &ThreeStateIcon(
+				st::dialogsExteraOfficialIcon,
+				context.active,
+				context.selected),
+			.exteraSupporter = &ThreeStateIcon(
+				st::dialogsExteraSupporterIcon,
+				context.active,
+				context.selected),
 			.premium = &ThreeStateIcon(
 				st::dialogsPremiumIcon,
 				context.active,

@@ -1332,7 +1332,8 @@ bool ShortcutMessages::confirmSendingFiles(
 		_composeControls->getTextWithAppliedMarkdown(),
 		_history->peer,
 		Api::SendType::Normal,
-		SendMenu::Details());
+		SendMenu::Details(),
+		[=](const TextWithTags &text) { _composeControls->setText(text); });
 
 	box->setConfirmedCallback(crl::guard(this, [=](
 			std::shared_ptr<Ui::PreparedBundle> bundle,

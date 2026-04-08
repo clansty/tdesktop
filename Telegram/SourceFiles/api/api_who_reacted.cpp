@@ -652,23 +652,39 @@ QString FormatReadDate(TimeId date, const QDateTime &now) {
 	const auto parsed = base::unixtime::parse(date);
 	const auto readDate = parsed.date();
 	const auto nowDate = now.date();
+
+	if (readDate.year() < nowDate.year()) {
+		return tr::lng_mediaview_date_time(
+			tr::now,
+			lt_date,
+			tr::lng_month_day_year(
+				tr::now,
+				lt_month,
+				Lang::MonthDay(readDate.month())(tr::now),
+				lt_day,
+				QString::number(readDate.day()),
+				lt_year,
+				QString::number(readDate.year())),
+			lt_time,
+			QLocale().toString(parsed.time(), "HH:mm:ss"));
+	}
 	if (readDate == nowDate) {
 		return tr::lng_mediaview_today(
 			tr::now,
 			lt_time,
-			QLocale().toString(parsed.time(), QLocale::ShortFormat));
+			QLocale().toString(parsed.time(), "HH:mm:ss"));
 	} else if (readDate.addDays(1) == nowDate) {
 		return tr::lng_mediaview_yesterday(
 			tr::now,
 			lt_time,
-			QLocale().toString(parsed.time(), QLocale::ShortFormat));
+			QLocale().toString(parsed.time(), "HH:mm:ss"));
 	}
 	return tr::lng_mediaview_date_time(
 		tr::now,
 		lt_date,
 		langDayOfMonthShort(readDate),
 		lt_time,
-		QLocale().toString(parsed.time(), QLocale::ShortFormat));
+		QLocale().toString(parsed.time(), "HH:mm:ss"));
 }
 
 bool WhoReadExists(not_null<HistoryItem*> item) {

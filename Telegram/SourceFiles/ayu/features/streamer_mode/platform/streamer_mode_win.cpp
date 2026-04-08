@@ -3,7 +3,7 @@
 // We do not and cannot prevent the use of our code,
 // but be respectful and credit the original author.
 //
-// Copyright @Radolyn, 2024
+// Copyright @Radolyn, 2025
 
 #include "ayu/features/streamer_mode/platform/streamer_mode_win.h"
 
@@ -13,14 +13,12 @@
 namespace AyuFeatures::StreamerMode::Impl {
 
 void enableHook() {
-	auto handle = Core::App().activeWindow()->widget()->psHwnd();
 	Core::App().enumerateWindows([&](not_null<Window::Controller*> w) {
 		SetWindowDisplayAffinity(w->widget()->psHwnd(), WDA_EXCLUDEFROMCAPTURE);
 	});
 }
 
 void disableHook() {
-	auto handle = Core::App().activeWindow()->widget()->psHwnd();
 	Core::App().enumerateWindows([&](not_null<Window::Controller*> w) {
 		SetWindowDisplayAffinity(w->widget()->psHwnd(), WDA_NONE);
 	});

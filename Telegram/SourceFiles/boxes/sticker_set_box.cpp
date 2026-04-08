@@ -69,6 +69,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtSvg/QSvgRenderer>
 
 // AyuGram includes
+#include "ayu/ayu_settings.h"
 #include "ayu/utils/telegram_helpers.h"
 #include "styles/style_ayu_styles.h"
 #include "window/window_session_controller.h"
@@ -779,33 +780,49 @@ void StickerSetBox::updateButtons() {
 					&st::menuIconReorder);
 			});
 		}();
-		const auto addPackOwner = [=](const std::shared_ptr<base::unique_qptr<Ui::PopupMenu>> &menu)
+		const auto addPackIdActions = [=](const std::shared_ptr<base::unique_qptr<Ui::PopupMenu>> &menu)
 		{
 			if (type == Data::StickersType::Stickers || type == Data::StickersType::Emoji) {
-				const auto pointer = Ui::MakeWeak(this);
+				const auto &settings = AyuSettings::getInstance();
+				const auto weak = base::make_weak(this);
+				const auto session = _session;
+				const auto setId = _inner->setId();
+				const auto innerId = setId >> 32;
+
 				(*menu)->addAction(
 					tr::ayu_MessageDetailsPackOwnerPC(tr::now),
-					[=]
+					[weak, session, innerId]
 					{
-						if (!pointer) {
+						if (!weak) {
 							return;
 						}
 
-						searchById(
-							_inner->setId() >> 32,
-							_session,
-							[=](const QString &username, UserData *user)
+						const auto strong = weak.get();
+						if (!strong) {
+							return;
+						}
+
+						searchUserById(
+							innerId,
+							session,
+							[session, weak, innerId](const QString &username, PeerData *user)
 							{
-								if (!pointer) {
+								if (!weak) {
+									return;
+								}
+
+								const auto strongInner = weak.get();
+								if (!strongInner) {
 									return;
 								}
 
 								if (!user) {
-									showToast(tr::ayu_UserNotFoundMessage(tr::now));
+									QGuiApplication::clipboard()->setText(QString::number(innerId));
+									strongInner->showToast(tr::ayu_IDCopiedToast(tr::now));
 									return;
 								}
 
-								if (const auto window = _session->tryResolveWindow()) {
+								if (const auto window = session->tryResolveWindow()) {
 									if (const auto mainWidget = window->widget()->sessionController()) {
 										mainWidget->showPeer(user);
 									}
@@ -813,6 +830,26 @@ void StickerSetBox::updateButtons() {
 							});
 					},
 					&st::menuIconProfile);
+
+				if (settings.showPeerId != 0) {
+					(*menu)->addAction(
+						tr::ayu_ContextCopyID(tr::now),
+						[weak, setId]
+						{
+							if (!weak) {
+								return;
+							}
+
+							const auto strongInner = weak.get();
+							if (!strongInner) {
+								return;
+							}
+
+							QGuiApplication::clipboard()->setText(QString::number(setId));
+							strongInner->showToast(tr::ayu_IDCopiedToast(tr::now));
+						},
+						&st::menuIconCopy);
+				}
 			}
 		};
         const auto author = [=] {
@@ -880,11 +917,7 @@ void StickerSetBox::updateButtons() {
 							: tr::lng_stickers_share_pack)(tr::now),
 						[=] { share(); closeBox(); },
 						&st::menuIconShare);
-					addPackOwner(menu);
-					// (*menu)->addAction(
-					// 		tr::lng_channel_admin_status_creator(tr::now),
-					// 		[=] { author(); },
-					// 		&st::menuIconProfile);
+					addPackIdActions(menu);
 					(*menu)->popup(QCursor::pos());
 					return true;
 				});
@@ -937,11 +970,7 @@ void StickerSetBox::updateButtons() {
 							archive,
 							&st::menuIconArchive);
 					}
-					addPackOwner(menu);
-                    // (*menu)->addAction(
-                    //         tr::lng_channel_admin_status_creator(tr::now),
-                    //         [=] { author(); },
-                    //         &st::menuIconProfile);
+					addPackIdActions(menu);
 					(*menu)->popup(QCursor::pos());
 					return true;
 				});
@@ -1489,6 +1518,12 @@ void StickerSetBox::Inner::chosen(
 	const auto animation = options.scheduled
 		? Ui::MessageSendingAnimationFrom()
 		: messageSentAnimationInfo(index, sticker);
+
+	if (AyuSettings::isUseScheduledMessages() && !options.scheduled) {
+		auto current = base::unixtime::now();
+		options.scheduled = current + 12;
+	}
+
 	_show->processChosenSticker({
 		.document = sticker,
 		.options = options,
@@ -1541,6 +1576,16 @@ void StickerSetBox::Inner::contextMenuEvent(QContextMenuEvent *e) {
 					QGuiApplication::clipboard()->setMimeData(data.release());
 				}
 			}, &st::menuIconCopy);
+
+			const auto &settings = AyuSettings::getInstance();
+			if (settings.showPeerId != 0) {
+				_menu->addAction(tr::ayu_ContextCopyID(tr::now),
+								 [=]
+								 {
+									 QGuiApplication::clipboard()->setText(QString::number(_pack[index]->id));
+								 },
+								 &st::menuIconCopy);
+			}
 		}
 	} else if (details.type != SendMenu::Type::Disabled) {
 		const auto document = _pack[index];

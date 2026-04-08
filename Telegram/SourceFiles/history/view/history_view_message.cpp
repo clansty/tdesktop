@@ -62,7 +62,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_polls.h"
 
 // AyuGram includes
-#include "ayu/features/messageshot/message_shot.h"
+#include "ayu/ayu_settings.h"
+#include "ayu/features/message_shot/message_shot.h"
 #include "styles/style_ayu_icons.h"
 
 
@@ -1820,91 +1821,36 @@ void Message::paintFromName(
 	}
 	if (badgeWidth) {
 		p.setPen(stm->msgDateFg);
-		if (const auto badge = Get<RightBadge>()) {
-			const auto badgeColor = (badge->role == BadgeRole::Creator)
-				? st::rankOwnerFg->c
-				: (badge->role == BadgeRole::Admin)
-				? st::rankAdminFg->c
-				: st::rankUserFg->c;
-			const auto badgeLeft = trect.left()
-				+ trect.width()
-				- badge->width;
-			if (badge->role != BadgeRole::User) {
-				auto bgColor = badgeColor;
-				bgColor.setAlphaF(0.15);
-				const auto pill = ComputeBadgePillGeometry(badge);
-				const auto &padding = st::msgTagBadgePadding;
-				const auto badgeTop = trect.top()
-					+ (st::msgNameFont->height - pill.height) / 2;
-				const auto pillRect = QRect(
-					badgeLeft,
-					badgeTop,
-					pill.width,
-					pill.height);
-				p.setPen(Qt::NoPen);
-				p.setBrush(bgColor);
-				{
-					auto hq = PainterHighQualityEnabler(p);
-					p.drawRoundedRect(
-						pillRect,
-						pill.height / 2.,
-						pill.height / 2.);
-				}
-				if (badge->ripple) {
-					auto rippleColor = badgeColor;
-					rippleColor.setAlphaF(0.1);
-					badge->ripple->paint(
-						p,
-						badgeLeft,
-						badgeTop,
-						width(),
-						&rippleColor);
-					if (badge->ripple->empty()) {
-						badge->ripple.reset();
-					}
-				}
-				p.setPen(badgeColor);
-				badge->tag.draw(p, {
-					.position = QPoint(
-						badgeLeft + (pill.width - pill.textWidth) / 2,
-						badgeTop + padding.top()),
-					.availableWidth = pill.textWidth,
-					.now = context.now,
-				});
-			} else if (!badge->tag.isEmpty()) {
-				if (badge->ripple) {
-					const auto pill = ComputeBadgePillGeometry(badge);
-					const auto &padding = st::msgTagBadgePadding;
-					const auto pillLeft = badgeLeft
-						- (pill.width - pill.textWidth) / 2;
-					const auto pillTop = trect.top() - padding.top();
-					auto rippleColor = badgeColor;
-					rippleColor.setAlphaF(0.1);
-					badge->ripple->paint(
-						p,
-						pillLeft,
-						pillTop,
-						width(),
-						&rippleColor);
-					if (badge->ripple->empty()) {
-						badge->ripple.reset();
-					}
-				}
-				p.setPen(st::rankUserFg);
-				badge->tag.draw(p, {
-					.position = QPoint(badgeLeft, trect.top()),
-					.availableWidth = badge->tag.maxWidth(),
-					.now = context.now,
-				});
-			}
-			if (!badge->boosts.isEmpty()) {
-				const auto boostWidth = badge->boosts.maxWidth();
-				p.setPen(badgeColor);
-				badge->boosts.draw(p, {
-					.position = QPoint(
-						trect.left() + trect.width() - boostWidth,
-						trect.top()),
-					.availableWidth = boostWidth,
+		if (replyWidth) {
+			p.setFont(ClickHandler::showAsActive(_fastReplyLink)
+				? st::msgFont->underline()
+				: st::msgFont);
+			p.drawText(
+				trect.left() + trect.width() - rightWidth,
+				trect.top() + st::msgFont->ascent,
+				hasFastForward() ? FastForwardText() : FastReplyText());
+		} else {
+			if (_rightBadgeIsChannel) {
+				stm->channelBadgeIcon.paint(
+					p,
+					trect.left() + trect.width() - rightWidth,
+					trect.top() + (_rightBadge.minHeight() - stm->channelBadgeIcon.height()) / 2,
+					rightWidth);
+			} else {
+				const auto shift = QPoint(trect.width() - rightWidth, 0);
+				const auto pen = !_rightBadgeHasBoosts
+					? QPen()
+					: QPen(FromNameFg(
+					context,
+					colorIndex(),
+					colorCollectible()));
+				auto colored = std::array<Ui::Text::SpecialColor, 1>{
+					{ { &pen, &pen } },
+				};
+				_rightBadge.draw(p, {
+					.position = trect.topLeft() + shift,
+					.availableWidth = rightWidth,
+					.colors = colored,
 					.now = context.now,
 				});
 			}
@@ -4426,6 +4372,11 @@ std::optional<QSize> Message::rightActionSize() const {
 }
 
 bool Message::displayFastShare() const {
+	const auto &settings = AyuSettings::getInstance();
+	if (settings.hideFastShare) {
+		return false;
+	}
+
 	const auto item = data();
 	const auto peer = item->history()->peer;
 	if (!item->allowsForward()) {

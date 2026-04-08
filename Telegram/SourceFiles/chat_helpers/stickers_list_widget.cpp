@@ -200,6 +200,7 @@ StickersListWidget::StickersListWidget(
 	descriptor.show,
 	descriptor.paused)
 , _mode(descriptor.mode)
+, _requireConfirmation(descriptor.requireConfirmation)
 , _show(std::move(descriptor.show))
 , _features(descriptor.features)
 , _overBg(st::roundRadiusLarge, st().overBg)
@@ -860,6 +861,10 @@ void StickersListWidget::fillFilteredStickersRow() {
 }
 
 void StickersListWidget::addSearchRow(not_null<StickersSet*> set) {
+	const auto &settings = AyuSettings::getInstance();
+	if (settings.showOnlyAddedEmojisAndStickers && !SetInMyList(set->flags)) {
+		return;
+	}
 	const auto skipPremium = !session().premiumPossible();
 	auto elements = PrepareStickers(
 		set->stickers.empty() ? set->covers : set->stickers,
@@ -2167,14 +2172,14 @@ void StickersListWidget::mouseReleaseEvent(QMouseEvent *e) {
 				&& (e->modifiers() & Qt::ControlModifier)) {
 				showStickerSetBox(document, set.id);
 			} else {
-				auto settings = &AyuSettings::getInstance();
+				const auto &settings = AyuSettings::getInstance();
 				auto from = messageSentAnimationInfo(
 					sticker->section,
 					sticker->index,
 					document
 				);
 				auto options = Api::SendOptions();
-				if (settings->useScheduledMessages) {
+				if (AyuSettings::isUseScheduledMessages()) {
 					auto current = base::unixtime::now();
 					options.scheduled = current + 12;
 				}
@@ -2189,7 +2194,7 @@ void StickersListWidget::mouseReleaseEvent(QMouseEvent *e) {
 						});
 					});
 
-				if (settings->stickerConfirmation) {
+				if (settings.stickerConfirmation && (_mode == Mode::Full || _mode == Mode::ChatIntro) && _requireConfirmation) {
 					Ui::show(Ui::MakeConfirmBox({
 						.text = tr::ayu_ConfirmationSticker(),
 						.confirmed = sendStickerCallback,
@@ -2600,11 +2605,10 @@ auto StickersListWidget::collectRecentStickers() -> std::vector<Sticker> {
 	result.reserve(cloudCount + recent.size() + customCount);
 	_custom.reserve(cloudCount + recent.size() + customCount);
 
-    auto settings = &AyuSettings::getInstance();
+    const auto &settings = AyuSettings::getInstance();
 
 	auto add = [&](not_null<DocumentData*> document, bool custom) {
-		if (result.size() >= kRecentDisplayLimit
-			&& !OptionUnlimitedRecentStickers.value()) {
+		if (result.size() >= settings.recentStickersCount) {
 			return;
 		}
 		const auto i = ranges::find(result, document, &Sticker::document);

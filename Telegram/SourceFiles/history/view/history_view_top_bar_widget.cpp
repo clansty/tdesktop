@@ -81,6 +81,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_chat_filters.h"
 #include "history/admin_log/history_admin_log_section.h"
 #include "styles/style_ayu_styles.h"
+#include "styles/style_ayu_icons.h"
 
 
 namespace HistoryView {
@@ -710,6 +711,8 @@ void TopBarWidget::paintTopBar(Painter &p) {
 			.nameWidth = _title.maxWidth(),
 			.outerWidth = width(),
 			.verified = &st::dialogsVerifiedIcon,
+			.exteraOfficial = &st::dialogsExteraOfficialIcon.icon,
+			.exteraSupporter = &st::dialogsExteraSupporterIcon.icon,
 			.premium = &st::dialogsPremiumIcon.icon,
 			.scam = &st::attentionButtonFg,
 			.direct = &st::windowSubTextFg,
@@ -874,7 +877,8 @@ void TopBarWidget::infoClicked() {
 
 void TopBarWidget::backClicked() {
 	if (_activeChat.key.folder()) {
-		if (GetEnhancedBool("hide_all_chats")) {
+		const auto &settings = AyuSettings::getInstance();
+		if (settings.hideAllChatsFolder) {
 			const auto filters = &_controller->session().data().chatsFilters();
 			const auto lookup_id = filters->lookupId(_controller->session().premium() ? 0 : 1);
 			_controller->setActiveChatsFilter(lookup_id);
@@ -1322,6 +1326,13 @@ void TopBarWidget::updateControlsVisibility() {
 	_forward->setVisible(_canForward && visible);
 	_sendNow->setVisible(_canSendNow && visible);
 
+	const auto &settings = AyuSettings::getInstance();
+
+	_clear->show();
+	_delete->setVisible(_canDelete);
+	_messageShot->setVisible(settings.showMessageShot);
+	_forward->setVisible(_canForward);
+	_sendNow->setVisible(_canSendNow);
 
 	const auto isOneColumn = _controller->adaptive().isOneColumn();
 	const auto backVisible = !rootChatsListBar()
@@ -1407,7 +1418,13 @@ void TopBarWidget::updateControlsVisibility() {
 		&& !isOneColumn
 		&& _controller->canShowThirdSection()
 		&& !_chooseForReportReason);
-	const auto isAdmin = [&] {
+
+	const auto showRecentActions = [&]
+	{
+		const auto &settings = AyuSettings::getInstance();
+		if (!settings.quickAdminShortcuts) {
+			return false;
+		}
 		if (_activeChat.section == Section::ChatsList) {
 			return false;
 		}
@@ -1424,8 +1441,13 @@ void TopBarWidget::updateControlsVisibility() {
 		}
 		return false;
 	}();
-	_recentActions->setVisible(isAdmin);
-	const auto needShow = [&] {
+	_recentActions->setVisible(showRecentActions);
+	const auto showAdmins = [&]
+	{
+		const auto &settings = AyuSettings::getInstance();
+		if (!settings.quickAdminShortcuts) {
+			return false;
+		}
 		if (_activeChat.section == Section::ChatsList) {
 			return false;
 		}
@@ -1519,15 +1541,19 @@ void TopBarWidget::updateMembersShowArea() {
 }
 
 bool TopBarWidget::showSelectedState() const {
+	const auto &settings = AyuSettings::getInstance();
+
 	return (_selectedCount > 0)
-		&& (_canDelete || _canForward || _canSendNow);
+		&& (_canDelete || _canForward || _canSendNow || settings.showMessageShot);
 }
 
 void TopBarWidget::showSelected(SelectedState state) {
+	const auto &settings = AyuSettings::getInstance();
+
 	auto canDelete = (state.count > 0 && state.count == state.canDeleteCount);
 	auto canForward = (state.count > 0 && state.count == state.canForwardCount);
 	auto canSendNow = (state.count > 0 && state.count == state.canSendNowCount);
-	auto count = (!canDelete && !canForward && !canSendNow) ? 0 : state.count;
+	auto count = (!canDelete && !canForward && !canSendNow && !settings.showMessageShot) ? 0 : state.count;
 	if (_selectedCount == count
 		&& _canDelete == canDelete
 		&& _canForward == canForward

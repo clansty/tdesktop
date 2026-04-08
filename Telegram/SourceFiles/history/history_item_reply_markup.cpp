@@ -373,7 +373,8 @@ void HistoryMessageMarkupData::fillForwardedData(
 
 bool HistoryMessageMarkupData::isNull() const {
 	if (flags & ReplyMarkupFlag::IsNull) {
-		Assert(isTrivial());
+		// fix: don't crash in monoforums if filters are enabled
+		// Assert(isTrivial());
 		return true;
 	}
 	return false;

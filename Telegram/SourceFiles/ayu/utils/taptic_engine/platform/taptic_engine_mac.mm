@@ -1,3 +1,9 @@
+// This is the source code of AyuGram for Desktop.
+//
+// We do not and cannot prevent the use of our code,
+// but be respectful and credit the original author.
+//
+// Copyright @Radolyn, 2025
 #include "taptic_engine_mac.h"
 
 #ifdef Q_OS_MAC
@@ -7,20 +13,10 @@
 namespace TapticEngine {
 namespace Impl {
 
-NSHapticFeedbackManager *hapticFeedbackManager = nil;
-
-void init() {
-    if (@available(macOS 10.11, *)) {
-        hapticFeedbackManager = [NSHapticFeedbackManager defaultPerformer];
-    }
-}
-
 void performHapticFeedback(NSHapticFeedbackPattern pattern) {
-    if (@available(macOS 10.11, *)) {
-        if (hapticFeedbackManager) {
-            [hapticFeedbackManager performFeedbackPattern:pattern performanceTime:NSHapticFeedbackPerformanceTimeNow];
-        }
-    }
+    [[NSHapticFeedbackManager defaultPerformer]
+	    performFeedbackPattern:pattern
+	    performanceTime:NSHapticFeedbackPerformanceTimeDrawCompleted];
 }
 
 void generateGeneric() {

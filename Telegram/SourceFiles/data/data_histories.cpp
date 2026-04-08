@@ -33,6 +33,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 // AyuGram includes
 #include "ayu/ayu_settings.h"
+#include "ayu/ayu_worker.h"
+#include "ayu/utils/telegram_helpers.h"
 
 
 namespace Data {
@@ -78,15 +80,16 @@ MTPInputReplyTo ReplyToForMTP(
 		const auto external = replyTo.messageId
 			&& (replyTo.messageId.peer != history->peer->id
 				|| replyingToTopicId != replyToTopicId);
+		const auto textNormalized = reverseLocalPremiumEmoji(replyTo.quote, history);
 		const auto quoteEntities = Api::EntitiesToMTP(
 			&history->session(),
-			replyTo.quote.entities,
+			textNormalized.entities,
 			Api::ConvertOption::SkipLocal);
 		using Flag = MTPDinputReplyToMessage::Flag;
 		return MTP_inputReplyToMessage(
 			MTP_flags((replyTo.topicRootId ? Flag::f_top_msg_id : Flag())
 				| (external ? Flag::f_reply_to_peer_id : Flag())
-				| (replyTo.quote.text.isEmpty()
+				| (textNormalized.text.isEmpty()
 					? Flag()
 					: (Flag::f_quote_text | Flag::f_quote_offset))
 				| (replyToMonoforumPeerId
@@ -682,8 +685,8 @@ void Histories::sendReadRequests() {
 	DEBUG_LOG(("Reading: send requests with count %1.").arg(_states.size()));
 
 	// AyuGram sendReadMessages
-	const auto settings = &AyuSettings::getInstance();
-	if (!settings->sendReadMessages) {
+	const auto &settings = AyuSettings::getInstance();
+	if (!settings.sendReadMessages) {
 		DEBUG_LOG(("[AyuGram] Don't read messages"));
 		_states.clear();
 		return;
@@ -1149,6 +1152,7 @@ int Histories::sendPreparedMessage(
 					const MTPUpdates &result,
 					const MTP::Response &response) {
 				api->applyUpdates(result, randomId);
+				AyuWorker::markAsOnline(&history->owner().session());
 				done(result, response);
 				finish();
 			}).fail([=](

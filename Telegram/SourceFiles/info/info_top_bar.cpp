@@ -1,4 +1,4 @@
-﻿/*
+/*
 This file is part of Telegram Desktop,
 the official desktop application for the Telegram messaging service.
 
@@ -517,7 +517,9 @@ void TopBar::updateControlsVisibility(anim::type animated) {
 }
 
 void TopBar::setStories(rpl::producer<Dialogs::Stories::Content> content) {
-	if (GetEnhancedBool("hide_stories")) {
+	// AyuGram disableStories
+	const auto &settings = AyuSettings::getInstance();
+	if (settings.disableStories) {
 		return;
 	}
 	_storiesLifetime.destroy();

@@ -1,4 +1,4 @@
-﻿/*
+/*
 This file is part of Telegram Desktop,
 the official desktop application for the Telegram messaging service.
 
@@ -13,9 +13,9 @@ bool OnlyAlphaKey = false;
 
 const char *PublicKey = "\
 -----BEGIN RSA PUBLIC KEY-----\n\
-MIGJAoGBAMJbQOSFyDYYBW+f+e/W945H49UZjzoz5fq7BuSEoaUAaYOMeFSKLI/I\n\
-Ya7aWiYB906oclTU8K6K+T14DJiMsYMMiY6EDic2w2F7n/8QOw4k+c0Z3ctdYjVg\n\
-dXvERtOgA3AI4fSUzQJ2O85XlugVhIi3w+lN6ShafBgN9gWp4MNxAgMBAAE=\n\
+MIGJAoGBAOIENxe1sfT2t7b+HUMpnT6RnN/sCqY0JjK7/1A/59daDc6i/K4023jw\n\
+Us+187Pa2VSaPh3kDywp9PfLDFgFiPTD9BsBvpaSK9p3zyG8k6an3+GbUTlUgmFv\n\
+eI0pg7vmceIl0Lcy9nndfEx27UQId3Y3dQTMuwwFYGtjJAMHNNq5AgMBAAE=\n\
 -----END RSA PUBLIC KEY-----\
 ";
 
@@ -29,8 +29,7 @@ maSD7hlVmttJGd/nzai+XFUxCLmESjfHoWrjNqkeleKShEgftrc3AgMBAAE=\n\
 
 extern const char *PrivateKey;
 extern const char *PrivateBetaKey;
-#include "../../../../DesktopPrivate/packer_private.h" // RSA PRIVATE KEYS for update signing
-#include "../../../../DesktopPrivate/alpha_private.h" // private key for alpha version file generation
+#include "packer_private.h" // RSA PRIVATE KEYS for update signing
 
 QString countAlphaVersionSignature(quint64 version);
 

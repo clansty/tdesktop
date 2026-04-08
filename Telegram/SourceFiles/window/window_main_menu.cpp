@@ -1,4 +1,4 @@
-﻿/*
+/*
 This file is part of Telegram Desktop,
 the official desktop application for the Telegram messaging service.
 
@@ -88,8 +88,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ayu/features/streamer_mode/streamer_mode.h"
 #include "styles/style_ayu_icons.h"
 #include "lang_auto.h"
-#include "ayu/ui/settings/settings_ayu.h"
-
+#include "ayu/ui/settings/settings_main.h"
 
 namespace Window {
 namespace {
@@ -112,20 +111,9 @@ constexpr auto kPlayStatusLimit = 12;
 
 [[nodiscard]] rpl::producer<TextWithEntities> SetStatusLabel(
 		not_null<Main::Session*> session) {
-	const auto self = session->user();
-	return session->changes().peerFlagsValue(
-		self,
-		Data::PeerUpdate::Flag::EmojiStatus
-	) | rpl::map([=] {
-		return !!self->emojiStatusId();
-	}) | rpl::distinct_until_changed() | rpl::map([](bool has) {
-		const auto makeLink = [](const QString &text) {
-			return tr::link(text);
-		};
-		return (has
-			? tr::lng_menu_change_status
-			: tr::lng_menu_set_status)(makeLink);
-	}) | rpl::flatten_latest();
+	return tr::ayu_AyuPreferences() | rpl::map([](const QString& text) {
+		return tr::link(text);
+	});
 }
 
 } // namespace
@@ -395,8 +383,8 @@ MainMenu::MainMenu(
 	parentResized();
 
 	_telegram->setMarkedText(tr::link(
-		u"0wGram Desktop"_q,
-		u"https://t.me/clansty"_q));
+		u"AyuGram Desktop"_q,
+		u"https://ayugram.one"_q));
 	_telegram->setLinksTrusted();
 	_version->setMarkedText(
 		tr::link(
@@ -415,7 +403,7 @@ MainMenu::MainMenu(
 	_version->setLink(
 		2,
 		std::make_shared<LambdaClickHandler>([=] {
-			controller->show(Box(AboutBox));
+			controller->show(Box(AboutBox, controller));
 		}));
 
 	rpl::combine(
@@ -637,7 +625,7 @@ void MainMenu::setupAccountsToggle() {
 
 void MainMenu::setupSetEmojiStatus() {
 	_setEmojiStatus->overrideLinkClickHandler([=] {
-		chooseEmojiStatus();
+		_controller->showSettings(Settings::AyuMain::Id());
 	});
 }
 
@@ -660,7 +648,7 @@ void MainMenu::showFinished() {
 void MainMenu::setupMenu() {
 	using namespace Settings;
 
-	const auto settings = &AyuSettings::getInstance();
+	const auto &settings = AyuSettings::getInstance();
 
 	const auto controller = _controller;
 	const auto addAction = [&](
@@ -673,6 +661,7 @@ void MainMenu::setupMenu() {
 			std::move(descriptor));
 	};
 	if (!_controller->session().supportMode()) {
+		if (settings.showMyProfileInDrawer)
 		_menu->add(
 			CreateButtonWithIcon(
 				_menu,
@@ -684,12 +673,15 @@ void MainMenu::setupMenu() {
 				Info::Stories::Make(controller->session().user()));
 		});
 
+		if (settings.showBotsInDrawer)
 		SetupMenuBots(_menu, controller);
 
+		if (settings.showMyProfileInDrawer || settings.showBotsInDrawer)
 		_menu->add(
 			object_ptr<Ui::PlainShadow>(_menu),
 			{ 0, st::mainMenuSkip, 0, st::mainMenuSkip });
 
+		if (settings.showNewGroupInDrawer)
 		AddMyChannelsBox(addAction(
 			tr::lng_create_group_title(),
 			{ &st::menuIconGroups }
@@ -699,6 +691,7 @@ void MainMenu::setupMenu() {
 			}
 		});
 
+		if (settings.showNewChannelInDrawer)
 		AddMyChannelsBox(addAction(
 			tr::lng_create_supergroup_title(),
 			{ &st::menuIconGroups }
@@ -717,18 +710,21 @@ void MainMenu::setupMenu() {
 			}
 		});
 
+		if (settings.showContactsInDrawer)
 		addAction(
 			tr::lng_menu_contacts(),
 			{ &st::menuIconProfile }
 		)->setClickedCallback([=] {
 			controller->show(PrepareContactsBox(controller));
 		});
+		if (settings.showCallsInDrawer)
 		addAction(
 			tr::lng_menu_calls(),
 			{ &st::menuIconPhone }
 		)->setClickedCallback([=] {
 			::Calls::ShowCallsBox(controller);
 		});
+		if (settings.showSavedMessagesInDrawer)
 		addAction(
 			tr::lng_saved_messages(),
 			{ &st::menuIconSavedMessages }
@@ -736,28 +732,26 @@ void MainMenu::setupMenu() {
 			controller->showPeerHistory(controller->session().user());
 		});
 
-		const auto settings = &AyuSettings::getInstance();
-
-		if (settings->showLReadToggleInDrawer) {
+		if (settings.showLReadToggleInDrawer) {
 			addAction(
 				tr::ayu_LReadMessages(),
 				{&st::ayuLReadMenuIcon}
 			)->setClickedCallback([=]
 			{
-				auto prev = settings->sendReadMessages;
-				settings->set_sendReadMessages(false);
+				const auto prev = settings.sendReadMessages;
+				AyuSettings::set_sendReadMessages(false);
 
-				auto chats = controller->session().data().chatsList();
+				const auto chats = controller->session().data().chatsList();
 				MarkAsReadChatList(chats);
 
-				settings->set_sendReadMessages(prev);
+				AyuSettings::set_sendReadMessages(prev);
 			});
 		}
 
-		if (settings->showSReadToggleInDrawer) {
+		if (settings.showSReadToggleInDrawer) {
 			auto callback = [=](Fn<void()> &&close) {
-				auto prev = settings->sendReadMessages;
-				settings->set_sendReadMessages(true);
+				auto prev = settings.sendReadMessages;
+				AyuSettings::set_sendReadMessages(true);
 
 				auto chats = controller->session().data().chatsList();
 				MarkAsReadChatList(chats);
@@ -765,7 +759,7 @@ void MainMenu::setupMenu() {
 				// slight delay for forums to send packets
 				dispatchToMainThread([=]
 				{
-					settings->set_sendReadMessages(prev);
+					AyuSettings::set_sendReadMessages(prev);
 				}, 200);
 				close();
 			};
@@ -814,6 +808,8 @@ void MainMenu::setupMenu() {
 		controller->showSettings();
 	});
 
+	if (settings.showNightModeToggleInDrawer) {
+
 	_nightThemeToggle = addAction(
 		tr::lng_menu_night_mode(),
 		{ &st::menuIconNightMode }
@@ -843,68 +839,6 @@ void MainMenu::setupMenu() {
 			&_controller->window(),
 			toggle);
 	}, _nightThemeToggle->lifetime());
-
-	_showPhoneToggle = addAction(
-		tr::lng_settings_show_phone_number(),
-		{ &st::menuIconPhone }
-	)->toggleOn(rpl::single(GetEnhancedBool("show_phone_number")));
-
-	_showPhoneToggle->toggledChanges(
-	) | rpl::filter([=](bool showPhone) {
-		return (showPhone != GetEnhancedBool("show_phone_number"));
-	}) | rpl::on_next([=](bool showPhone) {
-		SetEnhancedValue("show_phone_number", !GetEnhancedBool("show_phone_number"));
-		EnhancedSettings::Write();
-	}, _showPhoneToggle->lifetime());
-
-	_screenshotToggle = addAction(
-		tr::lng_settings_screen_shot_mode(),
-		{ &st::menuIconLock }
-	)->toggleOn(rpl::single(GetEnhancedBool("screenshot_mode")));
-
-	_screenshotToggle->toggledChanges(
-	) | rpl::filter([=](bool screenShotMode) {
-		return (screenShotMode != GetEnhancedBool("screenshot_mode"));
-	}) | rpl::on_next([=](bool screenShotMode) {
-		SetEnhancedValue("screenshot_mode", !GetEnhancedBool("screenshot_mode"));
-		EnhancedSettings::Write();
-	}, lifetime());
-
-	if (settings->showGhostToggleInDrawer) {
-		_ghostModeToggle = addAction(
-			tr::ayu_GhostModeToggle(),
-			{&st::ayuGhostIcon}
-		)->toggleOn(AyuSettings::get_ghostModeEnabledReactive());
-
-		_ghostModeToggle->toggledChanges(
-		) | rpl::start_with_next(
-			[=](bool ghostMode)
-			{
-				settings->set_ghostModeEnabled(ghostMode);
-				AyuSettings::save();
-			},
-			_ghostModeToggle->lifetime());
-	}
-
-	if (settings->showStreamerToggleInDrawer) {
-		_streamerModeToggle = addAction(
-			tr::ayu_StreamerModeToggle(),
-			{&st::ayuStreamerModeMenuIcon}
-		)->toggleOn(rpl::single(AyuFeatures::StreamerMode::isEnabled()));
-
-		_streamerModeToggle->toggledChanges(
-		) | rpl::start_with_next(
-			[=](bool enabled)
-			{
-				if (enabled) {
-					AyuFeatures::StreamerMode::enable();
-				} else {
-					AyuFeatures::StreamerMode::disable();
-				}
-			},
-			_streamerModeToggle->lifetime());
-	}
-
 	Core::App().settings().systemDarkModeValue(
 	) | rpl::on_next([=](std::optional<bool> darkMode) {
 		const auto darkModeEnabled
@@ -913,6 +847,43 @@ void MainMenu::setupMenu() {
 			_nightThemeSwitches.fire_copy(*darkMode);
 		}
 	}, _nightThemeToggle->lifetime());
+
+	}
+
+	if (settings.showGhostToggleInDrawer) {
+		const auto ghostModeToggle = addAction(
+			tr::ayu_GhostModeToggle(),
+			{&st::ayuGhostIcon}
+		)->toggleOn(AyuSettings::get_ghostModeEnabledReactive());
+
+		ghostModeToggle->toggledChanges(
+		) | rpl::on_next(
+			[=](bool ghostMode)
+			{
+				AyuSettings::set_ghostModeEnabled(ghostMode);
+				AyuSettings::save();
+			},
+			ghostModeToggle->lifetime());
+	}
+
+	if (settings.showStreamerToggleInDrawer) {
+		const auto streamerModeToggle = addAction(
+			tr::ayu_StreamerModeToggle(),
+			{&st::ayuStreamerModeMenuIcon}
+		)->toggleOn(rpl::single(AyuFeatures::StreamerMode::isEnabled()));
+
+		streamerModeToggle->toggledChanges(
+		) | rpl::on_next(
+			[=](bool enabled)
+			{
+				if (enabled) {
+					AyuFeatures::StreamerMode::enable();
+				} else {
+					AyuFeatures::StreamerMode::disable();
+				}
+			},
+			streamerModeToggle->lifetime());
+	}
 }
 
 void MainMenu::resizeEvent(QResizeEvent *e) {

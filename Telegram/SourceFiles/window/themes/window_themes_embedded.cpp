@@ -14,8 +14,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/core_settings.h"
 #include "ui/style/style_palette_colorizer.h"
 
-#include <QtGui/QGuiApplication>
-#include <QtGui/QPalette>
+// AyuGram includes
+#include "ayu/features/message_shot/message_shot.h"
+
 
 namespace Window {
 namespace Theme {

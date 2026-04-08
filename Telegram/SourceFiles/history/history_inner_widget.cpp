@@ -134,7 +134,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <api/api_sending.h>
 
 // AyuGram includes
+#include "ayu/ayu_settings.h"
+#include "ayu/features/filters/filters_cache_controller.h"
 #include "ayu/ui/context_menu/context_menu.h"
+#include "ayu/ui/settings/filters/edit_filter.h"
 #include "ayu/utils/telegram_helpers.h"
 #include "data/data_document_media.h"
 
@@ -524,13 +527,13 @@ HistoryInner::HistoryInner(
 	}, _scroll->lifetime());
 
 	_controller->window().widget()->globalForceClicks() |
-		rpl::start_with_next(
+		rpl::on_next(
 			[=](QPoint globalPosition)
 			{
 				auto mousePos = mapFromGlobal(globalPosition);
 				auto point = _widget->clampMousePosition(mousePos);
 
-				if (!inSelectionMode() && !_emptyPainter && rect().contains(mousePos)) {
+				if (!inSelectionMode().inSelectionMode && !_emptyPainter && rect().contains(mousePos)) {
 					if (const auto view = Element::Moused()) {
 						mouseActionCancel();
 
@@ -757,7 +760,7 @@ void HistoryInner::setupSwipeReplyAndBack() {
 			}
 			const auto item = view->data();
 			const auto canSendReply = CanSendReply(item);
-			const auto canReply = (canSendReply || item->allowsForward());
+			const auto canReply = canSendReply || (item->allowsForward() && !item->isDeleted());
 			if (!canReply) {
 				return true;
 			}
@@ -1346,7 +1349,15 @@ void HistoryInner::paintEvent(QPaintEvent *e) {
 				readTill = item;
 			}
 			if (markingAsViewed && item->hasUnwatchedEffect()) {
-				startEffects.emplace(view);
+				const auto peer = item->history()->peer;
+				const auto &settings = AyuSettings::getInstance();
+				const auto hide = (!settings.showChannelReactions && peer->isChannel() && !peer->isMegagroup()) ||
+					(!settings.showGroupReactions && peer->isMegagroup());
+				if (!hide) {
+					startEffects.emplace(view);
+				} else {
+					item->markEffectWatched();
+				}
 			}
 			if (markingAsViewed && item->hasViews()) {
 				session().api().views().scheduleIncrement(item);
@@ -2478,7 +2489,9 @@ void HistoryInner::mouseDoubleClickEvent(QMouseEvent *e) {
 			mouseActionCancel();
 			switch (HistoryView::CurrentQuickAction()) {
 			case HistoryView::DoubleClickQuickAction::Reply: {
-				_widget->replyToMessage(view->data());
+				if (!view->data()->isDeleted()) {
+					_widget->replyToMessage(view->data());
+				}
 			} break;
 			case HistoryView::DoubleClickQuickAction::React: {
 				toggleFavoriteReaction(view);
@@ -2836,6 +2849,8 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 
 		AyuUi::AddHistoryAction(_menu, item);
 		AyuUi::AddHideMessageAction(_menu, item);
+		AyuUi::AddUserMessagesAction(_menu, item);
+		AyuUi::AddRepeatMessageAction(_menu, item);
 		AyuUi::AddMessageDetailsAction(_menu, item);
 	};
 	const auto addPhotoActions = [&](not_null<PhotoData*> photo, HistoryItem *item) {
@@ -3056,6 +3071,7 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 		}
 
 		AyuUi::AddReadUntilAction(_menu, item);
+		AyuUi::AddBurnAction(_menu, item);
 	};
 
 	const auto addReplyAction = [&](HistoryItem *item) {
@@ -3063,7 +3079,7 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 			return;
 		}
 		const auto canSendReply = CanSendReply(item);
-		const auto canReply = canSendReply || item->allowsForward();
+		const auto canReply = canSendReply || (item->allowsForward() && !item->isDeleted());
 		if (canReply) {
 			const auto selected = selectedQuote(item);
 			auto text = (selected
@@ -3460,6 +3476,7 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 						hasCopyRestrictionForSelected()));
 				}, &st::menuIconTranslate);
 			}
+			AyuUi::AddCreateFilterAction(_menu, _controller, item, selectedText.rich.text);
 			addItemActions(item, item);
 		} else {
 			addReplyAction(partItemOrLeader);
@@ -6021,6 +6038,10 @@ auto HistoryInner::DelegateMixin()
 }
 
 bool CanSendReply(not_null<const HistoryItem*> item) {
+	if (item->isDeleted()) {
+		return false;
+	}
+
 	const auto peer = item->history()->peer;
 	if (const auto topic = item->topic()) {
 		return Data::CanSendAnything(topic);

@@ -72,6 +72,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 // AyuGram includes
 #include "ayu/ayu_settings.h"
+#include "ayu/ayu_worker.h"
 
 
 namespace Api {
@@ -993,10 +994,10 @@ void Updates::updateOnline(crl::time lastNonIdleTime, bool gotOtherOffline) {
 	});
 
 	// AyuGram sendOnlinePackets
-	const auto settings = &AyuSettings::getInstance();
+	const auto &settings = AyuSettings::getInstance();
 	const auto& config = _session->serverConfig();
 	bool isOnlineOrig = Core::App().hasActiveWindow(&session());
-	bool isOnline = settings->sendOnlinePackets && isOnlineOrig;
+	bool isOnline = settings.sendOnlinePackets && isOnlineOrig;
 
 	int updateIn = config.onlineUpdatePeriod;
 	Assert(updateIn >= 0);
@@ -2060,6 +2061,7 @@ void Updates::feedUpdate(const MTPUpdate &update) {
 			} else if (d.vstatus().type() == mtpc_userStatusOnline) {
 				cSetOtherOnline(
 					d.vstatus().c_userStatusOnline().vexpires().v);
+				AyuWorker::markAsOnline(_session);
 			}
 		}
 	} break;

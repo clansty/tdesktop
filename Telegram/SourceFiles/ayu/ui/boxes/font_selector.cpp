@@ -3,7 +3,7 @@
 // We do not and cannot prevent the use of our code,
 // but be respectful and credit the original author.
 //
-// Copyright @Radolyn, 2024
+// Copyright @Radolyn, 2025
 #include "font_selector.h"
 
 #include "data/data_peer_values.h"
@@ -44,7 +44,8 @@
 
 #include <ayu/ayu_settings.h>
 
-#include "ayu/ayu_fonts.h"
+#include "ayu/ayu_ui_settings.h"
+#include "ui/ui_utility.h"
 
 struct Font
 {
@@ -664,7 +665,7 @@ void Content::setupContent(
 	const std::vector<Font> &fonts) {
 	using namespace rpl::mappers;
 
-	const auto current = AyuFonts::getMonoFont();
+	const auto current = AyuUiSettings::getMonoFont();
 	const auto content = Ui::CreateChild<Ui::VerticalLayout>(this);
 	const auto add = [&](const std::vector<Font> &list)
 	{
@@ -687,7 +688,7 @@ void Content::setupContent(
 			inner,
 			st::defaultBox.margin.top()));
 
-		rows->isEmpty() | rpl::start_with_next([=](bool empty)
+		rows->isEmpty() | rpl::on_next([=](bool empty)
 											   {
 												   wrap->toggle(!empty, anim::type::instant);
 											   },
@@ -711,7 +712,7 @@ void Content::setupContent(
 		rpl::single(qs("No fonts found.")),
 		st::membersAbout);
 	empty->entity()->sizeValue(
-	) | rpl::start_with_next([=](QSize size)
+	) | rpl::on_next([=](QSize size)
 							 {
 								 label->move(
 									 (size.width() - label->width()) / 2,
@@ -808,11 +809,11 @@ void Content::setupContent(
 	_activations = [=]
 	{
 		if (!main) {
-			return rpl::never<Font>() | rpl::type_erased();
+			return rpl::never<Font>() | rpl::type_erased;
 		}
 		return rpl::merge(
 			main->activations()
-		) | rpl::type_erased();
+		) | rpl::type_erased;
 	};
 	_changeChosen = [=](const QString &chosen)
 	{
@@ -919,14 +920,14 @@ void AyuUi::FontSelectorBox::prepare() {
 		inner->heightValue(),
 		topContainer->heightValue(),
 		_1 + _2
-	) | rpl::start_with_next([=](int height)
+	) | rpl::on_next([=](int height)
 							 {
 								 accumulate_max(*max, height);
 								 setDimensions(st::boxWidth, qMin(*max, st::boxMaxListHeight));
 							 },
 							 inner->lifetime());
 	topContainer->heightValue(
-	) | rpl::start_with_next([=](int height)
+	) | rpl::on_next([=](int height)
 							 {
 								 setInnerTopSkip(height);
 							 },
@@ -946,7 +947,7 @@ void AyuUi::FontSelectorBox::prepare() {
 	});
 
 	inner->activations(
-	) | rpl::start_with_next([=](const Font &font)
+	) | rpl::on_next([=](const Font &font)
 							 {
 								 if (inner) {
 									 inner->changeChosen(font.id);

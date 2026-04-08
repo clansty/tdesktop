@@ -1805,8 +1805,20 @@ const std::vector<LocalUrlHandler> &LocalUrlHandlers() {
 			ResolveTonSettings
 		},
 		{
-			u"^oauth/?\\?(.+)(#|$)"_q,
-			ResolveOAuth
+			u"^user\\?(.+)(#|$)"_q,
+			AyuUrlHandlers::ResolveUser
+		},
+		{
+			u"^chat\\?(.+)(#|$)"_q,
+			AyuUrlHandlers::ResolveChat
+		},
+		{
+			u"^ayu(/?.+)?(#|$)"_q,
+			AyuUrlHandlers::HandleAyu
+		},
+		{
+			u"^support$"_q,
+			AyuUrlHandlers::HandleSupport
 		},
 		{
 			u"^([^\\?]+)(\\?|#|$)"_q,

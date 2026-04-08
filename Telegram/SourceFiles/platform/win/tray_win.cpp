@@ -115,7 +115,7 @@ bool DarkTasbarValueValid/* = false*/;
 	p.setPen(Qt::NoPen);
 	p.drawEllipse(QRectF( // cx=3.9, cy=12.7, r=2.2
 		1.7 * xm,
-		10.5 * ym,
+		9.5 * ym,
 		4.4 * xm,
 		4.4 * ym));
 	return image;
@@ -131,8 +131,17 @@ bool DarkTasbarValueValid/* = false*/;
 	static auto ScaledLogoDark = base::flat_map<int, QImage>();
 	static auto ScaledLogoLight = base::flat_map<int, QImage>();
 
-	const auto settings = &AyuSettings::getInstance();
-	if (settings->hideNotificationBadge) {
+	static auto lastUsedIcon = AyuAssets::currentAppLogoName();
+
+	if (lastUsedIcon != AyuAssets::currentAppLogoName()) {
+		ScaledLogo = base::flat_map<int, QImage>();
+		ScaledLogoNoMargin = base::flat_map<int, QImage>();
+		ScaledLogoDark = base::flat_map<int, QImage>();
+		ScaledLogoLight = base::flat_map<int, QImage>();
+	}
+
+	const auto &settings = AyuSettings::getInstance();
+	if (settings.hideNotificationBadge) {
 		args.count = 0;
 	}
 

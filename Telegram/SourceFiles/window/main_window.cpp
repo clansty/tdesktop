@@ -125,6 +125,10 @@ QImage Logo() {
 }
 
 QImage LogoNoMargin() {
+	return AyuAssets::currentAppLogo();
+}
+
+const QImage &LogoTelegramDefault() {
 	static const auto result = QImage(u":/gui/art/logo_256_no_margin.png"_q);
 	return result;
 }

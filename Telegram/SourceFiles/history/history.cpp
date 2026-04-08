@@ -633,8 +633,10 @@ void History::destroyMessage(not_null<HistoryItem*> item) {
 	const auto i = _items.find(hack);
 	hack.release();
 
-	Assert(i != end(_items));
-	_items.erase(i);
+	// hack for Hide message
+	if (i != end(_items)) {
+		_items.erase(i);
+	}
 
 	if (documentToCancel) {
 		session().data().documentMessageRemoved(documentToCancel);
@@ -2616,8 +2618,11 @@ Dialogs::UnreadState History::computeUnreadState() const {
 	result.chats = count ? 1 : 0;
 	result.marks = mark ? 1 : 0;
 	result.mentions = unreadMentions().has() ? 1 : 0;
-	result.reactions = unreadReactions().has() ? 1 : 0;
-	result.polls = unreadPollVotes().has() ? 1 : 0;
+	const auto peer = this->peer.get();
+	const auto &settings = AyuSettings::getInstance();
+	const auto hideReactions = (peer->isChannel() && !peer->isMegagroup() && !settings.showChannelReactions)
+		|| (peer->isMegagroup() && !settings.showGroupReactions);
+	result.reactions = hideReactions ? 0 : (unreadReactions().has() ? 1 : 0);
 	result.messagesMuted = muted ? result.messages : 0;
 	result.chatsMuted = muted ? result.chats : 0;
 	result.marksMuted = muted ? result.marks : 0;
@@ -3174,9 +3179,9 @@ bool History::shouldBeInChatList() const {
 }
 
 void History::unknownMessageDeleted(MsgId messageId) {
-	LOG(("History::unknownMessageDeleted. Peer ID: %1, Message ID: %2.")
+	/*LOG(("History::unknownMessageDeleted. Peer ID: %1, Message ID: %2.")
 		.arg(peer->id.value & PeerId::kChatTypeMask)
-		.arg(messageId.bare));
+		.arg(messageId.bare));*/
 	_unknownDeletedMessages[messageId] = base::unixtime::now();
 	if (_inboxReadBefore && messageId >= *_inboxReadBefore) {
 		owner().histories().requestDialogEntry(this);

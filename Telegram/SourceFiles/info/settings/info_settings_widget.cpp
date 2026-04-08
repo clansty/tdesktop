@@ -13,6 +13,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "settings/settings_common_session.h"
 #include "ui/ui_utility.h"
 
+// AyuGram includes
+#include "ayu/ui/settings/settings_main.h"
+
+
 namespace Info {
 namespace Settings {
 
@@ -203,8 +207,9 @@ const Ui::RoundRect *Widget::bottomSkipRounding() const {
 }
 
 rpl::producer<bool> Widget::desiredShadowVisibility() const {
-	return (_type == ::Settings::MainId()
-		|| _type == ::Settings::InformationId())
+	return (_type == ::Settings::Main::Id()
+		|| _type == ::Settings::Information::Id()
+		|| _type == ::Settings::AyuMain::Id())
 		? ContentWidget::desiredShadowVisibility()
 		: rpl::single(true);
 }

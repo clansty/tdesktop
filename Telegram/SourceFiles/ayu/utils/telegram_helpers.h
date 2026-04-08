@@ -3,27 +3,66 @@
 // We do not and cannot prevent the use of our code,
 // but be respectful and credit the original author.
 //
-// Copyright @Radolyn, 2024
+// Copyright @Radolyn, 2025
 #pragma once
 
+#include "rc_manager.h"
 #include "ayu/data/entities.h"
 
 #include "core/application.h"
+#include "data/data_media_types.h"
 #include "dialogs/dialogs_main_list.h"
-#include "main/main_domain.h"
+#include "info/profile/info_profile_badge.h"
 
-using Callback = Fn<void(const QString &, UserData *)>;
+using UsernameResolverCallback = Fn<void(const QString &, PeerData *)>;
+
+class TimedCountDownLatch
+{
+public:
+    explicit TimedCountDownLatch(int count)
+        : count_(count) {
+    }
+
+    TimedCountDownLatch(const TimedCountDownLatch &) = delete;
+    TimedCountDownLatch &operator=(const TimedCountDownLatch &) = delete;
+
+    void countDown() {
+        std::unique_lock lock(mutex_);
+        if (count_ > 0) {
+            count_--;
+        }
+        if (count_ == 0) {
+            cv_.notify_all();
+        }
+    }
+
+    bool await(std::chrono::milliseconds timeout) {
+        std::unique_lock lock(mutex_);
+        if (count_ == 0) {
+            return true;
+        }
+        return cv_.wait_for(lock, timeout, [this] { return count_ == 0; });
+    }
+
+private:
+    std::mutex mutex_;
+    std::condition_variable cv_;
+    int count_;
+};
 
 Main::Session *getSession(ID userId);
-bool accountExists(ID userId);
-void dispatchToMainThread(std::function<void()> callback, int delay = 0);
-not_null<History*> getHistoryFromDialogId(ID dialogId, Main::Session *session);
+void dispatchToMainThread(const std::function<void()> &callback, int delay = 0);
 ID getDialogIdFromPeer(not_null<PeerData*> peer);
 
 ID getBareID(not_null<PeerData*> peer);
 
-bool isAyuGramRelated(ID peerId);
-bool isExteraRelated(ID peerId);
+bool isExteraPeer(ID peerId);
+bool isSupporterPeer(ID peerId);
+bool isCustomBadgePeer(ID peerId);
+CustomBadge getCustomBadge(ID peerId);
+
+rpl::producer<Info::Profile::Badge::Content> ExteraBadgeTypeFromPeer(not_null<PeerData*> peer);
+Fn<void()> badgeClickHandler(not_null<PeerData *> peer);
 
 bool isMessageHidden(not_null<HistoryItem*> item);
 
@@ -34,6 +73,7 @@ void readHistory(not_null<HistoryItem*> message);
 
 QString formatTTL(int time);
 QString formatDateTime(const QDateTime &date);
+QString formatMessageTime(const QTime &time);
 
 QString getDCName(int dc);
 
@@ -47,5 +87,24 @@ QString getPeerDC(not_null<PeerData*> peer);
 
 int getScheduleTime(int64 sumSize);
 
-void searchById(ID userId, Main::Session *session, bool retry, const Callback &callback);
-void searchById(ID userId, Main::Session *session, const Callback &callback);
+bool isMessageSavable(not_null<HistoryItem *> item);
+void processMessageDelete(not_null<HistoryItem *> item);
+
+void searchUserById(ID userId, Main::Session *session, const UsernameResolverCallback &callback);
+void searchChatById(ID chatId, Main::Session *session, const UsernameResolverCallback &callback);
+
+ID getUserIdFromPackId(uint64 id);
+
+TextWithTags extractText(not_null<HistoryItem*> item);
+bool mediaDownloadable(const Data::Media* media);
+
+TextWithEntities reverseLocalPremiumEmoji(const TextWithEntities &text, not_null<History *> history, bool isForQuote = false);
+
+void resolveAllChats(const std::map<long long, QString> &peers);
+not_null<Main::Session *> currentSession();
+
+PeerData* getPeerFromDialogId(ID id);
+PeerData* getPeerFromDialogId(unsigned long long id);
+
+void getRegistrationDate(not_null<PeerData*> peer, Fn<void(TextWithEntities)> callback);
+

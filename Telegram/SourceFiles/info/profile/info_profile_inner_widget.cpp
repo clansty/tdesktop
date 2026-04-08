@@ -261,6 +261,8 @@ object_ptr<Ui::RpWidget> InnerWidget::setupSharedMedia(
 	using namespace rpl::mappers;
 	using MediaType = Media::Type;
 
+	const auto &settings = AyuSettings::getInstance();
+
 	const auto peer = _sublist ? _sublist->sublistPeer() : _peer;
 	auto content = object_ptr<Ui::VerticalLayout>(parent);
 	auto &tracker = sharedTracker;
@@ -297,6 +299,10 @@ object_ptr<Ui::RpWidget> InnerWidget::setupSharedMedia(
 	const auto addSimilarPeersButton = [&](
 			not_null<PeerData*> peer,
 			const style::icon &icon) {
+		if (settings.hideSimilarChannels) {
+			return;
+		}
+
 		auto result = Media::AddSimilarPeersButton(
 			content,
 			_controller,

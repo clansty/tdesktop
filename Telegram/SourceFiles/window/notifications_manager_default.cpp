@@ -244,11 +244,6 @@ void Manager::showNextFromQueue() {
 		auto queued = _queuedNotifications.front();
 		_queuedNotifications.pop_front();
 
-		if (queued.item && isMessageHidden(queued.item)) {
-			--count;
-			continue;
-		}
-
 		subscribeToSession(&queued.history->session());
 		_notifications.push_back(std::make_unique<Notification>(
 			this,

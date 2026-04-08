@@ -110,6 +110,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_credits.h"
 #include "styles/style_menu_icons.h"
 
+// AyuGram includes
+#include "ayu/ayu_settings.h"
+
+
 namespace HistoryView {
 namespace {
 
@@ -142,6 +146,13 @@ using SendActionUpdate = ComposeControls::SendActionUpdate;
 using SetHistoryArgs = ComposeControls::SetHistoryArgs;
 using VoiceRecordBar = Controls::VoiceRecordBar;
 using ForwardPanel = Controls::ForwardPanel;
+
+#define SWITCH_BUTTON(button, show_v) \
+	if (show_v) { \
+		(button)->show(); \
+	} else { \
+		(button)->hide(); \
+	}
 
 } // namespace
 
@@ -2220,6 +2231,14 @@ void ComposeControls::init() {
 		updateAttachBotsMenu();
 	}, _wrap->lifetime());
 
+	AyuSettings::get_historyUpdateReactive() | rpl::on_next([=]
+	{
+		updateSendButtonType();
+		updateControlsVisibility();
+		updateControlsGeometry(_wrap->size());
+		orderControls();
+	}, _wrap->lifetime());
+
 	orderControls();
 }
 
@@ -2229,6 +2248,11 @@ void ComposeControls::orderControls() {
 }
 
 bool ComposeControls::showRecordButton() const {
+	const auto &settings = AyuSettings::getInstance();
+	if (!settings.showMicrophoneButtonInMessageField) {
+		return false;
+	}
+
 	return _features.recordMediaMessage
 		&& (_recordAvailability != Webrtc::RecordAvailability::None)
 		&& !_voiceRecordBar->isListenState()
@@ -3412,24 +3436,26 @@ void ComposeControls::updateControlsGeometry(QSize size) {
 	// (_commentsShown) (_attachToggle|_replaceMedia) (_sendAs) -- _inlineResults ------ _tabbedPanel -- _fieldBarCancel (_starsReaction)
 	// (_attachDocument|_attachPhoto) _field (_ttlInfo) (_scheduled) (_silent|_botCommandStart) _tabbedSelectorToggle _send
 
+	const auto &settings = AyuSettings::getInstance();
+
 	const auto commentsShown = _commentsShown
 		&& !_commentsShown->isHidden();
 	const auto fieldWidth = size.width()
 		- (commentsShown
 			? (_commentsShown->width() + _st.commentsSkip)
 			: 0)
-		- ((_attachToggle || _sendAs) ? _st.padding.left() : _st.fieldLeft)
-		- (_attachToggle ? _attachToggle->width() : 0)
+		- ((_attachToggle && settings.showAttachButtonInMessageField || _sendAs) ? _st.padding.left() : _st.fieldLeft)
+		- (_attachToggle && settings.showAttachButtonInMessageField ? _attachToggle->width() : 0)
 		- (_sendAs ? _sendAs->width() : 0)
 		- _st.padding.right()
 		- _send->width()
 		- (_editStars ? _editStars->width() : 0)
-		- _tabbedSelectorToggle->width()
+		- (settings.showEmojiButtonInMessageField ? _tabbedSelectorToggle->width() : 0)
 		- (_likeShown ? _like->width() : 0)
-		- (_botCommandShown ? _botCommandStart->width() : 0)
+		- (_botCommandShown && settings.showCommandsButtonInMessageField ? _botCommandStart->width() : 0)
 		- (_silent ? _silent->width() : 0)
 		- (_scheduled ? _scheduled->width() : 0)
-		- (_ttlInfo ? _ttlInfo->width() : 0)
+		- (_ttlInfo && settings.showAutoDeleteButtonInMessageField ? _ttlInfo->width() : 0)
 		- (_starsReaction
 			? (_st.starsSkip + _starsReaction->width())
 			: 0);
@@ -3454,7 +3480,7 @@ void ComposeControls::updateControlsGeometry(QSize size) {
 	if (_replaceMedia) {
 		_replaceMedia->moveToLeft(left, buttonsTop);
 	}
-	if (_attachToggle) {
+	if (_attachToggle && settings.showAttachButtonInMessageField) {
 		_attachToggle->moveToLeft(left, buttonsTop);
 		left += _attachToggle->width();
 	}
@@ -3483,8 +3509,10 @@ void ComposeControls::updateControlsGeometry(QSize size) {
 		_editStars->moveToRight(right, buttonsTop);
 		right += _editStars->width();
 	}
-	_tabbedSelectorToggle->moveToRight(right, buttonsTop);
-	right += _tabbedSelectorToggle->width();
+	if (settings.showEmojiButtonInMessageField) {
+		_tabbedSelectorToggle->moveToRight(right, buttonsTop);
+		right += _tabbedSelectorToggle->width();
+	}
 	if (_like) {
 		using Type = Controls::WriteRestrictionType;
 		if (_writeRestriction.current().type == Type::PremiumRequired) {
@@ -3498,7 +3526,7 @@ void ComposeControls::updateControlsGeometry(QSize size) {
 	}
 	if (_botCommandStart) {
 		_botCommandStart->moveToRight(right, buttonsTop);
-		if (_botCommandShown) {
+		if (_botCommandShown && settings.showCommandsButtonInMessageField) {
 			right += _botCommandStart->width();
 		}
 	}
@@ -3510,7 +3538,7 @@ void ComposeControls::updateControlsGeometry(QSize size) {
 		_scheduled->moveToRight(right, buttonsTop);
 		right += _scheduled->width();
 	}
-	if (_ttlInfo) {
+	if (_ttlInfo && settings.showAutoDeleteButtonInMessageField) {
 		_ttlInfo->move(size.width() - right - _ttlInfo->width(), buttonsTop);
 	}
 	updateAiButtonGeometry();
@@ -3522,8 +3550,10 @@ void ComposeControls::updateControlsGeometry(QSize size) {
 }
 
 void ComposeControls::updateControlsVisibility() {
+	const auto &settings = AyuSettings::getInstance();
+
 	if (_botCommandStart) {
-		_botCommandStart->setVisible(_botCommandShown);
+		SWITCH_BUTTON(_botCommandStart, _botCommandShown && settings.showCommandsButtonInMessageField);
 	}
 	if (_like) {
 		_like->setVisible(_likeShown);
@@ -3532,7 +3562,7 @@ void ComposeControls::updateControlsVisibility() {
 		_editStars->show();
 	}
 	if (_ttlInfo) {
-		_ttlInfo->show();
+		SWITCH_BUTTON(_ttlInfo, settings.showAutoDeleteButtonInMessageField);
 	}
 	if (_sendAs) {
 		_sendAs->show();
@@ -3541,7 +3571,7 @@ void ComposeControls::updateControlsVisibility() {
 		_replaceMedia->show();
 	}
 	if (_attachToggle) {
-		_attachToggle->setVisible(!_replaceMedia);
+		SWITCH_BUTTON(_attachToggle, settings.showAttachButtonInMessageField && !_replaceMedia);
 	}
 	if (_scheduled) {
 		_scheduled->setVisible(!isEditingMessage());
@@ -3552,36 +3582,7 @@ void ComposeControls::updateControlsVisibility() {
 	if (_starsReaction) {
 		_starsReaction->show();
 	}
-	updateAiButtonVisibility();
-}
-
-void ComposeControls::updateAiButtonVisibility() {
-	const auto hidden = !hasEnoughLinesForAi()
-		|| !_wrap->isVisible()
-		|| _recording.current()
-		|| !_field->isVisible();
-	if (_aiButton->isHidden() == hidden) {
-		return;
-	}
-	const auto shown = !hidden;
-	_aiButton->setVisible(shown);
-	if (shown) {
-		updateAiButtonGeometry();
-	}
-	if (_aiTooltipManager) {
-		_aiTooltipManager->updateVisibility(shown);
-	}
-}
-
-void ComposeControls::updateAiButtonGeometry() {
-	if (_aiButton->isHidden()) {
-		return;
-	}
-	const auto x = _send->x() + _send->width() - _aiButton->width();
-	_aiButton->move(QPoint(x, _field->y()) + st::historyAiComposeButtonPosition);
-	if (_aiTooltipManager) {
-		_aiTooltipManager->updateGeometry();
-	}
+	SWITCH_BUTTON(_tabbedSelectorToggle, settings.showEmojiButtonInMessageField);
 }
 
 bool ComposeControls::updateLikeShown() {

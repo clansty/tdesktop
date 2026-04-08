@@ -3,7 +3,7 @@
 // We do not and cannot prevent the use of our code,
 // but be respectful and credit the original author.
 //
-// Copyright @Radolyn, 2024
+// Copyright @Radolyn, 2025
 #include "message_shot_box.h"
 
 #include <QFileDialog>
@@ -38,8 +38,8 @@ void MessageShotBox::prepare() {
 void MessageShotBox::setupContent() {
 	_selectedPalette = std::make_shared<style::palette>();
 
-	const auto settings = &AyuSettings::getInstance();
-	const auto savedShowColorfulReplies = !settings->simpleQuotesAndReplies;
+	const auto &settings = AyuSettings::getInstance();
+	const auto savedShowColorfulReplies = !settings.simpleQuotesAndReplies;
 
 	using namespace Settings;
 
@@ -80,7 +80,7 @@ void MessageShotBox::setupContent() {
 			AyuFeatures::MessageShot::setChoosingTheme(true);
 
 			auto box = Box<ThemeSelectorBox>(_config.controller);
-			box->paletteSelected() | rpl::start_with_next(
+			box->paletteSelected() | rpl::on_next(
 				[=](const style::palette &palette) mutable
 				{
 					_selectedPalette->reset();
@@ -93,14 +93,14 @@ void MessageShotBox::setupContent() {
 				},
 				content->lifetime());
 
-			box->themeNameChanged() | rpl::start_with_next(
+			box->themeNameChanged() | rpl::on_next(
 				[=](const QString &name)
 				{
 					selectedTheme->force_assign(name);
 				},
 				content->lifetime());
 
-			box->boxClosing() | rpl::start_with_next(
+			box->boxClosing() | rpl::on_next(
 				[=]
 				{
 					AyuFeatures::MessageShot::setChoosingTheme(false);
@@ -115,7 +115,7 @@ void MessageShotBox::setupContent() {
 		st::settingsButtonNoIcon
 	)->toggleOn(rpl::single(_config.showBackground)
 	)->toggledValue(
-	) | start_with_next(
+	) | on_next(
 		[=](bool enabled)
 		{
 			_config.showBackground = enabled;
@@ -130,7 +130,7 @@ void MessageShotBox::setupContent() {
 		st::settingsButtonNoIcon
 	)->toggleOn(rpl::single(_config.showDate)
 	)->toggledValue(
-	) | start_with_next(
+	) | on_next(
 		[=](bool enabled)
 		{
 			_config.showDate = enabled;
@@ -145,7 +145,7 @@ void MessageShotBox::setupContent() {
 		st::settingsButtonNoIcon
 	)->toggleOn(rpl::single(_config.showReactions)
 	)->toggledValue(
-	) | start_with_next(
+	) | on_next(
 		[=](bool enabled)
 		{
 			_config.showReactions = enabled;
@@ -161,11 +161,10 @@ void MessageShotBox::setupContent() {
 	);
 	latestToggle->toggleOn(rpl::single(savedShowColorfulReplies)
 	)->toggledValue(
-	) | start_with_next(
+	) | on_next(
 		[=](bool enabled)
 		{
-			const auto settings = &AyuSettings::getInstance();
-			settings->set_simpleQuotesAndReplies(!enabled);
+			AyuSettings::set_simpleQuotesAndReplies(!enabled);
 
 			_config.st = std::make_shared<Ui::ChatStyle>(_config.st.get());
 			updatePreview();
@@ -200,17 +199,16 @@ void MessageShotBox::setupContent() {
 
 	updatePreview();
 
-	const auto boxWidth = imageView->getImage().width() + (st::boxPadding.left() + st::boxPadding.right()) * 4;
+	const auto boxWidth = imageView->getImage().width() / style::DevicePixelRatio() + (st::boxPadding.left() + st::boxPadding.right()) * 4;
 
-	boxClosing() | rpl::start_with_next(
+	boxClosing() | rpl::on_next(
 		[=]
 		{
 			AyuFeatures::MessageShot::resetCustomSelected();
 			AyuFeatures::MessageShot::resetDefaultSelected();
 			AyuFeatures::MessageShot::resetShotConfig();
 
-			const auto settings = &AyuSettings::getInstance();
-			settings->set_simpleQuotesAndReplies(!savedShowColorfulReplies);
+			AyuSettings::set_simpleQuotesAndReplies(!savedShowColorfulReplies);
 		},
 		content->lifetime());
 

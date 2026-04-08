@@ -91,8 +91,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QAction>
 
 // AyuGram includes
-#include "ayu/ui/settings/settings_ayu.h"
-#include "ayu/features/messageshot/message_shot.h"
+#include "ayu/features/message_shot/message_shot.h"
 #include "window/themes/window_theme_preview.h"
 
 
@@ -2481,6 +2480,21 @@ void SetupDefaultThemes(
 			anim::type::instant);
 	};
 	group->setChangedCallback([=](Type type) {
+		if (AyuFeatures::MessageShot::isChoosingTheme()) {
+			palette->show(type);
+			refreshColorizer(type);
+			group->setValue(type);
+			AyuFeatures::MessageShot::setDefaultSelected(type);
+
+			const auto scheme = ranges::find(kSchemesList, type, &Scheme::type);
+			if (scheme == end(kSchemesList)) {
+				return;
+			}
+
+			updateMessageShotPalette(scheme->path);
+			return;
+		}
+
 		const auto scheme = ranges::find(
 			kSchemesList,
 			type,
@@ -2574,7 +2588,7 @@ void SetupDefaultThemes(
 	}, block->lifetime());
 
 	if (AyuFeatures::MessageShot::isChoosingTheme()) {
-		palette->selected() | rpl::start_with_next(
+		palette->selected() | rpl::on_next(
 			[=](QColor color)
 			{
 				AyuFeatures::MessageShot::setDefaultSelectedColor(color);
@@ -2590,7 +2604,7 @@ void SetupDefaultThemes(
 			},
 			container->lifetime());
 
-		AyuFeatures::MessageShot::resetDefaultSelectedEvents() | rpl::start_with_next([=]
+		AyuFeatures::MessageShot::resetDefaultSelectedEvents() | rpl::on_next([=]
 			{
 				refreshColorizer(AyuFeatures::MessageShot::getSelectedFromDefault()); // hide colorizer
 				group->setValue(Type(-1));
@@ -2600,6 +2614,9 @@ void SetupDefaultThemes(
 
 	palette->selected(
 	) | rpl::on_next([=](QColor color) {
+		if (AyuFeatures::MessageShot::isChoosingTheme()) {
+			return;
+		}
 		if (Background()->editingTheme()) {
 			window->show(Ui::MakeInformBox(
 				tr::lng_theme_editor_cant_change_theme()));

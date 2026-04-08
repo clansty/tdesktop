@@ -127,7 +127,7 @@ void InitializeBlockedPeers(not_null<Main::Session*> session) {
 	session->api().blockedPeers().slice(
 	) | rpl::take(
 		1
-	) | rpl::start_with_next([=](const Api::BlockedPeers::Slice &result) {
+	) | rpl::on_next([=](const Api::BlockedPeers::Slice &result) {
 		applySlice(result, applySlice);
 	}, session->lifetime());
 }
@@ -297,6 +297,8 @@ Session::Session(
 	) | rpl::on_next([=] {
 		appConfigRefreshed();
 	}, _lifetime);
+
+	InitializeBlockedPeers(this);
 }
 
 void Session::appConfigRefreshed() {
@@ -372,8 +374,8 @@ rpl::producer<> Session::downloaderTaskFinished() const {
 }
 
 bool Session::premium() const {
-	auto settings = &AyuSettings::getInstance();
-	if (settings->localPremium) {
+	const auto &settings = AyuSettings::getInstance();
+	if (settings.localPremium) {
 		return true;
 	}
 
@@ -381,8 +383,8 @@ bool Session::premium() const {
 }
 
 bool Session::premiumPossible() const {
-	auto settings = &AyuSettings::getInstance();
-	if (settings->localPremium) {
+	const auto &settings = AyuSettings::getInstance();
+	if (settings.localPremium) {
 		return true;
 	}
 
@@ -404,8 +406,8 @@ rpl::producer<bool> Session::premiumPossibleValue() const {
 		return _user->isPremium();
 	});
 
-	auto settings = &AyuSettings::getInstance();
-	if (settings->localPremium) {
+	const auto &settings = AyuSettings::getInstance();
+	if (settings.localPremium) {
 		premium = rpl::single(true);
 	}
 

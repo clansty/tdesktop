@@ -23,6 +23,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QStandardPaths>
 #include <QtCore/QTimer>
 
+// AyuGram includes
+#include "ayu/ayu_settings.h"
+
+
 namespace {
 
 constexpr auto kDefaultProxyPort = 80;
@@ -273,11 +277,11 @@ LastCrashedWindow::LastCrashedWindow(
 	excludeReportUsername();
 
 #ifndef TDESKTOP_DISABLE_AUTOUPDATE
-	if (false) {
+	const auto &settings = AyuSettings::getInstance();
+	if (!settings.crashReporting) {
 #else
 	if (true) {
 #endif
-		// Currently accept crash reports only from testers.
 		_sendingState = SendingNoReport;
 	} else if (Core::OpenGLLastCheckFailed()) {
 		// Nothing we can do right now with graphics driver crashes in GL.
@@ -429,6 +433,9 @@ LastCrashedWindow::LastCrashedWindow(
 	_yourReportName.setTextInteractionFlags(Qt::TextSelectableByMouse);
 
 	_includeUsername.setText(u"Include username @%1 as your contact info"_q.arg(_reportUsername));
+	_includeUsername.setCheckState(Qt::Unchecked);
+	_includeUsername.setDisabled(true);
+	_includeUsername.setVisible(false);
 
 	_report.setPlainText(_reportTextNoUsername);
 

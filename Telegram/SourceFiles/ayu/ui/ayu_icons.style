@@ -4,11 +4,12 @@
  * We do not and cannot prevent the use of our code,
  * but be respectful and credit the original author.
  *
- * Copyright @Radolyn, 2024
+ * Copyright @Radolyn, 2025
  */
 
 using "ui/colors.palette";
 using "ui/widgets/widgets.style";
+using "dialogs/dialogs.style";
 
 ayuGhostIcon: icon {{ "ayu/ghost", menuIconColor }};
 ayuMenuIcon: icon {{ "ayu/ayu_menu", menuIconColor }};
@@ -19,11 +20,41 @@ ayuStreamerModeMenuIcon: icon {{ "ayu/streamer", menuIconColor }};
 
 ayuMenuIconToBeginning: icon {{ "ayu/to_beginning", menuIconColor }};
 
+messageFieldAttachIcon: icon {{ "ayu/message_field/attach", menuIconColor }};
+messageFieldCommandsIcon: icon {{ "ayu/message_field/commands", menuIconColor }};
+messageFieldEmojiIcon: icon {{ "ayu/message_field/emoji", menuIconColor }};
+messageFieldVoiceIcon: icon {{ "ayu/message_field/voice", menuIconColor }};
+messageFieldTTLIcon: icon {{ "ayu/message_field/ttl", menuIconColor }};
+
 inChannelBadgeIcon: icon {{ "ayu/channel", msgInDateFg }};
 inChannelBadgeSelectedIcon: icon {{ "ayu/channel", msgInDateFgSelected }};
 outChannelBadgeIcon: icon {{ "ayu/channel", msgOutDateFg }};
 outChannelBadgeSelectedIcon: icon {{ "ayu/channel", msgOutDateFgSelected }};
 
-infoExteraBadge: icon {{ "ayu/exterabadge", profileVerifiedCheckBg }};
+infoExteraOfficialBadge: icon {{ "ayu/extera_official", profileVerifiedCheckBg }};
+infoExteraSupporterBadge: icon {{ "ayu/extera_badge", profileVerifiedCheckBg }};
 
 winEnterWithGuestIcon: icon {{ "ayu/ghost_tray", windowFg }};
+
+editedIcon: IconEmoji{
+    icon: icon{{ "ayu/edited", windowFg }};
+    padding: margins(0px, 0px, 0px, 0px);
+    useIconColor: false;
+}
+
+deletedIcon: IconEmoji{
+    icon: icon{{ "ayu/trash_bin", windowFg }};
+    padding: margins(0px, 0px, 0px, 0px);
+    useIconColor: false;
+}
+
+dialogsExteraOfficialIcon: ThreeStateIcon {
+	icon: icon {{ "ayu/dialogs_extera_official", dialogsVerifiedIconBg }};
+	over: icon {{ "ayu/dialogs_extera_official", dialogsVerifiedIconBgOver }};
+	active: icon {{ "ayu/dialogs_extera_official", dialogsVerifiedIconBgActive }};
+}
+dialogsExteraSupporterIcon: ThreeStateIcon {
+	icon: icon {{ "ayu/dialogs_extera_supporter", dialogsVerifiedIconBg }};
+	over: icon {{ "ayu/dialogs_extera_supporter", dialogsVerifiedIconBgOver }};
+	active: icon {{ "ayu/dialogs_extera_supporter", dialogsVerifiedIconBgActive }};
+}

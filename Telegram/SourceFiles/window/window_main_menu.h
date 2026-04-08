@@ -1,4 +1,4 @@
-﻿/*
+/*
 This file is part of Telegram Desktop,
 the official desktop application for the Telegram messaging service.
 
@@ -104,10 +104,6 @@ private:
 	not_null<Ui::FlatLabel*> _telegram;
 	not_null<Ui::FlatLabel*> _version;
 	QPointer<Ui::SettingsButton> _nightThemeToggle;
-	QPointer<Ui::SettingsButton> _showPhoneToggle;
-	QPointer<Ui::SettingsButton> _screenshotToggle;
-	QPointer<Ui::SettingsButton> _ghostModeToggle;
-	QPointer<Ui::SettingsButton> _streamerModeToggle;
 	rpl::event_stream<bool> _nightThemeSwitches;
 	base::Timer _nightThemeSwitch;
 	base::unique_qptr<Ui::PopupMenu> _contextMenu;

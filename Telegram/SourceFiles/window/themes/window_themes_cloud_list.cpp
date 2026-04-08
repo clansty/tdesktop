@@ -36,7 +36,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtGui/QClipboard>
 
 // AyuGram includes
-#include "ayu/features/messageshot/message_shot.h"
+#include "ayu/features/message_shot/message_shot.h"
 
 
 namespace Window {
@@ -347,7 +347,7 @@ void CloudList::setup() {
 	});
 
 	if (AyuFeatures::MessageShot::isChoosingTheme()) {
-		AyuFeatures::MessageShot::resetCustomSelectedEvents() | rpl::start_with_next([=] {
+		AyuFeatures::MessageShot::resetCustomSelectedEvents() | rpl::on_next([=] {
 			_group->setValue(-1);
 		}, _outer->lifetime());
 	}

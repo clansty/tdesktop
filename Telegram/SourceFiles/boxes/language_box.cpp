@@ -54,6 +54,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtGui/QGuiApplication>
 #include <QtGui/QClipboard>
 
+// AyuGram includes
+#include "ayu/ayu_settings.h"
+
+
 namespace {
 
 using Language = Lang::Language;
@@ -1254,7 +1258,15 @@ void LanguageBox::setupTop(not_null<Ui::VerticalLayout*> container) {
 	}
 
 	using namespace rpl::mappers;
-	auto premium = Data::AmPremiumValue(&_controller->session());
+	auto premium = Data::AmPremiumValue(&_controller->session()) | rpl::map([=](bool val)
+	{
+		// const auto &settings = AyuSettings::getInstance();
+		// if (settings.translationProvider != "telegram") {
+		// 	return true;
+		// }
+		// return val;
+		return true;
+	});
 	const auto translateChat = container->add(object_ptr<Ui::SettingsButton>(
 		container,
 		tr::lng_translate_settings_chat(),
@@ -1272,15 +1284,14 @@ void LanguageBox::setupTop(not_null<Ui::VerticalLayout*> container) {
 
 	translateChat->toggledValue(
 	) | rpl::filter([=](bool checked) {
-		const auto premium = _controller->session().premium();
+		/*const auto premium = _controller->session().premium();
 		if (checked && !premium) {
 			ShowPremiumPreviewToBuy(
 				_controller,
 				PremiumFeature::RealTimeTranslation);
 			_translateChatTurnOff.fire(false);
-		}
-		return premium
-			&& (checked != Core::App().settings().translateChatEnabled());
+		}*/
+		return checked != Core::App().settings().translateChatEnabled();
 	}) | rpl::on_next([=](bool checked) {
 		Core::App().settings().setTranslateChatEnabled(checked);
 		Core::App().saveSettingsDelayed();

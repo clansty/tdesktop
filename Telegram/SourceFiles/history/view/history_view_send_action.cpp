@@ -22,7 +22,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 // AyuGram includes
 #include "ayu/ayu_settings.h"
-
+#include "ayu/features/filters/shadow_ban_utils.h"
 
 namespace HistoryView {
 namespace {
@@ -67,11 +67,14 @@ bool SendActionPainter::updateNeedsAnimating(
 		return false;
 	}
 
-	const auto settings = &AyuSettings::getInstance();
-	if (settings->hideFromBlocked) {
+	const auto &settings = AyuSettings::getInstance();
+	if (settings.hideFromBlocked) {
 		if (user->isBlocked()) {
 			return false;
 		}
+	}
+	if (ShadowBanUtils::isShadowBanned(user->id.value & PeerId::kChatTypeMask)) {
+		return false;
 	}
 
 	const auto now = crl::now();
