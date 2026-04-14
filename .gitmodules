@@ -1,6 +1,6 @@
 [submodule "Telegram/ThirdParty/GSL"]
 	path = Telegram/ThirdParty/GSL
-	url = https://github.com/Microsoft/GSL.git
+	url = https://github.com/clansty/GSL.git
 [submodule "Telegram/ThirdParty/xxHash"]
 	path = Telegram/ThirdParty/xxHash
 	url = https://github.com/Cyan4973/xxHash.git
@@ -21,7 +21,7 @@
 	url = https://github.com/TDesktop-x64/lib_base.git
 [submodule "Telegram/codegen"]
 	path = Telegram/codegen
-	url = https://github.com/AyuGram/codegen.git
+	url = https://github.com/clansty/codegen.git
 [submodule "Telegram/lib_ui"]
 	path = Telegram/lib_ui
 	url = https://github.com/clansty/lib_ui.git
@@ -30,7 +30,7 @@
 	url = https://github.com/desktop-app/lib_lottie.git
 [submodule "Telegram/lib_tl"]
 	path = Telegram/lib_tl
-	url = https://github.com/AyuGram/lib_tl.git
+	url = https://github.com/clansty/lib_tl.git
 [submodule "Telegram/lib_spellcheck"]
 	path = Telegram/lib_spellcheck
 	url = https://github.com/desktop-app/lib_spellcheck
@@ -91,6 +91,9 @@
 [submodule "Telegram/ThirdParty/xdg-desktop-portal"]
 	path = Telegram/ThirdParty/xdg-desktop-portal
 	url = https://github.com/flatpak/xdg-desktop-portal.git
+[submodule "Telegram/lib_translate"]
+	path = Telegram/lib_translate
+	url = https://github.com/desktop-app/lib_translate
 [submodule "Telegram/lib_icu"]
 	path = Telegram/lib_icu
 	url = https://github.com/AyuGram/lib_icu.git
