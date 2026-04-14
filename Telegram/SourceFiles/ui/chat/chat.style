@@ -622,6 +622,11 @@ historyAdminLogSearchSlideDuration: 150;
 historyAdminLogTopBarLeft: 17px;
 historyAdminLogTopBarUserpicSkip: 35px;
 
+historyAdminLogWhatIsThis: IconButton(historyAttach) {
+	icon: icon {{ "menu/faq", windowActiveTextFg }};
+	iconOver: icon {{ "menu/faq", windowActiveTextFg }};
+}
+
 historyFastShareSize: topPeersSelectorUserpicSize;
 historyFastShareLeft: 13px;
 historyFastShareBottom: 5px;

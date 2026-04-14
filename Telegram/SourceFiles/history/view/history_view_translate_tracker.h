@@ -19,34 +19,37 @@ namespace HistoryView {
 
 class Element;
 
-class TranslateTracker final {
+class TranslateTracker final
+{
 public:
-	explicit TranslateTracker(not_null<History*> history);
+	explicit TranslateTracker(not_null<History *> history);
 	~TranslateTracker();
 
 	[[nodiscard]] bool enoughForRecognition() const;
 	void startBunch();
-	bool add(not_null<Element*> view);
-	bool add(not_null<HistoryItem*> item);
+	bool add(not_null<Element *> view);
+	bool add(not_null<HistoryItem *> item);
 	void finishBunch();
 
 	void addBunchFromBlocks();
-	void addBunchFrom(const std::vector<not_null<Element*>> &views);
+	void addBunchFrom(const std::vector<not_null<Element *>> &views);
 
 	[[nodiscard]] rpl::producer<bool> trackingLanguage() const;
 
 private:
 	using MaybeLanguageId = std::variant<QString, LanguageId>;
-	struct ItemForRecognize {
+	struct ItemForRecognize
+	{
 		uint64 generation = 0;
 		MaybeLanguageId id;
 	};
-	struct ItemToRequest {
+	struct ItemToRequest
+	{
 		int length = 0;
 	};
 
 	void setup();
-	bool add(not_null<HistoryItem*> item, bool skipDependencies);
+	bool add(not_null<HistoryItem *> item, bool skipDependencies);
 	void recognizeCollected();
 	void trackSkipLanguages();
 	void checkRecognized();
@@ -55,10 +58,12 @@ private:
 	void requestSome();
 	void cancelToRequest();
 	void cancelSentRequest();
-	void switchTranslation(not_null<HistoryItem*> item, LanguageId id);
+	void switchTranslation(not_null<HistoryItem *> item, LanguageId id);
+	void resetProvider();
+	void invalidateTranslations();
 
-	const not_null<History*> _history;
-	const std::unique_ptr<Ui::TranslateProvider> _provider;
+	const not_null<History *> _history;
+	std::unique_ptr<Ui::TranslateProvider> _provider;
 	rpl::variable<bool> _trackingLanguage = false;
 	base::flat_map<FullMsgId, ItemForRecognize> _itemsForRecognize;
 	uint64 _generation = 0;
@@ -67,7 +72,7 @@ private:
 	int _addedInBunch = -1;
 	bool _allLoaded = false;
 
-	base::flat_map<not_null<HistoryItem*>, LanguageId> _switchTranslations;
+	base::flat_map<not_null<HistoryItem *>, LanguageId> _switchTranslations;
 	base::flat_map<FullMsgId, ItemToRequest> _itemsToRequest;
 	std::vector<FullMsgId> _requested;
 	uint64 _requestToken = 0;
@@ -75,8 +80,6 @@ private:
 
 	rpl::lifetime _trackingLifetime;
 	rpl::lifetime _lifetime;
-
 };
 
 } // namespace HistoryView
-
