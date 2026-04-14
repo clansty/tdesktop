@@ -52,10 +52,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <ada.h>
 
-// AyuGram includes
-#include "ayu/features/streamer_mode/streamer_mode.h"
-
-
 namespace Iv {
 namespace {
 
@@ -108,7 +104,6 @@ public:
 			tr::lng_background_reset_default(),
 			st::ivResetZoomLabel);
 		resetLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
-		reset->setTextTransform(Ui::RoundButtonTextTransform::NoTransform);
 		reset->setClickedCallback([this] {
 			_delegate->ivSetZoom(0);
 		});
@@ -665,11 +660,6 @@ void Controller::createWebview(const Webview::StorageId &storageId) {
 	Expects(!_webview);
 
 	const auto window = _window.get();
-
-	if (AyuFeatures::StreamerMode::isEnabled()) {
-		AyuFeatures::StreamerMode::hideWidgetWindow(window);
-	}
-
 	_webview = std::make_unique<Webview::Window>(
 		_container,
 		Webview::WindowConfig{

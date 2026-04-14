@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "base/const_string.h"
+#include "base/flags.h"
 
 #define TDESKTOP_REQUESTED_ALPHA_VERSION (0ULL)
 
@@ -26,6 +27,6 @@ constexpr auto AppVersion = 1004003;
 constexpr auto AppVersionStr = "v1.4.3";
 constexpr auto AppBetaVersion = false;
 constexpr auto AppAlphaVersion = TDESKTOP_ALPHA_VERSION;
-constexpr auto UpstreamVersion = "6.7.2";
-constexpr auto Upstream64Version = "1.1.97";
+constexpr auto UpstreamVersion = "6.7.5";
+constexpr auto Upstream64Version = "1.1.99";
 constexpr auto UpstreamAyuVersion = "6.3.10";

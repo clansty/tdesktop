@@ -31,28 +31,39 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtGui/QGuiApplication>
 #include <QtGui/QClipboard>
 
-#include "window/window_session_controller.h"
-#include "window/window_session_controller_link_info.h"
-
 namespace {
 
-rpl::producer<TextWithEntities> Text() {
+rpl::producer<TextWithEntities> Text1() {
+	return tr::lng_about_text4(
+		lt_api_link,
+		tr::lng_about_text4_api(tr::url(u"https://core.telegram.org/api"_q)),
+		tr::marked);
+}
+
+rpl::producer<TextWithEntities> Text2() {
 	return tr::lng_about_text2(
 		lt_gpl_link,
-		rpl::single(Ui::Text::Link(
+		rpl::single(tr::link(
 			"GNU GPL",
-			"https://github.com/Clansty/tdesktop/blob/dev/LICENSE")),
+			"https://github.com/TDesktop-x64/tdesktop/blob/dev/LICENSE")),
 		lt_github_link,
-		rpl::single(Ui::Text::Link(
+		rpl::single(tr::link(
 			"GitHub",
-			"https://github.com/Clansty/tdesktop")),
+			"https://github.com/TDesktop-x64/tdesktop")),
+		tr::marked);
+}
+
+rpl::producer<TextWithEntities> Text3() {
+	return tr::lng_about_text3(
+		lt_faq_link,
+		tr::lng_about_text3_faq(tr::url(telegramFaqLink())),
 		tr::marked);
 }
 
 } // namespace
 
-void AboutBox(not_null<Ui::GenericBox*> box, Window::SessionController* controller) {
-	box->setTitle(rpl::single(u"0wGram Desktop"_q));
+void AboutBox(not_null<Ui::GenericBox*> box) {
+	box->setTitle(u"64Gram Desktop"_q);
 
 	auto layout = box->verticalLayout();
 
@@ -70,7 +81,35 @@ void AboutBox(not_null<Ui::GenericBox*> box, Window::SessionController* controll
 			st::boxRowPadding.right(),
 			st::boxRowPadding.bottom()));
 	version->setClickedCallback([=] {
-		File::OpenUrl(Core::App().changelogLink());
+		if (cRealAlphaVersion()) {
+			auto url = u"https://tdesktop.com/"_q;
+			if (Platform::IsWindows32Bit()) {
+				url += u"win/%1.zip"_q;
+			} else if (Platform::IsWindows64Bit()) {
+				url += u"win64/%1.zip"_q;
+			} else if (Platform::IsWindowsARM64()) {
+				url += u"winarm/%1.zip"_q;
+			} else if (Platform::IsMac()) {
+				url += u"mac/%1.zip"_q;
+			} else if (Platform::IsLinux()) {
+				url += u"linux/%1.tar.xz"_q;
+			} else {
+				Unexpected("Platform value.");
+			}
+			url = url.arg(u"talpha%1_%2"_q
+				.arg(cRealAlphaVersion())
+				.arg(Core::countAlphaVersionSignature(cRealAlphaVersion())));
+
+			QGuiApplication::clipboard()->setText(url);
+
+			box->getDelegate()->show(
+				Ui::MakeInformBox(
+					"The link to the current private alpha "
+					"version of Telegram Desktop was copied "
+					"to the clipboard."));
+		} else {
+			File::OpenUrl(Core::App().changelogLink());
+		}
 	});
 
 	Ui::AddSkip(layout, st::aboutTopSkip);
@@ -83,20 +122,30 @@ void AboutBox(not_null<Ui::GenericBox*> box, Window::SessionController* controll
 		Ui::AddSkip(layout, st::aboutSkip);
 	};
 
-	addText(Text());
+	addText(Text1());
+	addText(Text2());
+	addText(Text3());
 
 	box->addButton(tr::lng_close(), [=] { box->closeBox(); });
-	box->addLeftButton(
-		rpl::single(QString("@Clansty")),
-		[box, controller]
-		{
-			box->closeBox();
-			controller->showPeerByLink(Window::PeerByLinkInfo{
-				.usernameOrId = QString("clansty"),
-			});
-		});
 
 	box->setWidth(st::aboutWidth);
+}
+
+QString telegramFaqLink() {
+	const auto result = u"https://telegram.org/faq"_q;
+	const auto langpacked = [&](const char *language) {
+		return result + '/' + language;
+	};
+	const auto current = Lang::Id();
+	for (const auto language : { "de", "es", "it", "ko" }) {
+		if (current.startsWith(QLatin1String(language))) {
+			return langpacked(language);
+		}
+	}
+	if (current.startsWith(u"pt-br"_q)) {
+		return langpacked("br");
+	}
+	return result;
 }
 
 QString currentVersionText() {
@@ -111,7 +160,6 @@ QString currentVersionText() {
 	} else if (Platform::IsWindowsARM64()) {
 		result += " arm64";
 	}
-	result += QString("｜v%1").arg(Upstream64Version);
 	result += QString("｜v%1").arg(UpstreamVersion);
 #ifdef _DEBUG
 	result += " DEBUG";
@@ -171,7 +219,7 @@ void ArchiveHintBox(
 							Ui::Text::IconEmoji(&st::textMoreIconEmoji)),
 						tr::rich
 					) | rpl::map([](TextWithEntities text) {
-						return Ui::Text::Link(std::move(text), 1);
+						return tr::link(std::move(text), 1);
 					}),
 					tr::rich),
 				st::channelEarnHistoryRecipientLabel));
@@ -256,8 +304,6 @@ void ArchiveHintBox(
 			box,
 			tr::lng_archive_hint_button(),
 			st::defaultActiveButton);
-		button->setTextTransform(
-			Ui::RoundButtonTextTransform::NoTransform);
 		button->resizeToWidth(box->width()
 			- st.buttonPadding.left()
 			- st.buttonPadding.left());

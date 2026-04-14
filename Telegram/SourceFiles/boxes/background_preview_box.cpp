@@ -792,10 +792,6 @@ void BackgroundPreviewBox::applyForPeer() {
 		}), raw->lifetime());
 		raw->toggle(false, anim::type::normal);
 	});
-	forMe->setTextTransform(RoundButtonTextTransform::NoTransform);
-	forBoth->setTextTransform(RoundButtonTextTransform::NoTransform);
-	cancel->setTextTransform(RoundButtonTextTransform::NoTransform);
-
 	overlay->sizeValue(
 	) | rpl::on_next([=](QSize size) {
 		const auto padding = st::backgroundConfirmPadding;

@@ -108,10 +108,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtGui/QClipboard>
 #include <QtGui/QGuiApplication>
 
-// AyuGram includes
-#include "ayu/utils/telegram_helpers.h"
-
-
 namespace Info::Profile {
 namespace {
 
@@ -303,13 +299,6 @@ TopBar::TopBar(
 	VerifiedContentForPeer(_peer),
 	nullptr,
 	_gifPausedChecker))
-, _exteraBadge(std::make_unique<Badge>(
-	this,
-	st::infoPeerBadge,
-	&_peer->session(),
-	ExteraBadgeTypeFromPeer(_peer),
-	nullptr,
-	_gifPausedChecker))
 , _hasActions(descriptor.source != Source::Stories
 	&& descriptor.source != Source::Preview
 	&& (_wrap.current() != Wrap::Side || !_peer->isNotificationsUser()))
@@ -338,8 +327,10 @@ TopBar::TopBar(
 , _statusLabel(std::make_unique<StatusLabel>(_status.data(), _peer))
 , _showLastSeen(
 	this,
-	tr::lng_status_lastseen_when(),
-	st::infoProfileTopBarShowLastSeen)
+	object_ptr<Ui::RoundButton>(
+		this,
+		tr::lng_status_lastseen_when(),
+		st::infoProfileTopBarShowLastSeen))
 , _forumButton([&, controller = descriptor.controller] {
 	const auto topic = _key.topic();
 	if (!topic) {
@@ -356,7 +347,6 @@ TopBar::TopBar(
 			.append(' ')
 			.append(Ui::Text::IconEmoji(&st::textMoreIconEmoji, QString()));
 	}));
-	owned->setTextTransform(Ui::RoundButtonTextTransform::NoTransform);
 	owned->setClickedCallback([=, peer = _peer] {
 		if (const auto forum = peer->forum()) {
 			if (peer->useSubsectionTabs()) {
@@ -430,17 +420,6 @@ TopBar::TopBar(
 		badgeUpdates = rpl::merge(
 			std::move(badgeUpdates),
 			_botVerify->updated());
-	}
-	if (_exteraBadge) {
-		const auto isCustomBadge = isCustomBadgePeer(getBareID(_peer));
-		const auto isExtera = isExteraPeer(getBareID(_peer));
-		const auto isSupporter = isSupporterPeer(getBareID(_peer));
-		if (isExtera || isSupporter || isCustomBadge) {
-			_exteraBadge->setPremiumClickCallback(badgeClickHandler(_peer));
-		}
-		badgeUpdates = rpl::merge(
-			std::move(badgeUpdates),
-			_exteraBadge->updated());
 	}
 	_title->naturalWidthValue() | rpl::on_next([=](int w) {
 		_title->resizeToWidth(w);
@@ -537,14 +516,14 @@ void TopBar::adjustColors(const std::optional<QColor> &edgeColor) {
 		: shouldOverrideTitle
 		? std::optional<QColor>(st::groupCallMembersFg->c)
 		: std::nullopt);
-	if (!_showLastSeen->isHidden()) {
+	if (_showLastSeen->toggled()) {
 		if (shouldOverrideTitle) {
 			const auto st = mapActionStyle(edgeColor);
-			_showLastSeen->setBrushOverride(st.bgColor);
-			_showLastSeen->setTextFgOverride(st.fgColor);
+			_showLastSeen->entity()->setBrushOverride(st.bgColor);
+			_showLastSeen->entity()->setTextFgOverride(st.fgColor);
 		} else {
-			_showLastSeen->setBrushOverride(std::nullopt);
-			_showLastSeen->setTextFgOverride(std::nullopt);
+			_showLastSeen->entity()->setBrushOverride(std::nullopt);
+			_showLastSeen->entity()->setTextFgOverride(std::nullopt);
 		}
 	}
 	{
@@ -622,11 +601,6 @@ void TopBar::adjustColors(const std::optional<QColor> &edgeColor) {
 	_verified->setOverrideStyle(shouldOverrideBadges
 		? _verifiedSt
 		? _verifiedSt.get()
-		: &st::infoColoredPeerBadge
-		: nullptr);
-	_exteraBadge->setOverrideStyle(shouldOverrideBadges
-		? _badgeSt
-		? _badgeSt.get()
 		: &st::infoColoredPeerBadge
 		: nullptr);
 
@@ -1613,7 +1587,6 @@ void TopBar::updateLabelsPosition() {
 	const auto verifiedWidget = _verified ? _verified->widget() : nullptr;
 	const auto badgeWidget = _badge ? _badge->widget() : nullptr;
 	const auto botVerifyWidget = _botVerify ? _botVerify->widget() : nullptr;
-	const auto exteraWidget = _exteraBadge ? _exteraBadge->widget() : nullptr;
 	auto badgesWidth = 0;
 	if (verifiedWidget) {
 		badgesWidth += verifiedWidget->width();
@@ -1626,9 +1599,6 @@ void TopBar::updateLabelsPosition() {
 	}
 	if (verifiedWidget || badgeWidget) {
 		badgesWidth += st::infoVerifiedCheckPosition.x();
-	}
-	if (exteraWidget) {
-		badgesWidth += exteraWidget->width();
 	}
 	const auto titleWidth = width()
 		- interpolatedPadding
@@ -1661,9 +1631,6 @@ void TopBar::updateLabelsPosition() {
 	if (verifiedWidget || badgeWidget) {
 		totalElementsWidth += st::infoVerifiedCheckPosition.x();
 	}
-	if (exteraWidget) {
-		totalElementsWidth += exteraWidget->width();
-	}
 	totalElementsWidth += botVerifySkip;
 
 	auto titleLeft = anim::interpolate(
@@ -1689,13 +1656,6 @@ void TopBar::updateLabelsPosition() {
 			badgeLeft + (badgeWidget ? badgeWidget->width() : 0),
 			badgeTop,
 			badgeBottom);
-	}
-	if (_exteraBadge) {
-		const auto exteraBadgeLeft = badgeLeft
-			+ (badgeWidget ? badgeWidget->width() : 0)
-			+ (badgeWidget || verifiedWidget ? st::infoVerifiedCheckPosition.x() : 0)
-			+ (verifiedWidget ? verifiedWidget->width() : 0);
-		_exteraBadge->move(exteraBadgeLeft, badgeTop, badgeBottom);
 	}
 
 	updateStatusPosition(progressCurrent);
@@ -1745,7 +1705,7 @@ void TopBar::updateStatusPosition(float64 progressCurrent) {
 
 		_status->hide();
 		// _starsRating->hide();
-		_showLastSeen->hide();
+		_showLastSeen->hide(anim::type::instant);
 		return;
 	}
 
@@ -1755,7 +1715,7 @@ void TopBar::updateStatusPosition(float64 progressCurrent) {
 		progressCurrent);
 	const auto totalElementsWidth = _status->width()
 		+ (_starsRating ? _starsRating->width() : 0)
-		+ (!_showLastSeen->isHidden() ? _showLastSeen->width() : 0);
+		+ (_showLastSeen->toggled() ? _showLastSeen->width() : 0);
 	const auto statusLeft = anim::interpolate(
 		statusMostLeft(),
 		(width() - totalElementsWidth) / 2,
@@ -1770,17 +1730,15 @@ void TopBar::updateStatusPosition(float64 progressCurrent) {
 
 	_status->moveToLeft(statusLeft + statusShift, statusTop);
 
-	if (!_showLastSeen->isHidden()) {
+	if (_showLastSeen->toggled()) {
 		_showLastSeen->moveToLeft(
 			statusLeft
 				+ statusShift
 				+ _status->textMaxWidth()
 				+ st::infoProfileTopBarLastSeenSkip.x(),
 			statusTop + st::infoProfileTopBarLastSeenSkip.y());
-		if (_showLastSeenOpacity) {
-			_showLastSeenOpacity->setOpacity(progressCurrent);
-		}
-		_showLastSeen->setAttribute(
+		_showLastSeen->setOpacity(progressCurrent);
+		_showLastSeen->entity()->setAttribute(
 			Qt::WA_TransparentForMouseEvents,
 			!progressCurrent);
 	}
@@ -2182,7 +2140,7 @@ void TopBar::setupShowLastSeen(
 		|| user->isBot()
 		|| user->isServiceUser()
 		|| !user->session().premiumPossible()) {
-		_showLastSeen->hide();
+		_showLastSeen->hide(anim::type::instant);
 		return;
 	}
 
@@ -2190,7 +2148,7 @@ void TopBar::setupShowLastSeen(
 		if (user->lastseen().isHiddenByMe()) {
 			user->updateFullForced();
 		}
-		_showLastSeen->hide();
+		_showLastSeen->hide(anim::type::instant);
 		return;
 	}
 
@@ -2200,13 +2158,13 @@ void TopBar::setupShowLastSeen(
 			Data::PeerUpdate::Flag::OnlineStatus),
 		Data::AmPremiumValue(&user->session())
 	) | rpl::on_next([=](auto, bool premium) {
-		const auto wasShown = !_showLastSeen->isHidden();
+		const auto wasShown = _showLastSeen->toggled();
 		const auto hiddenByMe = user->lastseen().isHiddenByMe();
 		const auto shown = hiddenByMe
 			&& !user->lastseen().isOnline(base::unixtime::now())
 			&& !premium
 			&& user->session().premiumPossible();
-		_showLastSeen->setVisible(shown);
+		_showLastSeen->toggle(shown, anim::type::instant);
 		if (wasShown && premium && hiddenByMe) {
 			user->updateFullForced();
 		}
@@ -2222,16 +2180,11 @@ void TopBar::setupShowLastSeen(
 		}
 	}, _showLastSeen->lifetime());
 
-	_showLastSeenOpacity = Ui::CreateChild<QGraphicsOpacityEffect>(
-		_showLastSeen.get());
-	_showLastSeen->setGraphicsEffect(_showLastSeenOpacity);
-	_showLastSeenOpacity->setOpacity(0.);
+	_showLastSeen->setOpacity(0.);
 
-	using TextTransform = Ui::RoundButtonTextTransform;
-	_showLastSeen->setTextTransform(TextTransform::NoTransform);
-	_showLastSeen->setFullRadius(true);
+	_showLastSeen->entity()->setFullRadius(true);
 
-	_showLastSeen->setClickedCallback([=] {
+	_showLastSeen->entity()->setClickedCallback([=] {
 		const auto type = Ui::ShowOrPremium::LastSeen;
 		controller->show(Box(
 			Ui::ShowOrPremiumBox,

@@ -232,7 +232,6 @@ void CollectibleInfoBox(
 			tr::lng_collectible_learn_more(),
 			st::collectibleMore),
 		st::collectibleMorePadding);
-	more->setTextTransform(Ui::RoundButtonTextTransform::NoTransform);
 	more->setClickedCallback([url = info.url] {
 		File::OpenUrl(url);
 	});
@@ -245,7 +244,6 @@ void CollectibleInfoBox(
 		phrase(),
 		st::collectibleCopy);
 	const auto copy = owned.data();
-	copy->setTextTransform(Ui::RoundButtonTextTransform::NoTransform);
 	copy->setClickedCallback([copyCallback] {
 		copyCallback(true);
 	});

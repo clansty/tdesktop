@@ -232,7 +232,6 @@ not_null<Ui::RoundButton*> AddDoneButton(
 			st::changePhoneButton),
 		st::settingLocalPasscodeButtonPadding,
 		style::al_top);
-	button->setTextTransform(Ui::RoundButtonTextTransform::NoTransform);
 	return button;
 }
 

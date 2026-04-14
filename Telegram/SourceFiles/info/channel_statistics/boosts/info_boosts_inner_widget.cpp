@@ -203,13 +203,11 @@ void FillShareLink(
 			wrap,
 			tr::lng_group_invite_context_copy(),
 			st::inviteLinkCopy);
-		copy->setTextTransform(Ui::RoundButtonTextTransform::NoTransform);
 		copy->setClickedCallback(copyLink);
 		const auto share = CreateChild<Ui::RoundButton>(
 			wrap,
 			tr::lng_group_invite_context_share(),
 			st::inviteLinkShare);
-		share->setTextTransform(Ui::RoundButtonTextTransform::NoTransform);
 		share->setClickedCallback(shareLink);
 
 		wrap->widthValue(

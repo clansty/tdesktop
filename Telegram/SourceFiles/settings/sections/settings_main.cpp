@@ -1,4 +1,4 @@
-/*
+﻿/*
 This file is part of Telegram Desktop,
 the official desktop application for the Telegram messaging service.
 
@@ -87,11 +87,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtGui/QGuiApplication>
 #include <QtGui/QWindow>
 
-// AyuGram includes
-#include "ayu/ui/settings/settings_main.h"
-#include "ayu/ui/utils/ayu_profile_values.h"
-#include "ayu/utils/telegram_helpers.h"
-
 namespace Settings {
 namespace {
 
@@ -115,7 +110,7 @@ private:
 	void setupChildGeometry();
 	void initViewers();
 	void refreshNameGeometry(int newWidth);
-	void refreshIdGeometry(int newWidth);
+	void refreshPhoneGeometry(int newWidth);
 	void refreshUsernameGeometry(int newWidth);
 	void refreshQrButtonGeometry(int newWidth);
 
@@ -123,11 +118,10 @@ private:
 	const not_null<UserData*> _user;
 	Info::Profile::EmojiStatusPanel _emojiStatusPanel;
 	Info::Profile::Badge _badge;
-	Info::Profile::Badge _exteraBadge;
 
 	object_ptr<Ui::UserpicButton> _userpic;
 	object_ptr<Ui::FlatLabel> _name = { nullptr };
-	object_ptr<Ui::FlatLabel> _id = { nullptr };
+	object_ptr<Ui::FlatLabel> _phone = { nullptr };
 	object_ptr<Ui::FlatLabel> _username = { nullptr };
 	object_ptr<Ui::IconButton> _qrButton = { nullptr };
 
@@ -156,18 +150,6 @@ Cover::Cover(
 	},
 	0, // customStatusLoopsLimit
 	Info::Profile::BadgeType::Premium)
-, _exteraBadge(
-	this,
-	st::infoPeerBadge,
-	&user->session(),
-	ExteraBadgeTypeFromPeer(user),
-	&_emojiStatusPanel,
-	[=] {
-		return controller->isGifPausedAtLeastFor(
-			Window::GifPauseReason::Layer);
-	},
-	0, // customStatusLoopsLimit
-	Info::Profile::BadgeType::Extera | Info::Profile::BadgeType::ExteraSupporter | Info::Profile::BadgeType::ExteraCustom)
 , _userpic(
 	this,
 	controller,
@@ -176,27 +158,29 @@ Cover::Cover(
 	Ui::UserpicButton::Source::PeerPhoto,
 	st::infoProfileCover.photo)
 , _name(this, st::infoProfileCover.name)
-, _id(this, st::defaultFlatLabel)
+, _phone(this, st::defaultFlatLabel)
 , _username(this, st::infoProfileMegagroupCover.status) {
 	_user->updateFull();
 
 	_name->setSelectable(true);
 	_name->setContextCopyText(tr::lng_profile_copy_fullname(tr::now));
 
-	_id->setSelectable(true);
-	_id->setContextCopyText(tr::ayu_ContextCopyID(tr::now));
+	_phone->setSelectable(true);
+	_phone->setContextCopyText(tr::lng_profile_copy_phone(tr::now));
 	const auto hook = [=](Ui::FlatLabel::ContextMenuRequest request) {
 		if (request.selection.empty()) {
 			const auto c = [=] {
-				auto id = IDString(_user);
-				TextUtilities::SetClipboardText({ id });
+				auto phone = rpl::variable<TextWithEntities>(
+					Info::Profile::PhoneValue(_user)).current().text;
+				phone.replace(' ', QString()).replace('-', QString());
+				TextUtilities::SetClipboardText({ phone });
 			};
-			request.menu->addAction(tr::ayu_ContextCopyID(tr::now), c);
+			request.menu->addAction(tr::lng_profile_copy_phone(tr::now), c);
 		} else {
-			_id->fillContextMenu(request);
+			_phone->fillContextMenu(request);
 		}
 	};
-	_id->setContextMenuHook(hook);
+	_phone->setContextMenuHook(hook);
 
 	initViewers();
 	setupChildGeometry();
@@ -224,16 +208,7 @@ Cover::Cover(
 			_badge.widget(),
 			_badge.sizeTag());
 	});
-	const auto isCustomBadge = isCustomBadgePeer(getBareID(_user));
-	const auto isExtera = isExteraPeer(getBareID(_user));
-	const auto isSupporter = isSupporterPeer(getBareID(_user));
-	if (isExtera || isSupporter || isCustomBadge) {
-		_exteraBadge.setPremiumClickCallback(badgeClickHandler(_user));
-	}
-	rpl::merge(
-		_badge.updated(),
-		_exteraBadge.updated()
-	) | rpl::on_next([=] {
+	_badge.updated() | rpl::on_next([=] {
 		refreshNameGeometry(width());
 	}, _name->lifetime());
 
@@ -262,7 +237,7 @@ void Cover::setupChildGeometry() {
 			st::settingsPhotoTop,
 			newWidth);
 		refreshNameGeometry(newWidth);
-		refreshIdGeometry(newWidth);
+		refreshPhoneGeometry(newWidth);
 		refreshUsernameGeometry(newWidth);
 		refreshQrButtonGeometry(newWidth);
 	}, lifetime());
@@ -279,8 +254,12 @@ void Cover::initViewers() {
 	Info::Profile::PhoneValue(
 		_user
 	) | rpl::on_next([=](const TextWithEntities &value) {
-		_id->setText(value.text);
-		refreshIdGeometry(width());
+		if (GetEnhancedBool("show_phone_number")) {
+			_phone->setText(value.text);
+		} else {
+			_phone->setText(tr::lng_info_mobile_hidden(tr::now));
+		}
+		refreshPhoneGeometry(width());
 	}, lifetime());
 
 	Info::Profile::UsernameValue(
@@ -320,30 +299,22 @@ void Cover::refreshNameGeometry(int newWidth) {
 	if (const auto width = _badge.widget() ? _badge.widget()->width() : 0) {
 		nameWidth -= st::infoVerifiedCheckPosition.x() + width;
 	}
-	if (const auto width = _exteraBadge.widget() ? _exteraBadge.widget()->width() : 0) {
-		nameWidth -= st::infoVerifiedCheckPosition.x() + width;
-	}
 	_name->resizeToNaturalWidth(nameWidth);
 	_name->moveToLeft(nameLeft, nameTop, newWidth);
 	const auto badgeLeft = nameLeft + _name->width();
 	const auto badgeTop = nameTop;
 	const auto badgeBottom = nameTop + _name->height();
 	_badge.move(badgeLeft, badgeTop, badgeBottom);
-	const auto exteraBadgeLeft = badgeLeft
-		+ (_badge.widget()
-			   ? (_badge.widget()->width() + st::infoVerifiedCheckPosition.x())
-			   : 0);
-	_exteraBadge.move(exteraBadgeLeft, badgeTop, badgeBottom);
 }
 
-void Cover::refreshIdGeometry(int newWidth) {
-	const auto idLeft = st::settingsPhoneLeft;
-	const auto idTop = st::settingsPhoneTop;
-	const auto idWidth = newWidth
-		- idLeft
+void Cover::refreshPhoneGeometry(int newWidth) {
+	const auto phoneLeft = st::settingsPhoneLeft;
+	const auto phoneTop = st::settingsPhoneTop;
+	const auto phoneWidth = newWidth
+		- phoneLeft
 		- st::infoProfileCover.rightSkip;
-	_id->resizeToWidth(idWidth);
-	_id->moveToLeft(idLeft, idTop, newWidth);
+	_phone->resizeToWidth(phoneWidth);
+	_phone->moveToLeft(phoneLeft, phoneTop, newWidth);
 }
 
 void Cover::refreshUsernameGeometry(int newWidth) {
@@ -894,7 +865,6 @@ void SetupValidatePhoneNumberSuggestion(
 		wrap,
 		tr::lng_box_yes(),
 		st::inviteLinkButton);
-	yes->setTextTransform(Ui::RoundButtonTextTransform::NoTransform);
 	yes->setClickedCallback([=] {
 		controller->session().promoSuggestions().dismiss(
 			kSugValidatePhone.utf8());
@@ -904,7 +874,6 @@ void SetupValidatePhoneNumberSuggestion(
 		wrap,
 		tr::lng_box_no(),
 		st::inviteLinkButton);
-	no->setTextTransform(Ui::RoundButtonTextTransform::NoTransform);
 	no->setClickedCallback([=] {
 		const auto sharedLabel = std::make_shared<base::weak_qptr<Ui::FlatLabel>>();
 		const auto height = st::boxLabel.style.font->height;
@@ -996,7 +965,6 @@ void SetupValidatePasswordSuggestion(
 		wrap,
 		tr::lng_settings_suggestion_password_yes(),
 		st::inviteLinkButton);
-	yes->setTextTransform(Ui::RoundButtonTextTransform::NoTransform);
 	yes->setClickedCallback([=] {
 		controller->session().promoSuggestions().dismiss(
 			Data::PromoSuggestions::SugValidatePassword());
@@ -1006,7 +974,6 @@ void SetupValidatePasswordSuggestion(
 		wrap,
 		tr::lng_settings_suggestion_password_no(),
 		st::inviteLinkButton);
-	no->setTextTransform(Ui::RoundButtonTextTransform::NoTransform);
 	no->setClickedCallback([=] {
 		showOther(Settings::CloudPasswordSuggestionInputId());
 	});
@@ -1022,223 +989,6 @@ void SetupValidatePasswordSuggestion(
 	Ui::AddSkip(content);
 	Ui::AddDivider(content);
 	Ui::AddSkip(content);
-}
-
-void SetupSections(
-		not_null<Window::SessionController*> controller,
-		not_null<Ui::VerticalLayout*> container,
-		Fn<void(Type)> showOther) {
-	Ui::AddDivider(container);
-
-	SetupValidatePhoneNumberSuggestion(
-		controller,
-		container,
-		showOther);
-	SetupValidatePasswordSuggestion(
-		controller,
-		container,
-		showOther);
-
-	const auto addSection = [&](
-			rpl::producer<QString> label,
-			Type type,
-			IconDescriptor &&descriptor) {
-		AddButtonWithIcon(
-			container,
-			std::move(label),
-			st::settingsButton,
-			std::move(descriptor)
-		)->addClickHandler([=] {
-			showOther(type);
-		});
-	};
-
-	Ui::AddSkip(container);
-	addSection(
-		tr::ayu_AyuPreferences(),
-		AyuMain::Id(),
-        { .icon = &st::menuIconPremium });
-	Ui::AddSkip(container);
-	Ui::AddDivider(container);
-    Ui::AddSkip(container);
-
-	if (controller->session().supportMode()) {
-		SetupSupport(controller, container);
-
-		Ui::AddDivider(container);
-		Ui::AddSkip(container);
-	} else {
-		addSection(
-			tr::lng_settings_my_account(),
-			Information::Id(),
-			{ &st::menuIconProfile });
-	}
-
-	addSection(
-		tr::lng_settings_section_notify(),
-		Notifications::Id(),
-		{ &st::menuIconNotifications });
-	addSection(
-		tr::lng_settings_section_privacy(),
-		PrivacySecurity::Id(),
-		{ &st::menuIconLock });
-	addSection(
-		tr::lng_settings_section_chat_settings(),
-		Chat::Id(),
-		{ &st::menuIconChatBubble });
-
-	const auto preload = [=] {
-		controller->session().data().chatsFilters().requestSuggested();
-	};
-	const auto account = &controller->session().account();
-	const auto slided = container->add(
-		object_ptr<Ui::SlideWrap<Ui::SettingsButton>>(
-			container,
-			CreateButtonWithIcon(
-				container,
-				tr::lng_settings_section_filters(),
-				st::settingsButton,
-				{ &st::menuIconShowInFolder }))
-	)->setDuration(0);
-	if (controller->session().data().chatsFilters().has()
-		|| controller->session().settings().dialogsFiltersEnabled()) {
-		slided->show(anim::type::instant);
-		preload();
-	} else {
-		const auto enabled = [=] {
-			const auto result = account->appConfig().get<bool>(
-				u"dialog_filters_enabled"_q,
-				false);
-			if (result) {
-				preload();
-			}
-			return result;
-		};
-		const auto preloadIfEnabled = [=](bool enabled) {
-			if (enabled) {
-				preload();
-			}
-		};
-		slided->toggleOn(
-			rpl::single(rpl::empty) | rpl::then(
-				account->appConfig().refreshed()
-			) | rpl::map(
-				enabled
-			) | rpl::before_next(preloadIfEnabled));
-	}
-	slided->entity()->setClickedCallback([=] {
-		showOther(Folders::Id());
-	});
-
-	addSection(
-		tr::lng_settings_advanced(),
-		Advanced::Id(),
-		{ &st::menuIconManage });
-	addSection(
-		tr::lng_settings_section_devices(),
-		Calls::Id(),
-		{ &st::menuIconUnmute });
-
-	SetupPowerSavingButton(&controller->window(), container);
-	SetupLanguageButton(&controller->window(), container);
-
-	Ui::AddSkip(container);
-}
-
-void SetupPremium(
-		not_null<Window::SessionController*> controller,
-		not_null<Ui::VerticalLayout*> container,
-		Fn<void(Type)> showOther) {
-	if (!controller->session().premiumPossible()) {
-		return;
-	}
-	Ui::AddDivider(container);
-	Ui::AddSkip(container);
-
-	const auto isPaused = Window::PausedIn(
-		controller,
-		Window::GifPauseReason::Any);
-
-	AddPremiumStar(
-		AddButtonWithIcon(
-			container,
-			tr::lng_premium_summary_title(),
-			st::settingsButton),
-		false,
-		isPaused
-	)->addClickHandler([=] {
-		controller->setPremiumRef("settings");
-		showOther(PremiumId());
-	});
-	{
-		controller->session().credits().load();
-		AddPremiumStar(
-			AddButtonWithLabel(
-				container,
-				tr::lng_settings_credits(),
-				controller->session().credits().balanceValue(
-				) | rpl::map([=](CreditsAmount c) {
-					return c
-						? Lang::FormatCreditsAmountToShort(c).string
-						: QString();
-				}),
-				st::settingsButton),
-			true,
-			isPaused
-		)->addClickHandler([=] {
-			controller->setPremiumRef("settings");
-			showOther(CreditsId());
-		});
-	}
-	{
-		const auto wrap = container->add(
-			object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
-				container,
-				object_ptr<Ui::VerticalLayout>(container)));
-		wrap->toggleOn(
-			controller->session().credits().tonBalanceValue(
-			) | rpl::map([](CreditsAmount c) -> bool { return !c.empty(); }));
-		wrap->finishAnimating();
-		controller->session().credits().tonLoad();
-		const auto button = AddButtonWithLabel(
-			wrap->entity(),
-			tr::lng_settings_currency(),
-			controller->session().credits().tonBalanceValue(
-			) | rpl::map([=](CreditsAmount c) {
-				return c
-					? Lang::FormatCreditsAmountToShort(c).string
-					: QString();
-			}),
-			st::settingsButton,
-			{ &st::menuIconTon });
-		button->addClickHandler([=] {
-			controller->setPremiumRef("settings");
-			showOther(CurrencyId());
-		});
-	}
-	const auto button = AddButtonWithIcon(
-		container,
-		tr::lng_business_title(),
-		st::settingsButton,
-		{ .icon = &st::menuIconShop });
-	button->addClickHandler([=] {
-		showOther(BusinessId());
-	});
-
-	if (controller->session().premiumCanBuy()) {
-		const auto button = AddButtonWithIcon(
-			container,
-			tr::lng_settings_gift_premium(),
-			st::settingsButton,
-			{ .icon = &st::menuIconGiftPremium }
-		);
-		Ui::NewBadge::AddToRight(button);
-
-		button->addClickHandler([=] {
-			Ui::ChooseStarGiftRecipient(controller);
-		});
-	}
-	Ui::AddSkip(container);
 }
 
 bool HasInterfaceScale() {

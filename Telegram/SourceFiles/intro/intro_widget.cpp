@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "intro/intro_widget.h"
 
+#include "intro/intro_start.h"
 #include "intro/intro_phone.h"
 #include "intro/intro_qr.h"
 #include "intro/intro_code.h"
@@ -46,7 +47,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_layers.h"
 #include "styles/style_intro.h"
 #include "base/qt/qt_common_adapters.h"
-#include "boxes/about_box.h"
 
 namespace Intro {
 namespace {
@@ -88,11 +88,11 @@ Widget::Widget(
 , _next(
 	this,
 	object_ptr<Ui::RoundButton>(this, nullptr, *_nextStyle))
-, _footer(this, st::introFooter)
 , _connecting(std::make_unique<Window::ConnectionState>(
 		this,
 		account,
 		rpl::single(true))) {
+	_settings->entity()->setTextTransform(Ui::RoundButtonTextTransform::ToUpper);
 	controller->setDefaultFloatPlayerDelegate(floatPlayerDelegate());
 
 	getData()->country = ComputeNewAccountCountry();
@@ -104,6 +104,10 @@ Widget::Widget(
 	}, lifetime());
 
 	switch (point) {
+	case EnterPoint::Start:
+		getNearestDC();
+		appendStep(new StartWidget(this, _account, getData()));
+		break;
 	case EnterPoint::Phone:
 		appendStep(new PhoneWidget(this, _account, getData()));
 		break;
@@ -170,8 +174,6 @@ Widget::Widget(
 			checkUpdateStatus();
 		}, lifetime());
 	}
-
-	_footer->setText(QString("AyuGram Desktop v%1").arg(currentVersionText()));
 }
 
 rpl::producer<> Widget::showSettingsRequested() const {
@@ -318,6 +320,7 @@ void Widget::checkUpdateStatus() {
 				this,
 				tr::lng_menu_update(),
 				st::defaultBoxButton));
+		_update->entity()->setTextTransform(Ui::RoundButtonTextTransform::ToUpper);
 		if (!_showAnimation) {
 			_update->setVisible(true);
 		}
@@ -492,6 +495,7 @@ void Widget::showResetButton() {
 			this,
 			tr::lng_signin_reset_account(),
 			st::introResetButton);
+		entity->setTextTransform(Ui::RoundButtonTextTransform::ToUpper);
 		_resetAccount.create(this, std::move(entity));
 		_resetAccount->hide(anim::type::instant);
 		_resetAccount->entity()->setClickedCallback([this] { resetAccount(); });
@@ -722,8 +726,6 @@ void Widget::showControls() {
 
 void Widget::setupNextButton() {
 	_next->entity()->setClickedCallback([=] { getStep()->submit(); });
-	_next->entity()->setTextTransform(
-		Ui::RoundButtonTextTransform::NoTransform);
 
 	_next->entity()->setText(getStep()->nextButtonText(
 	) | rpl::filter([](const QString &text) {
@@ -866,8 +868,6 @@ void Widget::updateControlsGeometry() {
 			(width() - _terms->width()) / 2,
 			height() - st::introTermsBottom - _terms->height());
 	}
-
-	_footer->move((width() - _footer->width()) / 2, height() - _footer->height() - st::lineWidth * 6);
 }
 
 void Widget::keyPressEvent(QKeyEvent *e) {
@@ -892,7 +892,7 @@ void Widget::backRequested() {
 		Core::App().domain().activate(parent);
 	} else {
 		moveToStep(
-			Ui::CreateChild<QrWidget>(this, _account, getData()),
+			Ui::CreateChild<StartWidget>(this, _account, getData()),
 			StackAction::Replace,
 			Animate::Back);
 	}

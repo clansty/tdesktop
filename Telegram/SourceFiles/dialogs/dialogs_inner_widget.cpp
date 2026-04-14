@@ -92,10 +92,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtWidgets/QApplication>
 #include <QtCore/QMimeData>
 
-// AyuGram includes
-#include "styles/style_ayu_icons.h"
-
-
 namespace Dialogs {
 namespace {
 
@@ -1598,14 +1594,6 @@ void InnerWidget::paintPeerSearchResult(
 			: context.selected
 			? &st::dialogsVerifiedIconOver
 			: &st::dialogsVerifiedIcon),
-		.exteraOfficial = &ThreeStateIcon(
-			st::dialogsExteraOfficialIcon,
-			context.active,
-			context.selected),
-		.exteraSupporter = &ThreeStateIcon(
-			st::dialogsExteraSupporterIcon,
-			context.active,
-			context.selected),
 		.premium = &ThreeStateIcon(
 			st::dialogsPremiumIcon,
 			context.active,
@@ -4358,8 +4346,6 @@ void InnerWidget::refreshEmpty() {
 			this,
 			tr::lng_no_conversations_button(),
 			st::dialogEmptyButton);
-		_emptyButton->setTextTransform(
-			Ui::RoundButtonTextTransform::NoTransform);
 		_emptyButton->setVisible(isListVisible);
 		_emptyButton->setClickedCallback([=, window = _controller] {
 			window->show(PrepareContactsBox(window));

@@ -225,9 +225,8 @@ private:
 	object_ptr<Ui::FlatLabel> _status;
 	std::unique_ptr<StatusLabel> _statusLabel;
 	rpl::variable<int> _statusShift = 0;
-	object_ptr<Ui::RoundButton> _showLastSeen = { nullptr };
+	object_ptr<Ui::FadeWrap<Ui::RoundButton>> _showLastSeen = { nullptr };
 	object_ptr<Ui::RoundButton> _forumButton = { nullptr };
-	QGraphicsOpacityEffect *_showLastSeenOpacity = nullptr;
 	object_ptr<Ui::FlatLabel> _id;
 	QGraphicsOpacityEffect *_idOpacity = nullptr;
 

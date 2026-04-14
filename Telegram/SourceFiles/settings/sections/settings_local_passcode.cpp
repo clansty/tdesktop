@@ -212,7 +212,6 @@ void LocalPasscodeEnter::setupContent() {
 			st::changePhoneButton),
 		st::settingLocalPasscodeButtonPadding,
 		style::al_top);
-	button->setTextTransform(Ui::RoundButtonTextTransform::NoTransform);
 	button->setClickedCallback([=] {
 		const auto newText = newPasscode->text();
 		const auto reenterText = reenterPasscode

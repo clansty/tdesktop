@@ -1083,6 +1083,7 @@ topBarAdmins: IconButton(topBarSearch) {
 }
 topBarInfoActive: icon {{ "top_bar_profile", windowActiveTextFg }};
 topBarActionSkip: 10px;
+topBarActionButtonLargeRadius: 8px;
 
 topBarInfoButtonSize: size(52px, topBarHeight);
 topBarInfoButtonInnerSize: 42px;
@@ -1468,15 +1469,9 @@ earnTonIconSize: 16px;
 earnTonIconMargin: margins(0px, 2px, 0px, 0px);
 
 infoMusicButtonRipple: universalRippleAnimation;
-infoMusicButtonPadding: margins(12px, 8px, 24px, 8px);
-infoMusicButtonPerformer: FlatLabel(defaultFlatLabel) {
-	textFg: windowSubTextFg;
-	maxHeight: 20px;
-}
-infoMusicButtonTitle: FlatLabel(defaultFlatLabel) {
-	textFg: windowBoldFg;
-	style: semiboldTextStyle;
-	maxHeight: 20px;
-}
-infoMusicButtonBottom: 8px;
-infoMusicButtonLine: 2px;
+infoMusicButtonPadding: margins(16px, 6px, 13px, 6px);
+
+memberTagPillPadding: margins(5px, -1px, 5px, 0px);
+
+infoSecurityRiskIconSize: 16px;
+infoSecurityRiskIconMargin: margins(0px, 2px, 0px, 0px);

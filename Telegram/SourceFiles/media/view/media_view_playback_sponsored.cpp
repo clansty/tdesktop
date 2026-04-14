@@ -331,7 +331,6 @@ PlaybackSponsored::Message::Message(
 		this,
 		_aboutSt.ripple,
 		std::move(allowCloseAt))) {
-	_about->setTextTransform(Ui::RoundButtonTextTransform::NoTransform);
 	setMouseTracking(true);
 	populate();
 	hide();
