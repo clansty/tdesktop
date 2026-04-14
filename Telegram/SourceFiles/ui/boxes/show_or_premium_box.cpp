@@ -159,7 +159,7 @@ void ShowOrPremiumBox(
 			std::move(skin.showButton),
 			st::showOrShowButton),
 		buttonPadding);
-	show->setTextTransform(RoundButton::TextTransform::NoTransform);
+	show->setTextTransform(RoundButtonTextTransform::NoTransform);
 	box->addRow(
 		MakeShowOrLabel(box, std::move(skin.orPremium)),
 		st::showOrLabelPadding + buttonPadding,

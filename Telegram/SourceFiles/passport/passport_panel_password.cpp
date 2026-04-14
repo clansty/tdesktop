@@ -242,7 +242,7 @@ void PanelNoPassword::refreshBottom() {
 			tr::lng_cancel(),
 			st::defaultBoxButton);
 		cancel->setTextTransform(
-			Ui::RoundButton::TextTransform::NoTransform);
+			Ui::RoundButtonTextTransform::NoTransform);
 		cancel->addClickHandler([=] {
 			_controller->cancelPasswordSubmit();
 		});
@@ -251,7 +251,7 @@ void PanelNoPassword::refreshBottom() {
 			tr::lng_passport_email_validate(),
 			st::defaultBoxButton);
 		validate->setTextTransform(
-			Ui::RoundButton::TextTransform::NoTransform);
+			Ui::RoundButtonTextTransform::NoTransform);
 		validate->addClickHandler([=] {
 			_controller->validateRecoveryEmail();
 		});

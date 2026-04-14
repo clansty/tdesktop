@@ -478,7 +478,7 @@ void SelectFutureOwnerbox(
 						tr::lng_close()),
 					st::defaultActiveButton);
 				button->setTextTransform(
-					Ui::RoundButton::TextTransform::NoTransform);
+					Ui::RoundButtonTextTransform::NoTransform);
 				const auto raw = button.data();
 				rpl::combine(
 					state->selectionChanges.events() | rpl::map_to(0),
@@ -523,7 +523,7 @@ void SelectFutureOwnerbox(
 	});
 	for (const auto &b : { select, cancel, leave }) {
 		b->setFullRadius(true);
-		b->setTextTransform(Ui::RoundButton::TextTransform::NoTransform);
+		b->setTextTransform(Ui::RoundButtonTextTransform::NoTransform);
 	}
 	box->setStyle(st::futureOwnerBox);
 }

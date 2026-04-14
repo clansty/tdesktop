@@ -595,7 +595,7 @@ void InnerWidget::fill() {
 						tr::lng_channel_earn_learn_close(),
 						st::defaultActiveButton);
 					button->setTextTransform(
-						Ui::RoundButton::TextTransform::NoTransform);
+						Ui::RoundButtonTextTransform::NoTransform);
 					button->resizeToWidth(box->width()
 						- st.buttonPadding.left()
 						- st.buttonPadding.left());

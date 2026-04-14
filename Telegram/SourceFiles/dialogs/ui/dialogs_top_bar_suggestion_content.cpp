@@ -131,8 +131,8 @@ not_null<Ui::SlideWrap<Ui::VerticalLayout>*> CreateUnconfirmedAuthContent(
 		buttons,
 		tr::lng_unconfirmed_auth_deny(),
 		st::dialogsUnconfirmedAuthButtonNo);
-	yes->setTextTransform(Ui::RoundButton::TextTransform::NoTransform);
-	no->setTextTransform(Ui::RoundButton::TextTransform::NoTransform);
+	yes->setTextTransform(Ui::RoundButtonTextTransform::NoTransform);
+	no->setTextTransform(Ui::RoundButtonTextTransform::NoTransform);
 	yes->setClickedCallback([=] {
 		wrap->toggle(false, anim::type::normal);
 		base::call_delayed(st::universalDuration, wrap, [=] {
@@ -372,7 +372,7 @@ void TopBarSuggestionContent::setRightButton(
 		_rightButton->moveToRight(top, top, outer.width());
 	}, _rightButton->lifetime());
 	_rightButton->setFullRadius(true);
-	_rightButton->setTextTransform(RoundButton::TextTransform::NoTransform);
+	_rightButton->setTextTransform(RoundButtonTextTransform::NoTransform);
 	_rightButton->setClickedCallback(std::move(callback));
 	_rightButton->show();
 }

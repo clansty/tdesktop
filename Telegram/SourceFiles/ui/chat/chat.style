@@ -619,6 +619,8 @@ historyAdminLogCancelSearch: CrossButton {
 }
 historyAdminLogSearchTop: 11px;
 historyAdminLogSearchSlideDuration: 150;
+historyAdminLogTopBarLeft: 17px;
+historyAdminLogTopBarUserpicSkip: 35px;
 
 historyFastShareSize: topPeersSelectorUserpicSize;
 historyFastShareLeft: 13px;

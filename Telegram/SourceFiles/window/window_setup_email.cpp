@@ -127,7 +127,7 @@ SetupEmailLockWidget::SetupEmailLockWidget(
 				tr::lng_settings_logout(),
 				st::defaultBoxButton);
 			_logoutButton->setTextTransform(
-				Ui::RoundButton::TextTransform::NoTransform);
+				Ui::RoundButtonTextTransform::NoTransform);
 			if (session) {
 				session->promoSuggestions().setSetupEmailState(
 					Data::SetupEmailState::SettingUpNoSkip);
@@ -153,7 +153,7 @@ SetupEmailLockWidget::SetupEmailLockWidget(
 				rpl::single(u"[DEBUG] Clear bio"_q),
 				st::defaultBoxButton);
 			_debugButton->setTextTransform(
-				Ui::RoundButton::TextTransform::NoTransform);
+				Ui::RoundButtonTextTransform::NoTransform);
 			_debugButton->setClickedCallback([=] {
 				session->api().saveSelfBio({});
 			});
@@ -231,7 +231,7 @@ SetupEmailLockWidget::SetupEmailLockWidget(
 			st::boxRowPadding,
 			style::al_top);
 		submit->setTextTransform(
-			Ui::RoundButton::TextTransform::NoTransform);
+			Ui::RoundButtonTextTransform::NoTransform);
 
 		_emailInput = emailInput;
 		_errorLabel = errorLabel;

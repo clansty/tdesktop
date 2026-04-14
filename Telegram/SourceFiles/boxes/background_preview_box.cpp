@@ -792,9 +792,9 @@ void BackgroundPreviewBox::applyForPeer() {
 		}), raw->lifetime());
 		raw->toggle(false, anim::type::normal);
 	});
-	forMe->setTextTransform(RoundButton::TextTransform::NoTransform);
-	forBoth->setTextTransform(RoundButton::TextTransform::NoTransform);
-	cancel->setTextTransform(RoundButton::TextTransform::NoTransform);
+	forMe->setTextTransform(RoundButtonTextTransform::NoTransform);
+	forBoth->setTextTransform(RoundButtonTextTransform::NoTransform);
+	cancel->setTextTransform(RoundButtonTextTransform::NoTransform);
 
 	overlay->sizeValue(
 	) | rpl::on_next([=](QSize size) {

@@ -171,12 +171,12 @@ void FormSummary::setupControls() {
 
 	if (_submit) {
 		_submit->setTextTransform(
-			Ui::RoundButton::TextTransform::NoTransform);
+			Ui::RoundButtonTextTransform::NoTransform);
 		_submit->addClickHandler([=] {
 			_delegate->panelSubmit();
 		});
 	}
-	_cancel->setTextTransform(Ui::RoundButton::TextTransform::NoTransform);
+	_cancel->setTextTransform(Ui::RoundButtonTextTransform::NoTransform);
 	_cancel->addClickHandler([=] {
 		_delegate->panelRequestClose();
 	});

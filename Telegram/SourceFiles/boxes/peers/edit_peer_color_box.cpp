@@ -1546,7 +1546,7 @@ not_null<Info::Profile::TopBar*> CreateProfilePreview(
 }
 
 void ProcessButton(not_null<Ui::RoundButton*> button) {
-	button->setTextTransform(Ui::RoundButton::TextTransform::NoTransform);
+	button->setTextTransform(Ui::RoundButtonTextTransform::NoTransform);
 	// Raise to be above right emoji from buttons.
 	crl::on_main(button, [=] { button->raise(); });
 }

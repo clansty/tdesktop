@@ -1020,7 +1020,7 @@ BusinessBotStatus::Bar::Bar(QWidget *parent)
 	_status->setAttribute(Qt::WA_TransparentForMouseEvents);
 	_togglePaused->setFullRadius(true);
 	_togglePaused->setTextTransform(
-		Ui::RoundButton::TextTransform::NoTransform);
+		Ui::RoundButtonTextTransform::NoTransform);
 	_settings->setClickedCallback([=] {
 		showMenu();
 	});

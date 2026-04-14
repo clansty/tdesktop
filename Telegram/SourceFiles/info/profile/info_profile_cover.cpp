@@ -481,7 +481,7 @@ void Cover::setupShowLastSeen() {
 		_showLastSeen->hide();
 	}
 
-	using TextTransform = Ui::RoundButton::TextTransform;
+	using TextTransform = Ui::RoundButtonTextTransform;
 	_showLastSeen->setTextTransform(TextTransform::NoTransform);
 	_showLastSeen->setFullRadius(true);
 

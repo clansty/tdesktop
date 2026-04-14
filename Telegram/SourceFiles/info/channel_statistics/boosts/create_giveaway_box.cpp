@@ -1379,7 +1379,7 @@ void CreateGiveawayBox(
 			loadingAnimation->showOn(state->confirmButtonBusy.value());
 		}
 
-		button->setTextTransform(Ui::RoundButton::TextTransform::NoTransform);
+		button->setTextTransform(Ui::RoundButtonTextTransform::NoTransform);
 		state->typeValue.value(
 		) | rpl::on_next([=, raw = button.data()] {
 			raw->resizeToWidth(box->width()

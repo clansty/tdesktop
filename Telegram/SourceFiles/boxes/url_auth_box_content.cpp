@@ -35,7 +35,7 @@ void PrepareFullWidthRoundButton(
 		not_null<Ui::RoundButton*> button,
 		not_null<Ui::VerticalLayout*> content,
 		const style::margins &padding) {
-	button->setTextTransform(Ui::RoundButton::TextTransform::NoTransform);
+	button->setTextTransform(Ui::RoundButtonTextTransform::NoTransform);
 	button->setFullRadius(true);
 	const auto paddingHorizontal = padding.left() + padding.right();
 	content->widthValue() | rpl::on_next([=](int w) {
@@ -165,7 +165,7 @@ void ShowMatchCodesBox(
 					(overlay->height() - visible) / 2);
 			});
 		}
-		button->setTextTransform(Ui::RoundButton::TextTransform::NoTransform);
+		button->setTextTransform(Ui::RoundButtonTextTransform::NoTransform);
 		button->setFullRadius(true);
 		button->setClickedCallback([=] {
 			callback(code);

@@ -725,7 +725,7 @@ void InnerWidget::refreshEmpty() {
 			return Ui::Text::IconEmoji(&st::collectionAddIcon).append(text);
 		}));
 		button->setTextTransform(
-			Ui::RoundButton::TextTransform::NoTransform);
+			Ui::RoundButtonTextTransform::NoTransform);
 		button->setClickedCallback([=] {
 			editAlbumStories(albumId);
 		});

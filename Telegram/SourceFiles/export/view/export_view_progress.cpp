@@ -297,7 +297,7 @@ rpl::producer<> ProgressWidget::doneClicks() const {
 }
 
 void ProgressWidget::setupBottomButton(not_null<Ui::RoundButton*> button) {
-	button->setTextTransform(Ui::RoundButton::TextTransform::NoTransform);
+	button->setTextTransform(Ui::RoundButtonTextTransform::NoTransform);
 	button->show();
 
 	sizeValue(

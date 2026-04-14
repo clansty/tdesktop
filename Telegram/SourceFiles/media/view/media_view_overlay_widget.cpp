@@ -1794,7 +1794,7 @@ void OverlayWidget::refreshVoteButton() {
 		return;
 	}
 	if (!_voteButton) {
-		using TextTransform = Ui::RoundButton::TextTransform;
+		using TextTransform = Ui::RoundButtonTextTransform;
 		_voteButton.create(
 			_body,
 			tr::lng_polls_submit_votes(),
@@ -4916,7 +4916,7 @@ void OverlayWidget::initThemePreview() {
 			_themePreviewId = 0;
 			_themePreview = std::move(result);
 			if (_themePreview) {
-				using TextTransform = Ui::RoundButton::TextTransform;
+				using TextTransform = Ui::RoundButtonTextTransform;
 				_themeApply.create(
 					_body,
 					tr::lng_theme_preview_apply(),

@@ -6082,7 +6082,7 @@ bool HistoryWidget::updateCmdStartShown() {
 		orderWidgets();
 
 		_botMenu.button->setTextTransform(
-			Ui::RoundButton::TextTransform::NoTransform);
+			Ui::RoundButtonTextTransform::NoTransform);
 		_botMenu.button->setFullRadius(true);
 		_botMenu.button->setClickedCallback([=] {
 			const auto user = _peer ? _peer->asUser() : nullptr;

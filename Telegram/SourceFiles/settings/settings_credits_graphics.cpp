@@ -3347,7 +3347,7 @@ void AddWithdrawalWidget(
 		tr::lng_bot_earn_balance_button_buy_ads(),
 		stButton);
 	buttonCredits->setTextTransform(
-		Ui::RoundButton::TextTransform::NoTransform);
+		Ui::RoundButtonTextTransform::NoTransform);
 	{
 		const auto icon = Ui::CreateChild<Ui::RpWidget>(buttonCredits);
 		const auto &st = st::msgBotKbUrlIcon;

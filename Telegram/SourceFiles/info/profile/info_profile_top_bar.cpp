@@ -356,7 +356,7 @@ TopBar::TopBar(
 			.append(' ')
 			.append(Ui::Text::IconEmoji(&st::textMoreIconEmoji, QString()));
 	}));
-	owned->setTextTransform(Ui::RoundButton::TextTransform::NoTransform);
+	owned->setTextTransform(Ui::RoundButtonTextTransform::NoTransform);
 	owned->setClickedCallback([=, peer = _peer] {
 		if (const auto forum = peer->forum()) {
 			if (peer->useSubsectionTabs()) {
@@ -2227,7 +2227,7 @@ void TopBar::setupShowLastSeen(
 	_showLastSeen->setGraphicsEffect(_showLastSeenOpacity);
 	_showLastSeenOpacity->setOpacity(0.);
 
-	using TextTransform = Ui::RoundButton::TextTransform;
+	using TextTransform = Ui::RoundButtonTextTransform;
 	_showLastSeen->setTextTransform(TextTransform::NoTransform);
 	_showLastSeen->setFullRadius(true);
 

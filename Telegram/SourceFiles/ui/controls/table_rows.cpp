@@ -110,7 +110,7 @@ ValueWithSmallButton MakeValueWithSmallButton(
 		raw,
 		std::move(buttonText),
 		table->st().smallButton);
-	button->setTextTransform(RoundButton::TextTransform::NoTransform);
+	button->setTextTransform(RoundButtonTextTransform::NoTransform);
 	if (handler) {
 		button->setClickedCallback([button, handler = std::move(handler)] {
 			handler(button);

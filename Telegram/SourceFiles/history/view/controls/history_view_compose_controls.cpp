@@ -3101,7 +3101,7 @@ void SetupRestrictionView(
 			st->premiumRequired.button);
 		unlock->show();
 		unlock->setAttribute(Qt::WA_TransparentForMouseEvents);
-		unlock->setTextTransform(RoundButton::TextTransform::NoTransform);
+		unlock->setTextTransform(RoundButtonTextTransform::NoTransform);
 		unlock->setFullRadius(true);
 		return unlock;
 	};

@@ -723,7 +723,7 @@ void Widget::showControls() {
 void Widget::setupNextButton() {
 	_next->entity()->setClickedCallback([=] { getStep()->submit(); });
 	_next->entity()->setTextTransform(
-		Ui::RoundButton::TextTransform::NoTransform);
+		Ui::RoundButtonTextTransform::NoTransform);
 
 	_next->entity()->setText(getStep()->nextButtonText(
 	) | rpl::filter([](const QString &text) {

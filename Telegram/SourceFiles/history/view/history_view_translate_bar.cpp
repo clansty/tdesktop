@@ -600,7 +600,7 @@ void TranslateBar::showToast(
 		widget.get(),
 		rpl::single(buttonText),
 		st::historyPremiumViewSet);
-	button->setTextTransform(Ui::RoundButton::TextTransform::NoTransform);
+	button->setTextTransform(Ui::RoundButtonTextTransform::NoTransform);
 	button->show();
 	rpl::combine(
 		widget->sizeValue(),
