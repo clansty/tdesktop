@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<component type="desktop">
+    <id>com.clansty.0wgram</id>
+    <metadata_license>CC0-1.0</metadata_license>
+    <project_license>GPL-3.0</project_license>
+    <name>0wGram</name>
+    <summary>Unofficial desktop version of Telegram messaging app</summary>
+    <description>
+        <p>0wGram is a Telegram Desktop fork based on 64Gram, providing some 0wOw0wowOw0wOwo features.</p>
+    </description>
+    <categories>
+        <category>Network</category>
+        <category>InstantMessaging</category>
+    </categories>
+    <url type="homepage">https://github.com/nicegram/nicegram-tdesktop</url>
+    <url type="vcs-browser">https://github.com/nicegram/nicegram-tdesktop</url>
+    <screenshots>
+      <screenshot type="default">
+        <image>https://raw.githubusercontent.com/telegramdesktop/tdesktop/dev/docs/assets/preview.png</image>
+      </screenshot>
+    </screenshots>
+    <keywords>
+        <keyword>tg</keyword>
+        <keyword>telegram</keyword>
+        <keyword>tdesktop</keyword>
+        <keyword>messaging</keyword>
+        <keyword>messenger</keyword>
+        <keyword>chat</keyword>
+        <keyword>sms</keyword>
+        <keyword>im</keyword>
+        <keyword>0wgram</keyword>
+    </keywords>
+    <requires>
+        <display_length compare="ge">medium</display_length>
+        <internet>always</internet>
+    </requires>
+    <supports>
+        <control>pointing</control>
+        <control>keyboard</control>
+        <control>touch</control>
+    </supports>
+    <content_rating type="oars-1.1">
+        <content_attribute id="social-chat">intense</content_attribute>
+        <content_attribute id="social-audio">intense</content_attribute>
+        <content_attribute id="social-contacts">intense</content_attribute>
+        <content_attribute id="money-purchasing">intense</content_attribute>
+        <content_attribute id="money-advertising">moderate</content_attribute>
+    </content_rating>
+    <launchable type="desktop-id">com.clansty.0wgram.desktop</launchable>
+    <provides>
+        <binary>0wgram</binary>
+        <dbus type="session">com.clansty.0wgram</dbus>
+        <mediatype>x-scheme-handler/tg</mediatype>
+        <mediatype>x-scheme-handler/tonsite</mediatype>
+    </provides>
+</component>

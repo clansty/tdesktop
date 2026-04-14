@@ -1,0 +1,3 @@
+[D-BUS Service]
+Name=com.clansty.0wgram
+Exec=@CMAKE_INSTALL_FULL_BINDIR@/0wgram
