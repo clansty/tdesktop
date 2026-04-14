@@ -12,6 +12,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/file_utilities.h"
 #include "core/update_checker.h"
 #include "lang/lang_keys.h"
+#include "styles/style_boxes.h"
+#include "styles/style_channel_earn.h"
+#include "styles/style_chat.h"
+#include "styles/style_dialogs.h"
+#include "styles/style_layers.h"
+#include "styles/style_menu_icons.h"
+#include "styles/style_premium.h"
+#include "styles/style_settings.h"
 #include "ui/boxes/confirm_box.h"
 #include "ui/painter.h"
 #include "ui/rect.h"
@@ -19,105 +27,80 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/vertical_list.h"
 #include "ui/widgets/buttons.h"
 #include "ui/wrap/vertical_layout.h"
-#include "styles/style_layers.h"
-#include "styles/style_boxes.h"
-#include "styles/style_channel_earn.h"
-#include "styles/style_chat.h"
-#include "styles/style_dialogs.h"
-#include "styles/style_menu_icons.h"
-#include "styles/style_premium.h"
-#include "styles/style_settings.h"
 
-#include <QtGui/QGuiApplication>
 #include <QtGui/QClipboard>
+#include <QtGui/QGuiApplication>
+
+QString telegramFaqLink();
 
 namespace {
 
 rpl::producer<TextWithEntities> Text1() {
 	return tr::lng_about_text4(
-		lt_api_link,
-		tr::lng_about_text4_api(tr::url(u"https://core.telegram.org/api"_q)),
-		tr::marked);
+		lt_api_link, tr::lng_about_text4_api(tr::url(u"https://core.telegram.org/api"_q)), tr::marked);
 }
 
 rpl::producer<TextWithEntities> Text2() {
 	return tr::lng_about_text2(
 		lt_gpl_link,
-		rpl::single(tr::link(
-			"GNU GPL",
-			"https://github.com/TDesktop-x64/tdesktop/blob/dev/LICENSE")),
+		rpl::single(tr::link("GNU GPL", "https://github.com/TDesktop-x64/tdesktop/blob/dev/LICENSE")),
 		lt_github_link,
-		rpl::single(tr::link(
-			"GitHub",
-			"https://github.com/TDesktop-x64/tdesktop")),
+		rpl::single(tr::link("GitHub", "https://github.com/TDesktop-x64/tdesktop")),
 		tr::marked);
 }
 
 rpl::producer<TextWithEntities> Text3() {
-	return tr::lng_about_text3(
-		lt_faq_link,
-		tr::lng_about_text3_faq(tr::url(telegramFaqLink())),
-		tr::marked);
+	return tr::lng_about_text3(lt_faq_link, tr::lng_about_text3_faq(tr::url(telegramFaqLink())), tr::marked);
 }
 
 } // namespace
 
-void AboutBox(not_null<Ui::GenericBox*> box) {
-	box->setTitle(u"64Gram Desktop"_q);
+void AboutBox(not_null<Ui::GenericBox *> box) {
+	box->setTitle(u"0wGram Desktop"_q);
 
 	auto layout = box->verticalLayout();
 
 	const auto version = layout->add(
 		object_ptr<Ui::LinkButton>(
-			box,
-			tr::lng_about_version(
-				tr::now,
-				lt_version,
-				currentVersionText()),
-			st::aboutVersionLink),
-		QMargins(
-			st::boxRowPadding.left(),
-			-st::lineWidth * 3,
-			st::boxRowPadding.right(),
-			st::boxRowPadding.bottom()));
-	version->setClickedCallback([=] {
-		if (cRealAlphaVersion()) {
-			auto url = u"https://tdesktop.com/"_q;
-			if (Platform::IsWindows32Bit()) {
-				url += u"win/%1.zip"_q;
-			} else if (Platform::IsWindows64Bit()) {
-				url += u"win64/%1.zip"_q;
-			} else if (Platform::IsWindowsARM64()) {
-				url += u"winarm/%1.zip"_q;
-			} else if (Platform::IsMac()) {
-				url += u"mac/%1.zip"_q;
-			} else if (Platform::IsLinux()) {
-				url += u"linux/%1.tar.xz"_q;
+			box, tr::lng_about_version(tr::now, lt_version, currentVersionText()), st::aboutVersionLink),
+		QMargins(st::boxRowPadding.left(), -st::lineWidth * 3, st::boxRowPadding.right(), st::boxRowPadding.bottom()));
+	version->setClickedCallback(
+		[=]
+		{
+			if (cRealAlphaVersion()) {
+				auto url = u"https://tdesktop.com/"_q;
+				if (Platform::IsWindows32Bit()) {
+					url += u"win/%1.zip"_q;
+				} else if (Platform::IsWindows64Bit()) {
+					url += u"win64/%1.zip"_q;
+				} else if (Platform::IsWindowsARM64()) {
+					url += u"winarm/%1.zip"_q;
+				} else if (Platform::IsMac()) {
+					url += u"mac/%1.zip"_q;
+				} else if (Platform::IsLinux()) {
+					url += u"linux/%1.tar.xz"_q;
+				} else {
+					Unexpected("Platform value.");
+				}
+				url = url.arg(u"talpha%1_%2"_q.arg(cRealAlphaVersion())
+								  .arg(Core::countAlphaVersionSignature(cRealAlphaVersion())));
+
+				QGuiApplication::clipboard()->setText(url);
+
+				box->getDelegate()->show(Ui::MakeInformBox("The link to the current private alpha "
+														   "version of Telegram Desktop was copied "
+														   "to the clipboard."));
 			} else {
-				Unexpected("Platform value.");
+				File::OpenUrl(Core::App().changelogLink());
 			}
-			url = url.arg(u"talpha%1_%2"_q
-				.arg(cRealAlphaVersion())
-				.arg(Core::countAlphaVersionSignature(cRealAlphaVersion())));
-
-			QGuiApplication::clipboard()->setText(url);
-
-			box->getDelegate()->show(
-				Ui::MakeInformBox(
-					"The link to the current private alpha "
-					"version of Telegram Desktop was copied "
-					"to the clipboard."));
-		} else {
-			File::OpenUrl(Core::App().changelogLink());
-		}
-	});
+		});
 
 	Ui::AddSkip(layout, st::aboutTopSkip);
 
-	const auto addText = [&](rpl::producer<TextWithEntities> text) {
-		const auto label = layout->add(
-			object_ptr<Ui::FlatLabel>(box, std::move(text), st::aboutLabel),
-			st::boxRowPadding);
+	const auto addText = [&](rpl::producer<TextWithEntities> text)
+	{
+		const auto label =
+			layout->add(object_ptr<Ui::FlatLabel>(box, std::move(text), st::aboutLabel), st::boxRowPadding);
 		label->setLinksTrusted();
 		Ui::AddSkip(layout, st::aboutSkip);
 	};
@@ -133,11 +116,9 @@ void AboutBox(not_null<Ui::GenericBox*> box) {
 
 QString telegramFaqLink() {
 	const auto result = u"https://telegram.org/faq"_q;
-	const auto langpacked = [&](const char *language) {
-		return result + '/' + language;
-	};
+	const auto langpacked = [&](const char *language) { return result + '/' + language; };
 	const auto current = Lang::Id();
-	for (const auto language : { "de", "es", "it", "ko" }) {
+	for (const auto language : {"de", "es", "it", "ko"}) {
 		if (current.startsWith(QLatin1String(language))) {
 			return langpacked(language);
 		}
@@ -167,10 +148,7 @@ QString currentVersionText() {
 	return result;
 }
 
-void ArchiveHintBox(
-		not_null<Ui::GenericBox*> box,
-		bool unarchiveOnNewMessage,
-		Fn<void()> onUnarchive) {
+void ArchiveHintBox(not_null<Ui::GenericBox *> box, bool unarchiveOnNewMessage, Fn<void()> onUnarchive) {
 	box->setNoContentMargin(true);
 
 	const auto content = box->verticalLayout().get();
@@ -185,112 +163,84 @@ void ArchiveHintBox(
 		owned->resize(rect.size());
 		owned->setNaturalWidth(rect.width());
 		const auto widget = box->addRow(std::move(owned), style::al_top);
-		widget->paintRequest(
-		) | rpl::on_next([=] {
-			auto p = Painter(widget);
-			auto hq = PainterHighQualityEnabler(p);
-			p.setPen(Qt::NoPen);
-			p.setBrush(st::activeButtonBg);
-			p.drawEllipse(rect);
-			icon.paintInCenter(p, rect);
-		}, widget->lifetime());
+		widget->paintRequest() |
+			rpl::on_next(
+				[=]
+				{
+					auto p = Painter(widget);
+					auto hq = PainterHighQualityEnabler(p);
+					p.setPen(Qt::NoPen);
+					p.setBrush(st::activeButtonBg);
+					p.drawEllipse(rect);
+					icon.paintInCenter(p, rect);
+				},
+				widget->lifetime());
 	}
 	Ui::AddSkip(content);
 	Ui::AddSkip(content);
-	box->addRow(
-		object_ptr<Ui::FlatLabel>(
+	box->addRow(object_ptr<Ui::FlatLabel>(content, tr::lng_archive_hint_title(), st::boxTitle), style::al_top);
+	Ui::AddSkip(content);
+	Ui::AddSkip(content);
+	{
+		const auto label = box->addRow(object_ptr<Ui::FlatLabel>(
 			content,
-			tr::lng_archive_hint_title(),
-			st::boxTitle),
-		style::al_top);
-	Ui::AddSkip(content);
-	Ui::AddSkip(content);
-	{
-		const auto label = box->addRow(
-			object_ptr<Ui::FlatLabel>(
-				content,
-				(unarchiveOnNewMessage
-						? tr::lng_archive_hint_about_unmuted
-						: tr::lng_archive_hint_about)(
-					lt_link,
-					tr::lng_archive_hint_about_link(
-						lt_emoji,
-						rpl::single(
-							Ui::Text::IconEmoji(&st::textMoreIconEmoji)),
-						tr::rich
-					) | rpl::map([](TextWithEntities text) {
-						return tr::link(std::move(text), 1);
-					}),
-					tr::rich),
-				st::channelEarnHistoryRecipientLabel));
-		label->resizeToWidth(box->width()
-			- rect::m::sum::h(st::boxRowPadding));
-		label->setLink(
-			1,
-			std::make_shared<GenericClickHandler>([=](ClickContext context) {
-				if (context.button == Qt::LeftButton) {
-					onUnarchive();
-				}
-			}));
+			(unarchiveOnNewMessage ? tr::lng_archive_hint_about_unmuted : tr::lng_archive_hint_about)(
+				lt_link,
+				tr::lng_archive_hint_about_link(
+					lt_emoji, rpl::single(Ui::Text::IconEmoji(&st::textMoreIconEmoji)), tr::rich) |
+					rpl::map([](TextWithEntities text) { return tr::link(std::move(text), 1); }),
+				tr::rich),
+			st::channelEarnHistoryRecipientLabel));
+		label->resizeToWidth(box->width() - rect::m::sum::h(st::boxRowPadding));
+		label->setLink(1,
+					   std::make_shared<GenericClickHandler>(
+						   [=](ClickContext context)
+						   {
+							   if (context.button == Qt::LeftButton) {
+								   onUnarchive();
+							   }
+						   }));
 	}
 	Ui::AddSkip(content);
 	Ui::AddSkip(content);
 	Ui::AddSkip(content);
 	Ui::AddSkip(content);
 	{
-		const auto padding = QMargins(
-			st::settingsButton.padding.left(),
-			st::boxRowPadding.top(),
-			st::boxRowPadding.right(),
-			st::boxRowPadding.bottom());
-		const auto addEntry = [&](
-				rpl::producer<QString> title,
-				rpl::producer<QString> about,
-				const style::icon &icon) {
+		const auto padding = QMargins(st::settingsButton.padding.left(),
+									  st::boxRowPadding.top(),
+									  st::boxRowPadding.right(),
+									  st::boxRowPadding.bottom());
+		const auto addEntry = [&](rpl::producer<QString> title, rpl::producer<QString> about, const style::icon &icon)
+		{
 			const auto top = content->add(
-				object_ptr<Ui::FlatLabel>(
-					content,
-					std::move(title),
-					st::channelEarnSemiboldLabel),
-				padding);
+				object_ptr<Ui::FlatLabel>(content, std::move(title), st::channelEarnSemiboldLabel), padding);
 			Ui::AddSkip(content, st::channelEarnHistoryThreeSkip);
-			content->add(
-				object_ptr<Ui::FlatLabel>(
-					content,
-					std::move(about),
-					st::channelEarnHistoryRecipientLabel),
-				padding);
-			const auto left = Ui::CreateChild<Ui::RpWidget>(
-				box->verticalLayout().get());
-			left->paintRequest(
-			) | rpl::on_next([=] {
-				auto p = Painter(left);
-				icon.paint(p, 0, 0, left->width());
-			}, left->lifetime());
+			content->add(object_ptr<Ui::FlatLabel>(content, std::move(about), st::channelEarnHistoryRecipientLabel),
+						 padding);
+			const auto left = Ui::CreateChild<Ui::RpWidget>(box->verticalLayout().get());
+			left->paintRequest() |
+				rpl::on_next(
+					[=]
+					{
+						auto p = Painter(left);
+						icon.paint(p, 0, 0, left->width());
+					},
+					left->lifetime());
 			left->resize(icon.size());
-			top->geometryValue(
-			) | rpl::on_next([=](const QRect &g) {
-				left->moveToLeft(
-					(g.left() - left->width()) / 2,
-					g.top() + st::channelEarnHistoryThreeSkip);
-			}, left->lifetime());
+			top->geometryValue() |
+				rpl::on_next(
+					[=](const QRect &g)
+					{ left->moveToLeft((g.left() - left->width()) / 2, g.top() + st::channelEarnHistoryThreeSkip); },
+					left->lifetime());
 		};
-		addEntry(
-			tr::lng_archive_hint_section_1(),
-			tr::lng_archive_hint_section_1_info(),
-			st::menuIconArchive);
+		addEntry(tr::lng_archive_hint_section_1(), tr::lng_archive_hint_section_1_info(), st::menuIconArchive);
+		Ui::AddSkip(content);
+		Ui::AddSkip(content);
+		addEntry(tr::lng_archive_hint_section_2(), tr::lng_archive_hint_section_2_info(), st::menuIconStealth);
 		Ui::AddSkip(content);
 		Ui::AddSkip(content);
 		addEntry(
-			tr::lng_archive_hint_section_2(),
-			tr::lng_archive_hint_section_2_info(),
-			st::menuIconStealth);
-		Ui::AddSkip(content);
-		Ui::AddSkip(content);
-		addEntry(
-			tr::lng_archive_hint_section_3(),
-			tr::lng_archive_hint_section_3_info(),
-			st::menuIconStoriesSavedSection);
+			tr::lng_archive_hint_section_3(), tr::lng_archive_hint_section_3_info(), st::menuIconStoriesSavedSection);
 		Ui::AddSkip(content);
 		Ui::AddSkip(content);
 	}
@@ -300,15 +250,9 @@ void ArchiveHintBox(
 	{
 		const auto &st = st::premiumPreviewDoubledLimitsBox;
 		box->setStyle(st);
-		auto button = object_ptr<Ui::RoundButton>(
-			box,
-			tr::lng_archive_hint_button(),
-			st::defaultActiveButton);
-		button->resizeToWidth(box->width()
-			- st.buttonPadding.left()
-			- st.buttonPadding.left());
+		auto button = object_ptr<Ui::RoundButton>(box, tr::lng_archive_hint_button(), st::defaultActiveButton);
+		button->resizeToWidth(box->width() - st.buttonPadding.left() - st.buttonPadding.left());
 		button->setClickedCallback([=] { box->closeBox(); });
 		box->addButton(std::move(button));
 	}
 }
-
