@@ -1,4 +1,4 @@
-﻿# This file is part of Telegram Desktop,
+# This file is part of Telegram Desktop,
 # the official desktop application for the Telegram messaging service.
 #
 # For license and copyright information please follow this link:
@@ -19,6 +19,7 @@ add_subdirectory(lib_qr)
 add_subdirectory(lib_translate)
 add_subdirectory(lib_webrtc)
 add_subdirectory(lib_webview)
+add_subdirectory(lib_icu)
 add_subdirectory(codegen)
 
 get_filename_component(src_loc SourceFiles REALPATH)
@@ -95,6 +96,160 @@ PRIVATE
     desktop-app::external_openssl
     desktop-app::external_openal
     desktop-app::external_xxhash
+
+    # AyuGram filters
+    ayugram::lib_icu
+)
+
+set(ayugram_files
+        ayu/ayu_worker.cpp
+        ayu/ayu_worker.h
+        ayu/ayu_url_handlers.cpp
+        ayu/ayu_url_handlers.h
+        ayu/ayu_state.cpp
+        ayu/ayu_state.h
+        ayu/ayu_settings.cpp
+        ayu/ayu_settings.h
+        ayu/ayu_lang.cpp
+        ayu/ayu_lang.h
+        ayu/ayu_infra.cpp
+        ayu/ayu_infra.h
+        ayu/utils/ayu_mapper.cpp
+        ayu/utils/ayu_mapper.h
+        ayu/utils/qt_key_modifiers_extended.h
+        ayu/utils/telegram_helpers.cpp
+        ayu/utils/telegram_helpers.h
+        ayu/utils/windows_utils.cpp
+        ayu/utils/windows_utils.h
+        ayu/utils/rc_manager.cpp
+        ayu/utils/rc_manager.h
+        ayu/utils/taptic_engine/taptic_engine.cpp
+        ayu/utils/taptic_engine/taptic_engine.h
+        ayu/utils/taptic_engine/platform/taptic_engine_dummy.cpp
+        ayu/utils/taptic_engine/platform/taptic_engine_dummy.h
+        ayu/utils/taptic_engine/platform/taptic_engine_mac.mm
+        ayu/utils/taptic_engine/platform/taptic_engine_mac.h
+        ayu/ui/ayu_logo.cpp
+        ayu/ui/ayu_logo.h
+        ayu/ui/ayu_userpic.cpp
+        ayu/ui/ayu_userpic.h
+        ayu/ui/utils/ayu_profile_values.cpp
+        ayu/ui/utils/ayu_profile_values.h
+        ayu/ui/utils/color_cut_quantizer.cpp
+        ayu/ui/utils/color_cut_quantizer.h
+        ayu/ui/utils/color_utils.cpp
+        ayu/ui/utils/color_utils.h
+        ayu/ui/utils/palette.cpp
+        ayu/ui/utils/palette.h
+        ayu/ui/utils/itunes_search.cpp
+        ayu/ui/utils/itunes_search.h
+        ayu/ui/settings/ayu_builder.cpp
+        ayu/ui/settings/ayu_builder.h
+        ayu/ui/settings/settings_appearance.cpp
+        ayu/ui/settings/settings_appearance.h
+        ayu/ui/settings/settings_ayu_utils.cpp
+        ayu/ui/settings/settings_ayu_utils.h
+        ayu/ui/settings/settings_chats.cpp
+        ayu/ui/settings/settings_chats.h
+        ayu/ui/settings/settings_general.cpp
+        ayu/ui/settings/settings_general.h
+        ayu/ui/settings/settings_ayu.cpp
+        ayu/ui/settings/settings_ayu.h
+        ayu/ui/settings/settings_filters.cpp
+        ayu/ui/settings/settings_filters.h
+        ayu/ui/settings/settings_main.cpp
+        ayu/ui/settings/settings_main.h
+        ayu/ui/settings/settings_other.cpp
+        ayu/ui/settings/settings_other.h
+        ayu/ui/settings/filters/settings_filters_list.cpp
+        ayu/ui/settings/filters/settings_filters_list.h
+        ayu/ui/settings/filters/per_dialog_filter.cpp
+        ayu/ui/settings/filters/per_dialog_filter.h
+        ayu/ui/settings/filters/edit_filter.cpp
+        ayu/ui/settings/filters/edit_filter.h
+        ayu/ui/context_menu/context_menu.cpp
+        ayu/ui/context_menu/context_menu.h
+        ayu/ui/context_menu/menu_item_subtext.cpp
+        ayu/ui/context_menu/menu_item_subtext.h
+        ayu/ui/message_history/history_inner.cpp
+        ayu/ui/message_history/history_inner.h
+        ayu/ui/message_history/history_item.cpp
+        ayu/ui/message_history/history_item.h
+        ayu/ui/message_history/history_section.cpp
+        ayu/ui/message_history/history_section.h
+        ayu/ui/boxes/edit_mark_box.cpp
+        ayu/ui/boxes/edit_mark_box.h
+        ayu/ui/boxes/font_selector.cpp
+        ayu/ui/boxes/font_selector.h
+        ayu/ui/boxes/import_filters_box.cpp
+        ayu/ui/boxes/import_filters_box.h
+        ayu/ui/boxes/theme_selector_box.cpp
+        ayu/ui/boxes/theme_selector_box.h
+        ayu/ui/boxes/message_shot_box.cpp
+        ayu/ui/boxes/message_shot_box.h
+        ayu/ui/boxes/donate_qr_box.cpp
+        ayu/ui/boxes/donate_qr_box.h
+        ayu/ui/boxes/donate_info_box.cpp
+        ayu/ui/boxes/donate_info_box.h
+        ayu/ui/boxes/plugin_info_box.cpp
+        ayu/ui/boxes/plugin_info_box.h
+        ayu/ui/components/image_view.cpp
+        ayu/ui/components/image_view.h
+        ayu/ui/components/icon_picker.cpp
+        ayu/ui/components/icon_picker.h
+        ayu/ui/components/avatar_corners_preview.cpp
+        ayu/ui/components/avatar_corners_preview.h
+        ayu/ui/components/message_preview.cpp
+        ayu/ui/components/message_preview.h
+        ayu/ui/components/saved_music.cpp
+        ayu/ui/components/saved_music.h
+        ayu/libs/json.hpp
+        ayu/libs/json_ext.hpp
+        ayu/libs/sqlite/sqlite3.c
+        ayu/libs/sqlite/sqlite3.h
+        ayu/libs/sqlite/sqlite_orm.h
+        ayu/features/streamer_mode/platform/streamer_mode_win.cpp
+        ayu/features/streamer_mode/platform/streamer_mode_win.h
+        ayu/features/streamer_mode/platform/streamer_mode_linux.cpp
+        ayu/features/streamer_mode/platform/streamer_mode_linux.h
+        ayu/features/streamer_mode/platform/streamer_mode_mac.mm
+        ayu/features/streamer_mode/platform/streamer_mode_mac.h
+        ayu/features/streamer_mode/streamer_mode.cpp
+        ayu/features/streamer_mode/streamer_mode.h
+        ayu/features/message_shot/message_shot.cpp
+        ayu/features/message_shot/message_shot.h
+        ayu/features/message_shot/message_shot_theme_state.cpp
+        ayu/features/message_shot/message_shot_theme_state.h
+        ayu/features/forward/ayu_forward.cpp
+        ayu/features/forward/ayu_forward.h
+        ayu/features/forward/ayu_sync.cpp
+        ayu/features/forward/ayu_sync.h
+        ayu/features/translator/ayu_translator.cpp
+        ayu/features/translator/ayu_translator.h
+        ayu/features/translator/ayu_translate_provider.cpp
+        ayu/features/translator/ayu_translate_provider.h
+        ayu/features/translator/html_parser.cpp
+        ayu/features/translator/html_parser.h
+        ayu/features/translator/implementations/google.cpp
+        ayu/features/translator/implementations/google.h
+        ayu/features/translator/implementations/yandex.cpp
+        ayu/features/translator/implementations/yandex.h
+        ayu/features/translator/implementations/base.cpp
+        ayu/features/translator/implementations/base.h
+        ayu/features/filters/filters_controller.cpp
+        ayu/features/filters/filters_controller.h
+        ayu/features/filters/filters_cache_controller.cpp
+        ayu/features/filters/filters_cache_controller.h
+        ayu/features/filters/filters_utils.cpp
+        ayu/features/filters/filters_utils.h
+        ayu/data/messages_storage.cpp
+        ayu/data/messages_storage.h
+        ayu/data/entities.h
+        ayu/data/ayu_database.cpp
+        ayu/data/ayu_database.h
+
+        info/profile/info_profile_music_button.cpp
+        info/profile/info_profile_music_button.h
 )
 
 if (NOT DESKTOP_APP_DISABLE_SWIFT6)
@@ -105,6 +260,7 @@ target_precompile_headers(Telegram PRIVATE $<$<COMPILE_LANGUAGE:CXX,OBJCXX>:${sr
 nice_target_sources(Telegram ${src_loc}
 PRIVATE
     ${style_files}
+    ${ayugram_files}
 
     api/api_attached_stickers.cpp
     api/api_attached_stickers.h
@@ -1942,6 +2098,7 @@ PRIVATE
     qrc/telegram/picker.qrc
     qrc/telegram/telegram.qrc
     qrc/telegram/sounds.qrc
+    qrc/ayu/ayu.qrc
     winrc/Telegram.rc
     winrc/Telegram.manifest
     langs/lang.strings
