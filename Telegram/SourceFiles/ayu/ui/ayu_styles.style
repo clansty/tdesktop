@@ -29,36 +29,6 @@ stickerRoundingSize: 5px;
 
 messageShotPadding: 4px;
 
-topBarAdmins: IconButton {
-	width: 40px;
-	height: topBarHeight;
-
-	icon: icon {{ "ayu/top_bar_admins", menuIconFg }};
-	iconOver: icon {{ "ayu/top_bar_admins", menuIconFgOver }};
-	iconPosition: point(4px, 11px);
-
-	rippleAreaPosition: point(0px, 7px);
-	rippleAreaSize: 40px;
-	ripple: RippleAnimation(defaultRippleAnimation) {
-		color: windowBgOver;
-	}
-}
-
-topBarRecentActions: IconButton {
-	width: 40px;
-	height: topBarHeight;
-
-	icon: icon {{ "ayu/top_bar_recent_actions", menuIconFg }};
-	iconOver: icon {{ "ayu/top_bar_recent_actions", menuIconFgOver }};
-	iconPosition: point(4px, 11px);
-
-	rippleAreaPosition: point(0px, 7px);
-	rippleAreaSize: 40px;
-	ripple: RippleAnimation(defaultRippleAnimation) {
-		color: windowBgOver;
-	}
-}
-
 exteraBadgeToast: Toast(defaultToast) {
 	minWidth: 40px;
 	maxWidth: 480px;
