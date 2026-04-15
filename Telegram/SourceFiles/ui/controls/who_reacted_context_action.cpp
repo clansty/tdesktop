@@ -23,6 +23,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <QtCore/QLocale>
 
+// AyuGram includes
+#include "ayu/ui/ayu_userpic.h"
+
+
 namespace Lang {
 namespace {
 
@@ -842,11 +846,11 @@ void WhoReactedEntryAction::paint(Painter &&p) {
 			auto bgPen = bg->p;
 			bgPen.setWidthF(st::lineWidth * 6.);
 			p.setPen(bgPen);
-			p.drawEllipse(photoLeft, photoTop, photoSize, photoSize);
+			AyuUserpic::PaintShape(p, photoLeft, photoTop, photoSize);
 			auto fgPen = st::windowBgActive->p;
 			fgPen.setWidthF(st::lineWidth * 2.);
 			p.setPen(fgPen);
-			p.drawEllipse(photoLeft, photoTop, photoSize, photoSize);
+			AyuUserpic::PaintShape(p, photoLeft, photoTop, photoSize);
 		}
 	} else if (!_custom) {
 		st::menuIconReactions.paintInCenter(

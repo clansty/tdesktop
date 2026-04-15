@@ -75,7 +75,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <QtGui/QWindow>
 
-// AyuGram includes
+// 0wGram includes
 #include "ayu/ayu_settings.h"
 #include "boxes/peers/edit_participants_box.h"
 #include "data/data_chat_filters.h"
@@ -208,6 +208,11 @@ TopBarWidget::TopBarWidget(QWidget *parent, not_null<Window::SessionController *
 			ParticipantsBoxController::Start(
 				controller, _activeChat.key.peer(), ParticipantsBoxController::Role::Admins);
 		});
+
+	AyuSettings::getInstance().quickAdminShortcutsChanges(
+	) | rpl::on_next([=](bool) {
+		updateControlsVisibility();
+	}, lifetime());
 
 	_back->setAcceptBoth();
 	_back->addClickHandler([=](Qt::MouseButton) { InvokeQueued(_back.data(), [=] { backClicked(); }); });
@@ -704,7 +709,7 @@ void TopBarWidget::infoClicked() {
 void TopBarWidget::backClicked() {
 	if (_activeChat.key.folder()) {
 		const auto &settings = AyuSettings::getInstance();
-		if (settings.hideAllChatsFolder) {
+		if (settings.hideAllChatsFolder()) {
 			const auto filters = &_controller->session().data().chatsFilters();
 			const auto lookup_id = filters->lookupId(_controller->session().premium() ? 0 : 1);
 			_controller->setActiveChatsFilter(lookup_id);
@@ -787,6 +792,7 @@ void TopBarWidget::setActiveChat(ActiveChat activeChat, SendActionPainter *sendA
 	updateUnreadBadge();
 	refreshInfoButton();
 	if (_menu) {
+		_menuToggle->setForceRippled(false);
 		_menu = nullptr;
 	}
 	updateOnlineDisplay();
@@ -960,6 +966,11 @@ void TopBarWidget::updateControlsGeometry() {
 	}
 
 	_delete->moveToLeft(buttonsLeft, selectedButtonsTop);
+	if (!_delete->isHidden()) {
+		buttonsLeft += _delete->width() + st::topBarActionSkip;
+	}
+
+	_messageShot->moveToLeft(buttonsLeft, selectedButtonsTop);
 	{
 		const auto large = st::topBarActionButtonLargeRadius;
 		const auto &buttonSt = st::defaultActiveButton;
@@ -968,6 +979,7 @@ void TopBarWidget::updateControlsGeometry() {
 			_forward.data(),
 			_sendNow.data(),
 			_delete.data(),
+			_messageShot.data(),
 		};
 		auto first = (Ui::RoundButton *) (nullptr);
 		auto last = (Ui::RoundButton *) (nullptr);
@@ -1096,21 +1108,17 @@ void TopBarWidget::updateControlsVisibility() {
 		hideChildren();
 		return;
 	}
-	const auto visible = showSelectedState() || _selectedShown.animating();
-	_clear->setVisible(visible);
-	_delete->setVisible(_canDelete && visible);
-	_forwardNoQuote->setVisible(_canForward);
-	_savedMessages->setVisible(_canForward);
-	_forward->setVisible(_canForward && visible);
-	_sendNow->setVisible(_canSendNow && visible);
 
 	const auto &settings = AyuSettings::getInstance();
 
-	_clear->show();
-	_delete->setVisible(_canDelete);
-	_messageShot->setVisible(settings.showMessageShot);
-	_forward->setVisible(_canForward);
-	_sendNow->setVisible(_canSendNow);
+	const auto visible = showSelectedState() || _selectedShown.animating();
+	_clear->setVisible(visible);
+	_delete->setVisible(_canDelete && visible);
+	_forward->setVisible(_canForward && visible);
+	_forwardNoQuote->setVisible(_canForward && visible);
+	_savedMessages->setVisible(_canForward && visible);
+	_sendNow->setVisible(_canSendNow && visible);
+	_messageShot->setVisible(settings.showMessageShot && visible);
 
 	const auto isOneColumn = _controller->adaptive().isOneColumn();
 	const auto backVisible = !rootChatsListBar() &&
@@ -1178,7 +1186,7 @@ void TopBarWidget::updateControlsVisibility() {
 	const auto showRecentActions = [&]
 	{
 		const auto &settings = AyuSettings::getInstance();
-		if (!settings.quickAdminShortcuts) {
+		if (!settings.quickAdminShortcuts()) {
 			return false;
 		}
 		if (_activeChat.section == Section::ChatsList) {
@@ -1201,7 +1209,7 @@ void TopBarWidget::updateControlsVisibility() {
 	const auto showAdmins = [&]
 	{
 		const auto &settings = AyuSettings::getInstance();
-		if (!settings.quickAdminShortcuts) {
+		if (!settings.quickAdminShortcuts()) {
 			return false;
 		}
 		if (_activeChat.section == Section::ChatsList) {

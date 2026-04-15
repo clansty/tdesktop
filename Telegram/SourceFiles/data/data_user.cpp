@@ -358,17 +358,26 @@ void UserData::setName(
 		const QString &newLastName,
 		const QString &newPhoneName,
 		const QString &newUsername) {
-	bool changeName = !newFirstName.isEmpty() || !newLastName.isEmpty();
+	auto filteredFirstName = newFirstName;
+	auto filteredLastName = newLastName;
+
+	const auto &settings = AyuSettings::getInstance();
+	if (settings.filterZalgo()) {
+		filteredFirstName = filterZalgo(filteredFirstName);
+		filteredLastName = filterZalgo(filteredLastName);
+	}
+
+	bool changeName = !filteredFirstName.isEmpty() || !filteredLastName.isEmpty();
 
 	QString newFullName;
-	if (changeName && newFirstName.trimmed().isEmpty()) {
-		firstName = newLastName;
+	if (changeName && filteredFirstName.trimmed().isEmpty()) {
+		firstName = filteredLastName;
 		lastName = QString();
 		newFullName = firstName;
 	} else {
 		if (changeName) {
-			firstName = newFirstName;
-			lastName = newLastName;
+			firstName = filteredFirstName;
+			lastName = filteredLastName;
 		}
 		newFullName = lastName.isEmpty()
 			? firstName
@@ -610,7 +619,7 @@ bool UserData::isFake() const {
 bool UserData::isPremium() const {
 	if (id) {
 		const auto &settings = AyuSettings::getInstance();
-		if (settings.localPremium) {
+		if (settings.localPremium()) {
 			if (getSession(id.value)) {
 				return true;
 			}
@@ -673,8 +682,12 @@ bool UserData::readDatesPrivate() const {
 }
 
 bool UserData::allowsForwarding() const {
-	return !(flags() & Flag::NoForwardsMyEnabled)
-		&& !(flags() & Flag::NoForwardsPeerEnabled);
+	return true;
+}
+
+bool UserData::isAyuNoForwards() const {
+	return (flags() & Flag::NoForwardsMyEnabled)
+		|| (flags() & Flag::NoForwardsPeerEnabled);
 }
 
 void UserData::setNoForwardsFlags(bool myEnabled, bool peerEnabled) {

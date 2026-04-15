@@ -538,7 +538,7 @@ void HistoryMessageReply::updateData(
 							: resolvedStory
 								  ? resolvedStory->peer().get()
 								  : nullptr;
-	const auto blocked = settings.hideFromBlocked
+	const auto blocked = settings.hideFromBlocked()
 		&& author
 		&& author->isUser()
 		&& author->asUser()->isBlocked();

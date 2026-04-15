@@ -55,8 +55,8 @@ rpl::producer<TextWithEntities> Text3() {
 
 } // namespace
 
-void AboutBox(not_null<Ui::GenericBox *> box) {
-	box->setTitle(u"0wGram Desktop"_q);
+void AboutBox(not_null<Ui::GenericBox*> box, Window::SessionController* controller) {
+	box->setTitle(rpl::single(u"0wGram Desktop"_q));
 
 	auto layout = box->verticalLayout();
 
@@ -182,24 +182,32 @@ void ArchiveHintBox(not_null<Ui::GenericBox *> box, bool unarchiveOnNewMessage, 
 	Ui::AddSkip(content);
 	Ui::AddSkip(content);
 	{
-		const auto label = box->addRow(object_ptr<Ui::FlatLabel>(
-			content,
-			(unarchiveOnNewMessage ? tr::lng_archive_hint_about_unmuted : tr::lng_archive_hint_about)(
-				lt_link,
-				tr::lng_archive_hint_about_link(
-					lt_emoji, rpl::single(Ui::Text::IconEmoji(&st::textMoreIconEmoji)), tr::rich) |
-					rpl::map([](TextWithEntities text) { return tr::link(std::move(text), 1); }),
-				tr::rich),
-			st::channelEarnHistoryRecipientLabel));
-		label->resizeToWidth(box->width() - rect::m::sum::h(st::boxRowPadding));
-		label->setLink(1,
-					   std::make_shared<GenericClickHandler>(
-						   [=](ClickContext context)
-						   {
-							   if (context.button == Qt::LeftButton) {
-								   onUnarchive();
-							   }
-						   }));
+		const auto label = box->addRow(
+			object_ptr<Ui::FlatLabel>(
+				content,
+				(unarchiveOnNewMessage
+						? tr::lng_archive_hint_about_unmuted
+						: tr::lng_archive_hint_about)(
+					lt_link,
+					tr::lng_archive_hint_about_link(
+						lt_emoji,
+						rpl::single(
+							Ui::Text::IconEmoji(&st::textMoreIconEmoji)),
+						tr::rich
+					) | rpl::map([](TextWithEntities text) {
+						return tr::link(std::move(text), 1);
+					}),
+					tr::rich),
+				st::channelEarnHistoryRecipientLabel));
+		label->resizeToWidth(box->width()
+			- rect::m::sum::h(st::boxRowPadding));
+		label->setLink(
+			1,
+			std::make_shared<GenericClickHandler>([=](ClickContext context) {
+				if (context.button == Qt::LeftButton) {
+					onUnarchive();
+				}
+			}));
 	}
 	Ui::AddSkip(content);
 	Ui::AddSkip(content);

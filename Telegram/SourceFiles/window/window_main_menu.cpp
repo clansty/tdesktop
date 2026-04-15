@@ -323,6 +323,15 @@ MainMenu::MainMenu(
 	[=] { return controller->isGifPausedAtLeastFor(GifPauseReason::Layer); },
 	kPlayStatusLimit,
 	Info::Profile::BadgeType::Premium))
+, _exteraBadge(std::make_unique<Info::Profile::Badge>(
+	this,
+	st::infoPeerBadge,
+	&controller->session(),
+	ExteraBadgeTypeFromPeer(controller->session().user()),
+	nullptr,
+	[=] { return controller->isGifPausedAtLeastFor(GifPauseReason::Layer); },
+	0,
+	Info::Profile::BadgeType::Extera | Info::Profile::BadgeType::ExteraSupporter | Info::Profile::BadgeType::ExteraCustom))
 , _scroll(this, st::defaultSolidScroll)
 , _inner(_scroll->setOwnedWidget(
 	object_ptr<Ui::VerticalLayout>(_scroll.data())))
@@ -408,13 +417,23 @@ MainMenu::MainMenu(
 
 	rpl::combine(
 		_toggleAccounts->rightSkipValue(),
-		rpl::single(rpl::empty) | rpl::then(_badge->updated())
+		rpl::single(rpl::empty) | rpl::then(_badge->updated()),
+		rpl::single(rpl::empty) | rpl::then(_exteraBadge->updated())
 	) | rpl::on_next([=] {
 		moveBadge();
 	}, lifetime());
 	_badge->setPremiumClickCallback([=] {
 		chooseEmojiStatus();
 	});
+	{
+		const auto user = controller->session().user();
+		const auto isCustomBadge = isCustomBadgePeer(getBareID(user));
+		const auto isExtera = isExteraPeer(getBareID(user));
+		const auto isSupporter = isSupporterPeer(getBareID(user));
+		if (isExtera || isSupporter || isCustomBadge) {
+			_exteraBadge->setPremiumClickCallback(badgeClickHandler(user));
+		}
+	}
 
 	_controller->session().downloaderTaskFinished(
 	) | rpl::on_next([=] {
@@ -465,19 +484,42 @@ MainMenu::MainMenu(
 MainMenu::~MainMenu() = default;
 
 void MainMenu::moveBadge() {
-	if (!_badge->widget()) {
+	const auto badgeWidth = _badge->widget()
+		? _badge->widget()->width()
+		: 0;
+	const auto exteraBadgeWidth = _exteraBadge->widget()
+		? _exteraBadge->widget()->width()
+		: 0;
+	if (!badgeWidth && !exteraBadgeWidth) {
 		return;
 	}
+	const auto nameGap = badgeWidth ? st::semiboldFont->spacew : 0;
+	const auto exteraGap = exteraBadgeWidth
+		? st::infoVerifiedCheckPosition.x()
+		: 0;
+	const auto reserved = nameGap
+		+ badgeWidth
+		+ exteraGap
+		+ exteraBadgeWidth;
 	const auto available = width()
 		- st::mainMenuCoverNameLeft
 		- _toggleAccounts->rightSkip()
-		- _badge->widget()->width();
-	const auto left = st::mainMenuCoverNameLeft
-		+ std::min(_name.maxWidth() + st::semiboldFont->spacew, available);
-	_badge->move(
-		left,
-		st::mainMenuCoverNameTop,
-		st::mainMenuCoverNameTop + st::semiboldFont->height);
+		- reserved;
+	const auto nameLeft = st::mainMenuCoverNameLeft;
+	const auto nameEnd = nameLeft
+		+ std::min(_name.maxWidth(), available);
+	if (_badge->widget()) {
+		_badge->move(
+			nameEnd + nameGap,
+			st::mainMenuCoverNameTop,
+			st::mainMenuCoverNameTop + st::semiboldFont->height);
+	}
+	if (_exteraBadge->widget()) {
+		_exteraBadge->move(
+			nameEnd + nameGap + badgeWidth,
+			st::mainMenuCoverNameTop,
+			st::mainMenuCoverNameTop + st::semiboldFont->height);
+	}
 }
 
 void MainMenu::setupArchive() {
@@ -661,7 +703,7 @@ void MainMenu::setupMenu() {
 			std::move(descriptor));
 	};
 	if (!_controller->session().supportMode()) {
-		if (settings.showMyProfileInDrawer)
+		if (settings.showMyProfileInDrawer())
 		_menu->add(
 			CreateButtonWithIcon(
 				_menu,
@@ -673,15 +715,15 @@ void MainMenu::setupMenu() {
 				Info::Stories::Make(controller->session().user()));
 		});
 
-		if (settings.showBotsInDrawer)
+		if (settings.showBotsInDrawer())
 		SetupMenuBots(_menu, controller);
 
-		if (settings.showMyProfileInDrawer || settings.showBotsInDrawer)
+		if (settings.showMyProfileInDrawer() || settings.showBotsInDrawer())
 		_menu->add(
 			object_ptr<Ui::PlainShadow>(_menu),
 			{ 0, st::mainMenuSkip, 0, st::mainMenuSkip });
 
-		if (settings.showNewGroupInDrawer)
+		if (settings.showNewGroupInDrawer())
 		AddMyChannelsBox(addAction(
 			tr::lng_create_group_title(),
 			{ &st::menuIconGroups }
@@ -691,7 +733,7 @@ void MainMenu::setupMenu() {
 			}
 		});
 
-		if (settings.showNewChannelInDrawer)
+		if (settings.showNewChannelInDrawer())
 		AddMyChannelsBox(addAction(
 			tr::lng_create_supergroup_title(),
 			{ &st::menuIconGroups }
@@ -710,21 +752,21 @@ void MainMenu::setupMenu() {
 			}
 		});
 
-		if (settings.showContactsInDrawer)
+		if (settings.showContactsInDrawer())
 		addAction(
 			tr::lng_menu_contacts(),
 			{ &st::menuIconProfile }
 		)->setClickedCallback([=] {
 			controller->show(PrepareContactsBox(controller));
 		});
-		if (settings.showCallsInDrawer)
+		if (settings.showCallsInDrawer())
 		addAction(
 			tr::lng_menu_calls(),
 			{ &st::menuIconPhone }
 		)->setClickedCallback([=] {
 			::Calls::ShowCallsBox(controller);
 		});
-		if (settings.showSavedMessagesInDrawer)
+		if (settings.showSavedMessagesInDrawer())
 		addAction(
 			tr::lng_saved_messages(),
 			{ &st::menuIconSavedMessages }
@@ -732,34 +774,37 @@ void MainMenu::setupMenu() {
 			controller->showPeerHistory(controller->session().user());
 		});
 
-		if (settings.showLReadToggleInDrawer) {
+		if (settings.showLReadToggleInDrawer()) {
 			addAction(
 				tr::ayu_LReadMessages(),
 				{&st::ayuLReadMenuIcon}
-			)->setClickedCallback([=]
+			)->setClickedCallback([=]() mutable
 			{
-				const auto prev = settings.sendReadMessages;
-				AyuSettings::set_sendReadMessages(false);
+				auto &ghost = AyuSettings::ghost(&controller->session());
+				const auto prev = ghost.sendReadMessages();
+				ghost.setSendReadMessages(false);
 
 				const auto chats = controller->session().data().chatsList();
 				MarkAsReadChatList(chats);
 
-				AyuSettings::set_sendReadMessages(prev);
+				ghost.setSendReadMessages(prev);
 			});
 		}
 
-		if (settings.showSReadToggleInDrawer) {
-			auto callback = [=](Fn<void()> &&close) {
-				auto prev = settings.sendReadMessages;
-				AyuSettings::set_sendReadMessages(true);
+		if (settings.showSReadToggleInDrawer()) {
+			auto callback = [=](Fn<void()> &&close) mutable {
+				auto &ghost = AyuSettings::ghost(&controller->session());
+				const auto prev = ghost.sendReadMessages();
+				ghost.setSendReadMessages(true);
 
 				auto chats = controller->session().data().chatsList();
 				MarkAsReadChatList(chats);
 
 				// slight delay for forums to send packets
-				dispatchToMainThread([=]
+				dispatchToMainThread([=]() mutable
 				{
-					AyuSettings::set_sendReadMessages(prev);
+					auto &ghost = AyuSettings::ghost(&controller->session());
+					ghost.setSendReadMessages(prev);
 				}, 200);
 				close();
 			};
@@ -808,7 +853,7 @@ void MainMenu::setupMenu() {
 		controller->showSettings();
 	});
 
-	if (settings.showNightModeToggleInDrawer) {
+	if (settings.showNightModeToggleInDrawer()) {
 
 	_nightThemeToggle = addAction(
 		tr::lng_menu_night_mode(),
@@ -850,23 +895,29 @@ void MainMenu::setupMenu() {
 
 	}
 
-	if (settings.showGhostToggleInDrawer) {
+	if (settings.showGhostToggleInDrawer()) {
+		auto ghostActiveChanges = AyuSettings::getInstance().useGlobalGhostModeValue()
+			| rpl::map([controller = _controller](bool) {
+				return AyuSettings::ghost(&controller->session()).ghostModeActiveValue();
+			})
+			| rpl::flatten_latest();
+
 		const auto ghostModeToggle = addAction(
 			tr::ayu_GhostModeToggle(),
 			{&st::ayuGhostIcon}
-		)->toggleOn(AyuSettings::get_ghostModeEnabledReactive());
+		)->toggleOn(std::move(ghostActiveChanges));
 
 		ghostModeToggle->toggledChanges(
 		) | rpl::on_next(
-			[=](bool ghostMode)
+			[controller = _controller](bool ghostMode)
 			{
-				AyuSettings::set_ghostModeEnabled(ghostMode);
-				AyuSettings::save();
+				auto &ghost = AyuSettings::ghost(&controller->session());
+				ghost.setGhostModeEnabled(ghostMode);
 			},
 			ghostModeToggle->lifetime());
 	}
 
-	if (settings.showStreamerToggleInDrawer) {
+	if (settings.showStreamerToggleInDrawer()) {
 		const auto streamerModeToggle = addAction(
 			tr::ayu_StreamerModeToggle(),
 			{&st::ayuStreamerModeMenuIcon}
@@ -975,14 +1026,25 @@ void MainMenu::drawName(Painter &p) {
 	}
 	p.setFont(st::semiboldFont);
 	p.setPen(st::windowBoldFg);
+	const auto badgeWidth = _badge->widget()
+		? _badge->widget()->width()
+		: 0;
+	const auto exteraBadgeWidth = _exteraBadge->widget()
+		? _exteraBadge->widget()->width()
+		: 0;
+	const auto nameGap = badgeWidth ? st::semiboldFont->spacew : 0;
+	const auto exteraGap = exteraBadgeWidth
+		? st::infoVerifiedCheckPosition.x()
+		: 0;
+	const auto reserved = nameGap
+		+ badgeWidth
+		+ exteraGap
+		+ exteraBadgeWidth;
 	_name.drawLeftElided(
 		p,
 		st::mainMenuCoverNameLeft,
 		st::mainMenuCoverNameTop,
-		(widthText
-			- (_badge->widget()
-				? (st::semiboldFont->spacew + _badge->widget()->width())
-				: 0)),
+		widthText - reserved,
 		width());
 }
 

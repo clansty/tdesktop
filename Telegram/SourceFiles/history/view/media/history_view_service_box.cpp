@@ -423,6 +423,10 @@ void ServiceBox::hideSpoilers() {
 	_subtitle.setSpoilerRevealed(false, anim::type::instant);
 }
 
+void ServiceBox::revealSpoilers() {
+	_subtitle.setSpoilerRevealed(true, anim::type::instant);
+}
+
 bool ServiceBox::hasHeavyPart() const {
 	return _content->hasHeavyPart();
 }

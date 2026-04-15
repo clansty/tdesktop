@@ -171,7 +171,7 @@ void FiltersMenu::setupMainMenuIcon() {
 			: &st::windowFiltersMainMenuUnreadMuted;
 
 		const auto &settings = AyuSettings::getInstance();
-		if (settings.hideNotificationCounters) {
+		if (settings.hideNotificationCounters()) {
 			icon = nullptr;
 		}
 
@@ -224,7 +224,7 @@ void FiltersMenu::refresh() {
 	const auto maxLimit = (reorderAll ? 1 : 0)
 		+ Data::PremiumLimits(&_session->session()).dialogFiltersCurrent();
 	const auto premiumFrom = (reorderAll ? 0 : 1) + maxLimit;
-	if (!reorderAll && !settings.hideAllChatsFolder) {
+	if (!reorderAll && !settings.hideAllChatsFolder()) {
 		_reorder->addPinnedInterval(0, 1);
 	}
 	_reorder->addPinnedInterval(
@@ -259,7 +259,7 @@ void FiltersMenu::refresh() {
 	// Also check for session content existance, because it may be null
 	// and there will be an exception in `Window::SessionController::showPeerHistory`
 	// because `SessionController::content()` == nullptr
-    if (settings.hideAllChatsFolder && _session->widget()->sessionContent()) {
+    if (settings.hideAllChatsFolder() && _session->widget()->sessionContent()) {
         const auto lookupId = filters->lookupId(0);
         _session->setActiveChatsFilter(lookupId);
     }
@@ -343,18 +343,19 @@ base::unique_qptr<Ui::SideBarButton> FiltersMenu::prepareButton(
 	if (id >= 0) {
 		rpl::combine(
 			Data::UnreadStateValue(&_session->session(), id),
-			Data::IncludeMutedCounterFoldersValue()
+			Data::IncludeMutedCounterFoldersValue(),
+			AyuSettings::getInstance().hideNotificationCountersValue()
 		) | rpl::on_next([=](
 				const Dialogs::UnreadState &state,
-				bool includeMuted) {
+				bool includeMuted,
+				bool hideCounters) {
 			const auto chats = state.chats;
 			const auto chatsMuted = state.chatsMuted;
 			auto muted = (chatsMuted + state.marksMuted);
 			auto count = (chats + state.marks)
 				- (includeMuted ? 0 : muted);
 
-			const auto &settings = AyuSettings::getInstance();
-			if (settings.hideNotificationCounters) {
+			if (hideCounters) {
 				count = 0;
 				muted = 0;
 			}
@@ -593,7 +594,7 @@ void FiltersMenu::applyReorder(
 
 	const auto filters = &_session->session().data().chatsFilters();
 	const auto &list = filters->list();
-	if (!settings.hideAllChatsFolder && !premium()) {
+	if (!settings.hideAllChatsFolder() && !premium()) {
 		if (list[0].id() != FilterId()) {
 			filters->moveAllToFront();
 		}

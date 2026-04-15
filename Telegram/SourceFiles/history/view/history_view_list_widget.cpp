@@ -2868,9 +2868,7 @@ void ListWidget::mouseDoubleClickEvent(QMouseEvent *e) {
 		mouseActionCancel();
 		switch (CurrentQuickAction()) {
 		case DoubleClickQuickAction::Reply: {
-			if (!_overElement->data()->isDeleted()) {
-				replyToMessageRequestNotify({ _overElement->data()->fullId() });
-			}
+			replyToMessageRequestNotify({ _overElement->data()->fullId() });
 		} break;
 		case DoubleClickQuickAction::React: {
 			toggleFavoriteReaction(_overElement);

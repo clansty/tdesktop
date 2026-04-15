@@ -45,8 +45,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_chat.h"
 #include "styles/style_chat_helpers.h"
 
-// AyuGran includes
+// AyuGram includes
 #include "ayu/features/message_shot/message_shot.h"
+#include "ayu/ui/ayu_userpic.h"
 
 
 namespace HistoryView {
@@ -372,7 +373,7 @@ void Photo::draw(Painter &p, const PaintContext &context) const {
 			p.setBrush(over ? st->msgDateImgBgOver() : st->msgDateImgBg());
 		}
 	}
-	if (paintInCenter) {
+	if (paintInCenter && !AyuFeatures::MessageShot::isTakingShot()) {
 		const auto radialOpacity = (radial && loaded && !_data->uploading())
 			? _animation->radial.opacity() :
 			1.;
@@ -484,13 +485,18 @@ void Photo::validateUserpicImageCache(QSize size, bool forum) const {
 		args = args.blurred();
 	}
 	original = Images::Prepare(std::move(original), size * ratio, args);
-	if (forumValue) {
+	const auto shape = forumValue
+		? Ui::PeerUserpicShape::Forum
+		: Ui::PeerUserpicShape::Circle;
+	if (AyuUserpic::ShouldOverrideShape(shape)) {
+		original = Images::Round(
+			std::move(original),
+			ImageRoundRadius::AyuUserpic);
+	} else {
 		original = Images::Round(
 			std::move(original),
 			Images::CornersMask(std::min(size.width(), size.height())
 				* Ui::ForumUserpicRadiusMultiplier()));
-	} else {
-		original = Images::Circle(std::move(original));
 	}
 	_imageCache = std::move(original);
 	_imageCacheForum = forumValue;
@@ -578,7 +584,16 @@ void Photo::paintUserpicFrame(
 		const auto ratio = style::DevicePixelRatio();
 		auto request = ::Media::Streaming::FrameRequest();
 		request.outer = request.resize = size * ratio;
-		if (forum) {
+		const auto shape = forum
+			? Ui::PeerUserpicShape::Forum
+			: Ui::PeerUserpicShape::Circle;
+		if (AyuUserpic::ShouldOverrideShape(shape)) {
+			AyuUserpic::ApplyFrameRounding(
+				request,
+				_streamed->roundingCorners,
+				_streamed->roundingMask,
+				size);
+		} else if (forum) {
 			const auto radius = int(std::min(size.width(), size.height())
 				* Ui::ForumUserpicRadiusMultiplier());
 			if (_streamed->roundingCorners[0].width() != radius * ratio) {
@@ -804,7 +819,7 @@ void Photo::drawGrouped(
 		&& (radial
 			|| (!loaded && !_data->loading())
 			|| _data->waitingForAlbum());
-	if (paintInCenter) {
+	if (paintInCenter && !AyuFeatures::MessageShot::isTakingShot()) {
 		const auto radialOpacity = radial
 			? _animation->radial.opacity()
 			: 1.;
@@ -899,6 +914,10 @@ bool Photo::dataLoaded() const {
 bool Photo::needInfoDisplay() const {
 	if (AyuFeatures::MessageShot::ignoreRender(AyuFeatures::MessageShot::RenderPart::Date)) {
 		return false;
+	}
+
+	if (AyuFeatures::MessageShot::isTakingShot()) {
+		return true;
 	}
 
 	if (_parent->data()->isFakeAboutView()) {
@@ -1099,6 +1118,12 @@ bool Photo::videoAutoplayEnabled() const {
 void Photo::hideSpoilers() {
 	if (_spoiler) {
 		_spoiler->revealed = false;
+	}
+}
+
+void Photo::revealSpoilers() {
+	if (_spoiler) {
+		_spoiler->revealed = true;
 	}
 }
 

@@ -59,7 +59,7 @@ void EnsureBlockquoteCache(
 	cache->icon = colors.name;
 
 	const auto &settings = AyuSettings::getInstance();
-	if (settings.simpleQuotesAndReplies) {
+	if (settings.simpleQuotesAndReplies()) {
 		cache->bg = QColor(0, 0, 0, 0);
 	}
 }
@@ -495,6 +495,12 @@ ChatStyle::ChatStyle(rpl::producer<ColorIndicesCompressed> colorIndices) {
 		st::historyFileInDocumentSelected,
 		st::historyFileOutDocument,
 		st::historyFileOutDocumentSelected);
+	make(
+		&MessageStyle::historyFilePlugin,
+		st::ayuHistoryFileInPlugin,
+		st::ayuHistoryFileInPluginSelected,
+		st::ayuHistoryFileOutPlugin,
+		st::ayuHistoryFileOutPluginSelected);
 	make(
 		&MessageStyle::historyAudioDownload,
 		st::historyAudioInDownload,

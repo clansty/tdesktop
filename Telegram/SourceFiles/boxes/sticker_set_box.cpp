@@ -831,7 +831,7 @@ void StickerSetBox::updateButtons() {
 					},
 					&st::menuIconProfile);
 
-				if (settings.showPeerId != 0) {
+				if (settings.showPeerId() != PeerIdDisplay::Hidden) {
 					(*menu)->addAction(
 						tr::ayu_ContextCopyID(tr::now),
 						[weak, setId]
@@ -1519,11 +1519,6 @@ void StickerSetBox::Inner::chosen(
 		? Ui::MessageSendingAnimationFrom()
 		: messageSentAnimationInfo(index, sticker);
 
-	if (AyuSettings::isUseScheduledMessages() && !options.scheduled) {
-		auto current = base::unixtime::now();
-		options.scheduled = current + 12;
-	}
-
 	_show->processChosenSticker({
 		.document = sticker,
 		.options = options,
@@ -1578,7 +1573,7 @@ void StickerSetBox::Inner::contextMenuEvent(QContextMenuEvent *e) {
 			}, &st::menuIconCopy);
 
 			const auto &settings = AyuSettings::getInstance();
-			if (settings.showPeerId != 0) {
+			if (settings.showPeerId() != PeerIdDisplay::Hidden) {
 				_menu->addAction(tr::ayu_ContextCopyID(tr::now),
 								 [=]
 								 {

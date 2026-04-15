@@ -442,7 +442,10 @@ public:
 		bool isForumPost);
 	void setPostAuthor(const QString &author);
 	void setDeleted();
-	bool isDeleted() const;
+	[[nodiscard]] bool isDeleted() const;
+	[[nodiscard]] bool isBurnt() const;
+	[[nodiscard]] bool wasDeletedAnimated() const;
+	void markDeletedAnimated();
 	void applyTTL(TimeId destroyAt);
 	void setAyuHint(const QString &hint);
 	void setRealId(MsgId newId);
@@ -618,6 +621,7 @@ public:
 	[[nodiscard]] int unsupportedTTL() const {
 		return _unsupportedTTL;
 	}
+	void removeTranslationBit();
 
 	[[nodiscard]] int boostsApplied() const {
 		return _boostsApplied;
@@ -763,6 +767,7 @@ private:
 	TextWithEntities _originalMsg;
 
 	bool _deleted = false;
+	bool _deletedAnimated = false;
 	int _unsupportedTTL = 0;
 
 	TimeId _date = 0;

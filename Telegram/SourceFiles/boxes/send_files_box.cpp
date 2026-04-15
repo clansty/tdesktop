@@ -1113,20 +1113,20 @@ void SendFilesBox::pushBlock(int from, int till) {
 	});
 	_blocks.emplace_back(_inner.data(), _st, &_list.files, from, till, captionContext, gifPaused, _sendWay.current());
 	auto &block = _blocks.back();
-	const auto widget = _inner->add(block.takeWidget(), QMargins(0, _inner->count() ? st::sendMediaRowSkip : 0, 0, 0));
+	const auto widget = _inner->add(
+		block.takeWidget(),
+		QMargins(0, _inner->count() ? st::sendMediaRowSkip : 0, 0, 0));
 
 	if ((till - from) == 1 && isFileBlock(from)) {
 		setupDragForBlock(widget, from);
 	}
 
-	struct State
-	{
+	struct State {
 		base::unique_qptr<Ui::PopupMenu> menu;
 	};
 	const auto state = widget->lifetime().make_state<State>();
 	const auto openedOnce = widget->lifetime().make_state<bool>(false);
-	const auto openInPhotoEditor = [=, show = _show](int index)
-	{
+	const auto openInPhotoEditor = [=, show = _show](int index) {
 		applyBlockChanges();
 
 		if (!(*openedOnce)) {
@@ -2025,9 +2025,13 @@ bool SendFilesBox::validateLength(const QString &text) const {
 }
 
 void SendFilesBox::send(Api::SendOptions options, bool ctrlShiftEnter) {
+	const auto sumSize = ranges::accumulate(
+		_list.files,
+		int64(0),
+		[](int64 sum, const auto &file) { return sum + file.size; });
+	applyGhostScheduling(&_show->session(), options, getScheduleTime(sumSize));
+
 	if (AyuSettings::isUseScheduledMessages() && !options.scheduled) {
-		const auto sumSize =
-			ranges::accumulate(_list.files, 0, [](int sum, const auto &file) { return sum + file.size; });
 		auto current = base::unixtime::now();
 		options.scheduled = current + getScheduleTime(sumSize);
 	}

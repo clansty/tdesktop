@@ -539,13 +539,13 @@ auto ChatThemeValueFromPeer(
 	not_null<SessionController*> controller,
 	not_null<PeerData*> peer)
 -> rpl::producer<std::shared_ptr<Ui::ChatTheme>> {
-	auto cloud = MaybeCloudThemeValueFromPeer(
-		peer
-	) | rpl::map([=](ResolvedTheme resolved)
+	auto cloud = rpl::combine(
+		MaybeCloudThemeValueFromPeer(peer),
+		AyuSettings::getInstance().disableCustomBackgroundsValue()
+	) | rpl::map([=](ResolvedTheme resolved, bool disableCustomBackgrounds)
 	-> rpl::producer<std::shared_ptr<Ui::ChatTheme>> {
-		const auto &settings = AyuSettings::getInstance();
 		// this check ensures that background is not a pattern wallpaper in a private chat
-		if (settings.disableCustomBackgrounds && resolved.paper && resolved.paper->media) {
+		if (disableCustomBackgrounds && resolved.paper && resolved.paper->media) {
 			resolved.paper = std::nullopt;
 		}
 

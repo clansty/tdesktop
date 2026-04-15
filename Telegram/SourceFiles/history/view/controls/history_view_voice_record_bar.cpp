@@ -53,7 +53,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <tgcalls/VideoCaptureInterface.h>
 
-// AyuGram includes
+// 0wGram includes
 #include "ayu/ayu_settings.h"
 #include "boxes/abstract_box.h"
 
@@ -3041,11 +3041,6 @@ void VoiceRecordBar::stopRecording(StopType type, bool ttlBeforeHide) {
 					: 0),
 			};
 
-			const auto &settings = AyuSettings::getInstance();
-			if (AyuSettings::isUseScheduledMessages()) {
-				auto current = base::unixtime::now();
-				options.scheduled = current + 12 + 5;
-			}
 			auto sendVoiceCallback = crl::guard(
 				this,
 				[=, this](Fn<void()> &&close)
@@ -3059,7 +3054,8 @@ void VoiceRecordBar::stopRecording(StopType type, bool ttlBeforeHide) {
 					close();
 				});
 
-			if (settings.voiceConfirmation) {
+			const auto &settings = AyuSettings::getInstance();
+			if (settings.voiceConfirmation()) {
 				_show->showBox(Ui::MakeConfirmBox(
 					{
 						.text = tr::ayu_ConfirmationVoice(),
@@ -3132,12 +3128,12 @@ void VoiceRecordBar::requestToSendWithOptions(Api::SendOptions options) {
 		if (takeTTLState()) {
 			options.ttlSeconds = std::numeric_limits<int>::max();
 		}
+		if (_listen) {
+			_listen->prepareForSendAnimation();
+			_listen->applyTrimBeforeSend();
+		}
 
 		const auto &settings = AyuSettings::getInstance();
-		if (AyuSettings::isUseScheduledMessages()) {
-			auto current = base::unixtime::now();
-			options.scheduled = current + 12 + 5;
-		}
 		auto sendVoiceCallback = crl::guard(
 			this,
 			[=, this](Fn<void()> &&close)
@@ -3152,7 +3148,7 @@ void VoiceRecordBar::requestToSendWithOptions(Api::SendOptions options) {
 				close();
 			});
 
-		if (settings.voiceConfirmation) {
+		if (settings.voiceConfirmation()) {
 			_show->showBox(Ui::MakeConfirmBox(
 				{
 					.text = tr::ayu_ConfirmationVoice(),

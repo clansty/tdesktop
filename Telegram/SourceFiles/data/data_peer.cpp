@@ -56,6 +56,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/storage_shared_media.h"
 #include <QRandomGenerator>
 
+// AyuGram includes
+#include "ayu/ui/ayu_userpic.h"
+
+
 namespace {
 
 constexpr auto kUpdateFullPeerTimeout = crl::time(5000); // Not more than once in 5 seconds.
@@ -418,7 +422,7 @@ QImage *PeerData::userpicCloudImage(Ui::PeerUserpicView &view) const {
 	} else if (isNotificationsUser()) {
 		static auto result = Window::LogoTelegramDefault().scaledToWidth(
 			kUserpicSize,
-			Qt::SmoothTransformation);
+			Qt::SmoothTransformation).convertToFormat(QImage::Format_RGB32);
 		return &result;
 	}
 	return nullptr;
@@ -494,6 +498,14 @@ QImage PeerData::GenerateUserpicImage(
 		Ui::PeerUserpicView &view,
 		int size,
 		std::optional<int> radius) {
+	if (!radius) {
+		const auto shape = peer->isForum()
+			? Ui::PeerUserpicShape::Forum
+			: Ui::PeerUserpicShape::Circle;
+		if (AyuUserpic::ShouldOverrideShape(shape)) {
+			radius = AyuUserpic::ComputeRadius(size);
+		}
+	}
 	if (const auto userpic = peer->userpicCloudImage(view)) {
 		auto image = userpic->scaled(
 			{ size, size },
@@ -1742,8 +1754,8 @@ void PeerData::processTopics(const MTPVector<MTPForumTopic> &topics) {
 }
 
 bool PeerData::isAyuNoForwards() const {
-	if (asUser()) {
-		return false;
+	if (const auto user = asUser()) {
+		return user->isAyuNoForwards();
 	} else if (const auto channel = asChannel()) {
 		return channel->isAyuNoForwards();
 	} else if (const auto chat = asChat()) {

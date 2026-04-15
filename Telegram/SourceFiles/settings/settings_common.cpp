@@ -676,7 +676,8 @@ void AddPremiumStar(
 			p.scale(kScale, kScale);
 			p.translate(-r.center());
 		}
-		ministars->paint(p);
+		// remove cringe stars animation
+		// ministars->paint(p);
 	}, ministarsContainer->lifetime());
 
 	const auto badge = Ui::CreateChild<Ui::RpWidget>(button.get());

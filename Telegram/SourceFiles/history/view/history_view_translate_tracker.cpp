@@ -64,23 +64,25 @@ void TranslateTracker::setup() {
 
 	using namespace rpl::mappers;
 	_trackingLanguage = Core::App().settings().translateChatEnabledValue();
-	_trackingLanguage.value() |
-		rpl::on_next(
-			[=](bool tracking)
-			{
-				_trackingLifetime.destroy();
-				if (tracking) {
-					recognizeCollected();
-					trackSkipLanguages();
-				} else {
-					checkRecognized({});
-					_history->translateTo({});
-					if (const auto migrated = _history->migrateFrom()) {
-						migrated->translateTo({});
-					}
-				}
-			},
-			_lifetime);
+	_trackingLanguage.value() | rpl::on_next([=](bool tracking) {
+		_trackingLifetime.destroy();
+		if (tracking) {
+			recognizeCollected();
+			trackSkipLanguages();
+		} else {
+			checkRecognized({});
+			_history->translateTo({});
+			if (const auto migrated = _history->migrateFrom()) {
+				migrated->translateTo({});
+			}
+		}
+	}, _lifetime);
+
+	AyuSettings::getInstance().translationProviderChanges(
+	) | rpl::on_next([=](TranslationProvider) {
+		resetProvider();
+	}, _lifetime);
+}
 
 	AyuSettings::getInstance().translationProviderChanges() |
 		rpl::on_next([=](TranslationProvider) { resetProvider(); }, _lifetime);
@@ -241,36 +243,7 @@ void TranslateTracker::resetProvider() {
 }
 
 void TranslateTracker::invalidateTranslations() {
-	const auto clear = [&](not_null<History *> history)
-	{
-		for (const auto &block : history->blocks) {
-			for (const auto &view : block->messages) {
-				const auto item = view->data();
-				if (!item->Has<HistoryMessageTranslation>()) {
-					continue;
-				}
-				item->removeTranslationBit();
-				history->owner().requestItemTextRefresh(item);
-			}
-		}
-	};
-	clear(_history);
-	if (const auto migrated = _history->migrateFrom()) {
-		clear(migrated);
-	}
-}
-}
-
-void TranslateTracker::resetProvider() {
-	cancelToRequest();
-	cancelSentRequest();
-	_provider = Ui::CreateTranslateProvider(&_history->session());
-	invalidateTranslations();
-}
-
-void TranslateTracker::invalidateTranslations() {
-	const auto clear = [&](not_null<History *> history)
-	{
+	const auto clear = [&](not_null<History*> history) {
 		for (const auto &block : history->blocks) {
 			for (const auto &view : block->messages) {
 				const auto item = view->data();
@@ -286,7 +259,7 @@ void TranslateTracker::invalidateTranslations() {
 	if (const auto migrated = _history->migrateFrom()) {
 		clear(migrated);
 =======
->>>>>>> /tmp/64gram_file.tmp
+>>>>>>> theirs
 	}
 }
 

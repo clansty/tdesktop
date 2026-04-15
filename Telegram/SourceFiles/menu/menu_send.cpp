@@ -746,11 +746,14 @@ FillMenuResult FillSendMenu(
 		: st::defaultComposeIcons;
 
 	if (sending && type != Type::Reminder) {
-		const auto &settings = AyuSettings::getInstance();
+		const auto &ghost = maybeShow
+			? AyuSettings::ghost(&maybeShow->session())
+			: AyuSettings::ghost();
+		const auto sendWithoutSound = ghost.sendWithoutSound();
 		menu->addAction(
-			settings.sendWithoutSound ? tr::ayu_SendWithSound(tr::now) : tr::lng_send_silent_message(tr::now),
+			sendWithoutSound ? tr::ayu_SendWithSound(tr::now) : tr::lng_send_silent_message(tr::now),
 			[=] { action({ Api::SendOptions{ .silent = true } }, details); },
-			settings.sendWithoutSound ? &icons.menuUnmute : &icons.menuMute);
+			sendWithoutSound ? &icons.menuUnmute : &icons.menuMute);
 	}
 	if (sending && type != Type::SilentOnly) {
 		menu->addAction(

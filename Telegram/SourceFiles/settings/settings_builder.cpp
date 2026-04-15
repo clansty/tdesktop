@@ -36,6 +36,17 @@ namespace {
 	return result;
 }
 
+[[nodiscard]] QString ResolveSectionTitle(const SectionMeta &meta) {
+	return std::visit([](const auto &title) -> QString {
+		using T = std::decay_t<decltype(title)>;
+		if constexpr (std::is_same_v<T, QString>) {
+			return title;
+		} else {
+			return (*title)(tr::now);
+		}
+	}, meta.title);
+}
+
 } // namespace
 
 BuildHelper::BuildHelper(
@@ -101,7 +112,7 @@ std::vector<SearchEntry> SearchRegistry::collectAll(
 	for (const auto &[sectionId, meta] : _sections) {
 		if (meta->parentId) {
 			result.push_back({
-				.title = (*meta->title)(tr::now),
+				.title = ResolveSectionTitle(*meta),
 				.section = sectionId,
 				.icon = { meta->icon },
 			});
@@ -116,7 +127,7 @@ std::vector<SearchEntry> SearchRegistry::collectAll(
 
 QString SearchRegistry::sectionTitle(Type sectionId) const {
 	const auto it = _sections.find(sectionId);
-	return (it != _sections.end()) ? (*it->second->title)(tr::now) : QString();
+	return (it != _sections.end()) ? ResolveSectionTitle(*it->second) : QString();
 }
 
 QString SearchRegistry::sectionPath(Type sectionId, bool parentsOnly) const {
@@ -243,6 +254,7 @@ Ui::RpWidget *SectionBuilder::addControl(ControlArgs &&args) {
 	}, [&]() mutable {
 		return SearchEntry{
 			.id = std::move(args.id),
+			.altIds = std::move(args.altIds),
 			.title = ResolveTitle(std::move(args.title)),
 			.keywords = std::move(args.keywords),
 			.icon = std::move(args.searchIcon),
@@ -278,6 +290,7 @@ Ui::SettingsButton *SectionBuilder::addButton(ButtonArgs &&args) {
 	return static_cast<Ui::SettingsButton*>(addControl({
 		.factory = factory,
 		.id = std::move(args.id),
+		.altIds = std::move(args.altIds),
 		.title = rpl::duplicate(args.title),
 		.highlight = std::move(args.highlight),
 		.shown = std::move(args.shown),
@@ -292,6 +305,7 @@ Ui::SettingsButton *SectionBuilder::addSectionButton(SectionArgs &&args) {
 	const auto showOther = wctx ? wctx->showOther : nullptr;
 	const auto target = args.targetSection;
 	return addButton({
+		.altIds = std::move(args.altIds),
 		.title = std::move(args.title),
 		.icon = std::move(args.icon),
 		.onClick = [=] { showOther(target); },
@@ -330,6 +344,7 @@ void SectionBuilder::addDividerText(rpl::producer<QString> text) {
 Ui::SettingsButton *SectionBuilder::addPremiumButton(PremiumButtonArgs &&args) {
 	const auto result = addButton({
 		.id = std::move(args.id),
+		.altIds = std::move(args.altIds),
 		.title = std::move(args.title),
 		.label = std::move(args.label),
 		.onClick = std::move(args.onClick),
@@ -350,6 +365,7 @@ Ui::SettingsButton *SectionBuilder::addPrivacyButton(PrivacyButtonArgs &&args) {
 
 	const auto button = addButton({
 		.id = args.id,
+		.altIds = args.altIds,
 		.title = rpl::duplicate(args.title),
 		.st = &st::settingsButtonNoIcon,
 		.label = PrivacyButtonLabel(session, args.key),
@@ -395,6 +411,7 @@ Ui::Checkbox *SectionBuilder::addCheckbox(CheckboxArgs &&args) {
 	return static_cast<Ui::Checkbox*>(addControl({
 		.factory = factory,
 		.id = std::move(args.id),
+		.altIds = std::move(args.altIds),
 		.title = rpl::duplicate(args.title),
 		.margin = st::settingsCheckboxPadding,
 		.highlight = std::move(args.highlight),
@@ -421,6 +438,7 @@ void SectionBuilder::addSubsectionTitle(SubsectionTitleArgs &&args) {
 		if (!args.id.isEmpty()) {
 			ctx.entries->push_back({
 				.id = std::move(args.id),
+				.altIds = std::move(args.altIds),
 				.title = ResolveTitle(std::move(args.title)),
 				.keywords = std::move(args.keywords),
 				.section = ctx.sectionId,

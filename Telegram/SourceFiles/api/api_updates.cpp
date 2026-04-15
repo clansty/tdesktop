@@ -994,10 +994,10 @@ void Updates::updateOnline(crl::time lastNonIdleTime, bool gotOtherOffline) {
 	});
 
 	// AyuGram sendOnlinePackets
-	const auto &settings = AyuSettings::getInstance();
+	const auto &ghost = AyuSettings::ghost(_session);
 	const auto& config = _session->serverConfig();
 	bool isOnlineOrig = Core::App().hasActiveWindow(&session());
-	bool isOnline = settings.sendOnlinePackets && isOnlineOrig;
+	bool isOnline = ghost.sendOnlinePackets() && isOnlineOrig;
 
 	int updateIn = config.onlineUpdatePeriod;
 	Assert(updateIn >= 0);
@@ -1323,7 +1323,7 @@ void Updates::applyUpdateNoPtsCheck(const MTPUpdate &update) {
 		auto unknownReadIds = base::flat_set<MsgId>();
 		for (const auto &msgId : d.vmessages().v) {
 			if (const auto item = _session->data().nonChannelMessage(msgId.v)) {
-				if (item->isUnreadMedia() || item->isUnreadMention()) {
+				if (item->isUnreadMedia() || item->isUnreadMention() || (item->unsupportedTTL() && item->hasUnreadMediaFlag())) {
 					item->markMediaAndMentionRead();
 					_session->data().requestItemRepaint(item);
 
@@ -1708,7 +1708,7 @@ void Updates::feedUpdate(const MTPUpdate &update) {
 		auto unknownReadIds = base::flat_set<MsgId>();
 		for (const auto &msgId : d.vmessages().v) {
 			if (auto item = session().data().message(channel->id, msgId.v)) {
-				if (item->isUnreadMedia() || item->isUnreadMention()) {
+				if (item->isUnreadMedia() || item->isUnreadMention() || (item->unsupportedTTL() && item->hasUnreadMediaFlag())) {
 					item->markMediaAndMentionRead();
 					session().data().requestItemRepaint(item);
 				}

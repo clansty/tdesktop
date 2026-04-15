@@ -244,7 +244,7 @@ void SponsoredMessages::inject(
 
 bool SponsoredMessages::canHaveFor(not_null<History*> history) const {
 	const auto &settings = AyuSettings::getInstance();
-	if (settings.disableAds) {
+	if (settings.disableAds()) {
 		return false;
 	}
 
@@ -258,7 +258,7 @@ bool SponsoredMessages::canHaveFor(not_null<History*> history) const {
 
 bool SponsoredMessages::canHaveFor(not_null<HistoryItem*> item) const {
 	const auto &settings = AyuSettings::getInstance();
-	if (settings.disableAds) {
+	if (settings.disableAds()) {
 		return false;
 	}
 
@@ -268,7 +268,7 @@ bool SponsoredMessages::canHaveFor(not_null<HistoryItem*> item) const {
 
 bool SponsoredMessages::isTopBarFor(not_null<History*> history) const {
 	const auto &settings = AyuSettings::getInstance();
-	if (settings.disableAds) {
+	if (settings.disableAds()) {
 		return false;
 	}
 
@@ -456,7 +456,7 @@ void SponsoredMessages::parseForVideo(
 SponsoredForVideo SponsoredMessages::prepareForVideo(
 		not_null<PeerData*> peer) {
 	const auto &settings = AyuSettings::getInstance();
-	if (settings.disableAds) {
+	if (settings.disableAds()) {
 		return {};
 	}
 

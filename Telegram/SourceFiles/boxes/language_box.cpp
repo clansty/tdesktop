@@ -38,7 +38,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/platform/base_platform_info.h"
 #include "lang/lang_instance.h"
 #include "lang/lang_cloud_manager.h"
-#include "platform/platform_translate_provider.h"
 #include "settings/settings_common.h"
 #include "spellcheck/spellcheck_types.h"
 #include "window/window_controller.h"
@@ -53,10 +52,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <QtGui/QGuiApplication>
 #include <QtGui/QClipboard>
-
-// AyuGram includes
-#include "ayu/ayu_settings.h"
-
 
 namespace {
 
@@ -1223,48 +1218,9 @@ void LanguageBox::setupTop(not_null<Ui::VerticalLayout*> container) {
 		Core::App().saveSettingsDelayed();
 	}, translateEnabled->lifetime());
 
-	if (Platform::IsTranslateProviderAvailable()) {
-		const auto platformTranslateWrap = container->add(
-			object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
-				container,
-				object_ptr<Ui::VerticalLayout>(container)));
-		platformTranslateWrap->toggle(
-			translateEnabled->toggled(),
-			anim::type::instant);
-		platformTranslateWrap->toggleOn(translateEnabled->toggledValue());
-		const auto platformTranslateEnabled = platformTranslateWrap->entity()->add(
-			object_ptr<Ui::SettingsButton>(
-				platformTranslateWrap->entity(),
-				Platform::IsMac()
-					? tr::lng_translate_settings_use_platform_mac()
-					: tr::lng_translate_settings_use_platform_linux(),
-				st::settingsButtonNoIcon))->toggleOn(
-					rpl::single(
-						Core::App().settings().usePlatformTranslation()));
-		platformTranslateEnabled->toggledValue(
-		) | rpl::filter([](bool checked) {
-			return (checked
-				!= Core::App().settings().usePlatformTranslation());
-		}) | rpl::on_next([=](bool checked) {
-			Core::App().settings().setUsePlatformTranslation(checked);
-			Core::App().saveSettingsDelayed();
-		}, platformTranslateEnabled->lifetime());
-		if (Platform::IsMac()) {
-			Ui::AddSkip(platformTranslateWrap->entity());
-			Ui::AddDividerText(
-				platformTranslateWrap->entity(),
-				tr::lng_translate_settings_use_platform_mac_about());
-		}
-	}
-
 	using namespace rpl::mappers;
 	auto premium = Data::AmPremiumValue(&_controller->session()) | rpl::map([=](bool val)
 	{
-		// const auto &settings = AyuSettings::getInstance();
-		// if (settings.translationProvider != "telegram") {
-		// 	return true;
-		// }
-		// return val;
 		return true;
 	});
 	const auto translateChat = container->add(object_ptr<Ui::SettingsButton>(

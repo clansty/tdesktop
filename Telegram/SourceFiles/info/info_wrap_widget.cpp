@@ -58,7 +58,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 // AyuGram includes
 #include "ayu/ayu_settings.h"
-#include "ayu/features/filters/shadow_ban_utils.h"
+#include "ayu/features/filters/filters_cache_controller.h"
 #include "ayu/ui/settings/filters/edit_filter.h"
 #include "ayu/ui/settings/filters/settings_filters_list.h"
 #include "ayu/utils/telegram_helpers.h"
@@ -484,7 +484,7 @@ void WrapWidget::setupTopBarMenuToggle() {
 							const auto peer = thread->peer();
 							const auto realId = getDialogIdFromPeer(peer);
 
-							ShadowBanUtils::addShadowBan(realId);
+							AyuSettings::getInstance().addShadowBan(realId);
 							return true;
 						},
 						tr::ayu_FiltersMenuSelectChat(),
@@ -785,7 +785,7 @@ void WrapWidget::finishShowContent() {
 		updateContentGeometry();
 	}, _content->lifetime());
 
-	AyuSettings::get_filtersUpdate() | rpl::on_next([=]
+	FiltersCacheController::updates() | rpl::on_next([=]
 	{
 		auto contentMemento = _content->createMemento();
 		if (!contentMemento) {

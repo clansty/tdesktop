@@ -2814,7 +2814,7 @@ void EmojiListWidget::refreshCustom() {
 	const auto push = [&](uint64 setId, bool installed) {
 		const auto megagroup = _megagroupSet
 			&& (setId == Data::Stickers::MegagroupSetId);
-		if (settings.showOnlyAddedEmojisAndStickers && !installed && !megagroup) {
+		if (settings.showOnlyAddedEmojisAndStickers() && !installed && !megagroup) {
 			return;
 		}
 		const auto lookupId = megagroup

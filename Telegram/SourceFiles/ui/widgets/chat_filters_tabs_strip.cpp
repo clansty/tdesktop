@@ -39,6 +39,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <QScrollBar>
 
+// AyuGram includes
+#include "ayu/ayu_settings.h"
+
+
 namespace Ui {
 namespace {
 
@@ -232,19 +236,27 @@ not_null<Ui::RpWidget*> AddChatFiltersTabsStrip(
 		state->reorderLifetime.destroy();
 		const auto &list = session->data().chatsFilters().list();
 		auto includeMuted = Data::IncludeMutedCounterFoldersValue();
+		auto hideCounters = AyuSettings::getInstance().hideNotificationCountersValue();
 		for (auto i = 0; i < list.size(); i++) {
 			rpl::combine(
 				Data::UnreadStateValue(session, list[i].id()),
-				rpl::duplicate(includeMuted)
+				rpl::duplicate(includeMuted),
+				rpl::duplicate(hideCounters)
 			) | rpl::on_next([=](
 					const Dialogs::UnreadState &state,
-					bool includeMuted) {
+					bool includeMuted,
+					bool hideCounters) {
 				const auto chats = state.chats;
 				const auto chatsMuted = state.chatsMuted;
 				const auto muted = (chatsMuted + state.marksMuted);
-				const auto count = (chats + state.marks)
+				auto count = (chats + state.marks)
 					- (includeMuted ? 0 : muted);
 				const auto isMuted = includeMuted && (count == muted);
+
+				if (hideCounters) {
+					count = 0;
+				}
+
 				slider->setUnreadCount(i, count, isMuted);
 				slider->fitWidthToSections();
 			}, state->reorderLifetime);

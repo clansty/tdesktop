@@ -80,7 +80,7 @@ MTPInputReplyTo ReplyToForMTP(
 		const auto external = replyTo.messageId
 			&& (replyTo.messageId.peer != history->peer->id
 				|| replyingToTopicId != replyToTopicId);
-		const auto textNormalized = reverseLocalPremiumEmoji(replyTo.quote, history);
+		const auto textNormalized = reverseLocalPremiumEmoji(replyTo.quote, history, true);
 		const auto quoteEntities = Api::EntitiesToMTP(
 			&history->session(),
 			textNormalized.entities,
@@ -107,7 +107,7 @@ MTPInputReplyTo ReplyToForMTP(
 			(external
 				? owner->peer(replyTo.messageId.peer)->input()
 				: MTPInputPeer()),
-			MTP_string(replyTo.quote.text),
+			MTP_string(textNormalized.text),
 			quoteEntities,
 			MTP_int(replyTo.quoteOffset),
 			(replyToMonoforumPeerId
@@ -129,11 +129,12 @@ MTPInputMedia WebPageForMTP(
 		const Data::WebPageDraft &draft,
 		bool required) {
 	using Flag = MTPDinputMediaWebPage::Flag;
+	const auto url = getBetterLinkPreview(draft.url);
 	return MTP_inputMediaWebPage(
-		MTP_flags(((false && required) ? Flag() : Flag::f_optional)
+		MTP_flags((draft.previewChanged ? Flag() : Flag::f_optional)
 			| (draft.forceLargeMedia ? Flag::f_force_large_media : Flag())
 			| (draft.forceSmallMedia ? Flag::f_force_small_media : Flag())),
-		MTP_string(draft.url));
+		MTP_string(url));
 }
 
 Histories::Histories(not_null<Session*> owner)
@@ -685,8 +686,8 @@ void Histories::sendReadRequests() {
 	DEBUG_LOG(("Reading: send requests with count %1.").arg(_states.size()));
 
 	// AyuGram sendReadMessages
-	const auto &settings = AyuSettings::getInstance();
-	if (!settings.sendReadMessages) {
+	const auto &ghost = AyuSettings::ghost(&_owner->session());
+	if (!ghost.sendReadMessages()) {
 		DEBUG_LOG(("[AyuGram] Don't read messages"));
 		_states.clear();
 		return;
@@ -1114,6 +1115,7 @@ int Histories::sendPreparedMessage(
 		Fn<PreparedMessage(not_null<History*>, FullReplyTo)> message,
 		Fn<void(const MTPUpdates&, const MTP::Response&)> done,
 		Fn<void(const MTP::Error&, const MTP::Response&)> fail) {
+	markReadAfterAction(history);
 	if (isCreatingTopic(history, replyTo.topicRootId)) {
 		const auto id = ++_requestAutoincrement;
 		const auto creatingId = FullMsgId(

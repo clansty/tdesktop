@@ -1539,9 +1539,12 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(std::shared_ptr<Ui::Sh
 		}
 		auto &api = history->session().api();
 		auto &histories = history->owner().histories();
-		const auto donePhraseArgs = CreateForwardedMessagePhraseArgs(result, msgIds);
-		const auto showRecentForwardsToSelf =
-			result.size() == 1 && result.front()->peer()->isSelf() && history->session().premium();
+		const auto donePhraseArgs = CreateForwardedMessagePhraseArgs(
+			result,
+			msgIds);
+		const auto showRecentForwardsToSelf = result.size() == 1
+			&& result.front()->peer()->isSelf()
+			&& history->session().premium();
 		// AyuGram-changed
 		const auto dismiss = [=]
 		{
@@ -1549,7 +1552,6 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(std::shared_ptr<Ui::Sh
 				show->hideLayer();
 			}
 		};
-
 
 		if (AyuForward::isFullAyuForwardNeeded(items.front())) {
 			crl::async(
@@ -1565,24 +1567,21 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(std::shared_ptr<Ui::Sh
 
 			dismiss();
 			return;
-		}
-		if (AyuForward::isAyuForwardNeeded(items)) {
-			crl::async(
-				[=]
-				{
-					for (const auto &thread : result) {
-						AyuForward::intelligentForward(&history->owner().session(),
-													   Api::SendAction(thread, options),
-													   Data::ResolvedForwardDraft(items, forwardOptions));
-					}
-				});
+		} else if (AyuForward::isAyuForwardNeeded(items)) {
+			crl::async([=]
+			{
+				for (const auto thread : result) {
+					AyuForward::intelligentForward(
+						&history->owner().session(),
+						Api::SendAction(thread, options),
+						Data::ResolvedForwardDraft(items, forwardOptions));
+				}
+			});
 
 			dismiss();
 			return;
 		}
 		// AyuGram-changed
-
-
 		for (const auto &thread : result) {
 			const auto peer = thread->peer();
 			const auto threadHistory = thread->owningHistory();
@@ -1663,15 +1662,15 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(std::shared_ptr<Ui::Sh
 						if (!phrase.empty()) {
 							show->showToast(std::move(phrase));
 						}
-						show->hideLayer();
-					}
-
-					const auto &settings = AyuSettings::getInstance();
-					if (!settings.sendReadMessages && settings.markReadAfterAction && history->lastMessage()) {
-						readHistory(history->lastMessage());
-					}
+					show->hideLayer();
 				}
-			};
+
+				const auto &settings = AyuSettings::getInstance();
+				if (!settings.sendReadMessages && settings.markReadAfterAction && history->lastMessage()) {
+					readHistory(history->lastMessage());
+				}
+			}
+		};
 			const auto requestFail = [=](const MTP::Error &error, mtpRequestId requestKey)
 			{
 				const auto type = error.type();

@@ -58,11 +58,11 @@ private:
 	void requestSome();
 	void cancelToRequest();
 	void cancelSentRequest();
-	void switchTranslation(not_null<HistoryItem *> item, LanguageId id);
+	void switchTranslation(not_null<HistoryItem*> item, LanguageId id);
 	void resetProvider();
 	void invalidateTranslations();
 
-	const not_null<History *> _history;
+	const not_null<History*> _history;
 	std::unique_ptr<Ui::TranslateProvider> _provider;
 	rpl::variable<bool> _trackingLanguage = false;
 	base::flat_map<FullMsgId, ItemForRecognize> _itemsForRecognize;
