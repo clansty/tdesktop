@@ -1901,6 +1901,10 @@ bool HistoryItem::isSponsored() const {
   return _flags & MessageFlag::Sponsored;
 }
 
+bool HistoryItem::isAyuNoForwards() const {
+	return _flags & MessageFlag::AyuNoForwards;
+}
+
 bool HistoryItem::canLookupMessageAuthor() const {
   return isRegular() && !isService() && _history->amMonoforumAdmin() &&
          _from->isChannel();
