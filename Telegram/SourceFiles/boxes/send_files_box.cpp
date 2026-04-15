@@ -2031,11 +2031,6 @@ void SendFilesBox::send(Api::SendOptions options, bool ctrlShiftEnter) {
 		[](int64 sum, const auto &file) { return sum + file.size; });
 	applyGhostScheduling(&_show->session(), options, getScheduleTime(sumSize));
 
-	if (AyuSettings::isUseScheduledMessages() && !options.scheduled) {
-		auto current = base::unixtime::now();
-		options.scheduled = current + getScheduleTime(sumSize);
-	}
-
 	if ((_sendType == Api::SendType::Scheduled || _sendType == Api::SendType::ScheduledToUser) && !options.scheduled) {
 		auto child = _sendMenuDetails();
 		child.spoiler = SendMenu::SpoilerState::None;

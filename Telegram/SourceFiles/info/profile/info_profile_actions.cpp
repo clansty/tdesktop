@@ -1252,6 +1252,84 @@ bool SetClickContext(const ClickHandlerPtr &handler,
   return false;
 }
 
+void AddRegistrationOrCreationButton(const not_null<Window::SessionController*> controller,
+									 not_null<PeerData*> peer,
+									 TextWithLabel &idInfo,
+									 const auto fitLabelToButton) {
+	if (peer->isBot() || peer->isServiceUser()) {
+		return;
+	}
+
+	const auto registrationDateButton = Ui::CreateChild<Ui::IconButton>(
+		idInfo.text->parentWidget(),
+		st::infoProfileLabeledButtonRegistrationDate);
+	const auto rightSkip = st::infoProfileLabeledButtonQrRightSkip;
+	fitLabelToButton(registrationDateButton, idInfo.text, rightSkip);
+	fitLabelToButton(registrationDateButton, idInfo.subtext, rightSkip);
+	registrationDateButton->setClickedCallback([=, show = controller->uiShow()]
+	{
+		const auto weak = QPointer<Ui::IconButton>(registrationDateButton);
+		getRegistrationDate(
+			peer,
+			[=](const TextWithEntities &result)
+			{
+				if (result.empty() || !weak) {
+					return;
+				}
+				const auto parent = weak->window();
+				const auto tooltip = Ui::CreateChild<Ui::ImportantTooltip>(
+					parent,
+					Ui::MakeNiceTooltipLabel(
+						parent,
+						rpl::single(result),
+						st::boxWideWidth,
+						st::registrationDateImportantTooltipLabel),
+					st::defaultImportantTooltip);
+				tooltip->toggleFast(false);
+
+				const auto geometry = Ui::MapFrom(
+					parent,
+					weak.data(),
+					weak->rect());
+				const auto countPosition = [=](QSize size)
+				{
+					const auto left = geometry.x()
+						+ (geometry.width() - size.width()) / 2;
+					const auto right = parent->width()
+						- st::normalFont->spacew;
+					return QPoint(
+						std::max(std::min(left, right - size.width()), 0),
+						geometry.y() - size.height() - st::normalFont->descent);
+				};
+				tooltip->pointAt(geometry, RectPart::Top, countPosition);
+
+				const auto weakTooltip = QPointer(tooltip);
+				tooltip->setHiddenCallback([weakTooltip]
+				{
+					if (weakTooltip) {
+						weakTooltip->deleteLater();
+					}
+				});
+
+				base::install_event_filter(
+					tooltip,
+					qApp,
+					[weakTooltip](not_null<QEvent*> e)
+					{
+						if (e->type() == QEvent::MouseButtonPress) {
+							if (weakTooltip) {
+								weakTooltip->toggleAnimated(false);
+							}
+						}
+						return base::EventFilterResult::Continue;
+					});
+
+				tooltip->toggleAnimated(true);
+			});
+		return false;
+	});
+}
+
 object_ptr<Ui::RpWidget> DetailsFiller::setupInfo() {
   auto wrap = object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
       _wrap, object_ptr<Ui::VerticalLayout>(_wrap));

@@ -111,15 +111,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_credits.h"
 #include "styles/style_menu_icons.h"
 
-// 0wGram includes
+// AyuGram includes
 #include "ayu/ayu_settings.h"
 #include "history/history_item_components.h"
+
+
 namespace HistoryView {
 namespace {
 
 constexpr auto kSaveDraftTimeout = crl::time(1000);
 constexpr auto kSaveDraftAnywayTimeout = 5 * crl::time(1000);
-constexpr auto kSaveCloudDraftIdleTimeout = 14 * crl::time(1000);
+constexpr auto kSaveCloudDraftIdleTimeout = 12 * crl::time(1000);
 constexpr auto kMouseEvents = {
 	QEvent::MouseMove,
 	QEvent::MouseButtonPress,
@@ -146,6 +148,13 @@ using SendActionUpdate = ComposeControls::SendActionUpdate;
 using SetHistoryArgs = ComposeControls::SetHistoryArgs;
 using VoiceRecordBar = Controls::VoiceRecordBar;
 using ForwardPanel = Controls::ForwardPanel;
+
+#define SWITCH_BUTTON(button, show_v) \
+	if (show_v) { \
+		(button)->show(); \
+	} else { \
+		(button)->hide(); \
+	}
 
 } // namespace
 
@@ -2270,7 +2279,6 @@ bool ComposeControls::showRecordButton() const {
 	if (!settings.showMicrophoneButtonInMessageField()) {
 		return false;
 	}
-
 	return _features.recordMediaMessage
 		&& (_recordAvailability != Webrtc::RecordAvailability::None)
 		&& !_voiceRecordBar->isListenState()
@@ -3453,6 +3461,7 @@ void ComposeControls::updateControlsGeometry(QSize size) {
 	// (_commentsShown) (_attachToggle|_replaceMedia) (_sendAs) -- _inlineResults ------ _tabbedPanel -- _fieldBarCancel (_starsReaction)
 	// (_attachDocument|_attachPhoto) _field (_ttlInfo) (_scheduled) (_silent|_botCommandStart) _tabbedSelectorToggle _send
 
+	const auto &settings = AyuSettings::getInstance();
 	const auto commentsShown = _commentsShown
 		&& !_commentsShown->isHidden();
 	const auto fieldWidth = size.width()
@@ -3565,6 +3574,8 @@ void ComposeControls::updateControlsGeometry(QSize size) {
 }
 
 void ComposeControls::updateControlsVisibility() {
+	const auto &settings = AyuSettings::getInstance();
+
 	if (_botCommandStart) {
 		SWITCH_BUTTON(_botCommandStart, _botCommandShown && settings.showCommandsButtonInMessageField());
 	}

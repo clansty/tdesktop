@@ -1666,7 +1666,7 @@ ShareBox::SubmitCallback ShareBox::DefaultForwardCallback(std::shared_ptr<Ui::Sh
 				}
 
 				const auto &settings = AyuSettings::getInstance();
-				if (!settings.sendReadMessages && settings.markReadAfterAction && history->lastMessage()) {
+				if (!AyuSettings::ghost().sendReadMessages() && AyuSettings::ghost().markReadAfterAction() && history->lastMessage()) {
 					readHistory(history->lastMessage());
 				}
 			}

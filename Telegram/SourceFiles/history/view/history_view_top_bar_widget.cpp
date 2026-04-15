@@ -1118,7 +1118,7 @@ void TopBarWidget::updateControlsVisibility() {
 	_forwardNoQuote->setVisible(_canForward && visible);
 	_savedMessages->setVisible(_canForward && visible);
 	_sendNow->setVisible(_canSendNow && visible);
-	_messageShot->setVisible(settings.showMessageShot && visible);
+	_messageShot->setVisible(settings.showMessageShot() && visible);
 
 	const auto isOneColumn = _controller->adaptive().isOneColumn();
 	const auto backVisible = !rootChatsListBar() &&
@@ -1295,7 +1295,7 @@ void TopBarWidget::updateMembersShowArea() {
 bool TopBarWidget::showSelectedState() const {
 	const auto &settings = AyuSettings::getInstance();
 
-	return (_selectedCount > 0) && (_canDelete || _canForward || _canSendNow || settings.showMessageShot);
+	return (_selectedCount > 0) && (_canDelete || _canForward || _canSendNow || settings.showMessageShot());
 }
 
 void TopBarWidget::showSelected(SelectedState state) {
@@ -1304,7 +1304,7 @@ void TopBarWidget::showSelected(SelectedState state) {
 	auto canDelete = (state.count > 0 && state.count == state.canDeleteCount);
 	auto canForward = (state.count > 0 && state.count == state.canForwardCount);
 	auto canSendNow = (state.count > 0 && state.count == state.canSendNowCount);
-	auto count = (!canDelete && !canForward && !canSendNow && !settings.showMessageShot) ? 0 : state.count;
+	auto count = (!canDelete && !canForward && !canSendNow && !settings.showMessageShot()) ? 0 : state.count;
 	if (_selectedCount == count && _canDelete == canDelete && _canForward == canForward && _canSendNow == canSendNow) {
 		return;
 	}

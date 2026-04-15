@@ -3461,14 +3461,6 @@ void ApiWrap::forwardMessages(Data::ResolvedForwardDraft &&draft,
           if (shared && !--shared->requestsLeft) {
             shared->callback();
           }
-
-          const auto &settings = AyuSettings::getInstance();
-          if (!settings.sendReadMessages && settings.markReadAfterAction &&
-              history->lastMessage()) {
-            readHistory(history->lastMessage());
-          }
-
-          finish();
           if (peer->isSelf() && session().premium()) {
             ProcessRecentSelfForwards(_session, result, peer->id,
                                       forwardFrom->id);

@@ -56,3 +56,10 @@ registrationDateImportantTooltipLabel: FlatLabel(defaultImportantTooltipLabel) {
 		font: font(12px);
 	}
 }
+
+ayuServiceTimeBadgeFont: font(11px semibold);
+ayuServiceTimeBadgeHorizontalPadding: 7px;
+ayuServiceTimeBadgeVerticalPadding: 2px;
+ayuServiceTimeBadgeGap: 8px;
+ayuServiceTimeBadgeTrailingInset: 3px;
+ayuServiceTimeBadgeLastLineWidthAdd: 9px;

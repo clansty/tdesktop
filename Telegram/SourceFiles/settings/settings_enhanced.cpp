@@ -373,7 +373,7 @@ namespace Settings {
 		)->toggledChanges(
 		) | rpl::filter([=](bool toggled) {
 			return (toggled != GetEnhancedBool("blocked_hana_spoiler_mode"));
-		}) | rpl::start_with_next([=](bool toggled) {
+		}) | rpl::on_next([=](bool toggled) {
 			SetEnhancedValue("blocked_hana_spoiler_mode", toggled);
 			EnhancedSettings::Write();
 		}, container->lifetime());

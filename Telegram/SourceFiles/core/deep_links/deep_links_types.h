@@ -32,11 +32,11 @@ struct Context {
 using Handler = Fn<Result(const Context&)>;
 
 struct SettingsSection {
-	Settings::Type sectionId;
+	::Settings::Type sectionId;
 };
 
 struct SettingsControl {
-	Settings::Type sectionId;
+	::Settings::Type sectionId;
 	QString controlId;
 };
 
