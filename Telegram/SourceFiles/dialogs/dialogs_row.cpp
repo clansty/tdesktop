@@ -267,7 +267,8 @@ const style::DialogRow &Row::ComputeSt(not_null<const Entry *> entry,
                                        FilterId filterId) {
   if (const auto history = entry->asHistory()) {
     const auto hasTags = entry->hasChatsFilterTags(filterId);
-    const auto wideRow = history->isForum() || history->amMonoforumAdmin();
+    const auto wideRow =
+        history->peer->displayAsForum() || history->amMonoforumAdmin();
     return wideRow   ? (hasTags ? st::taggedForumDialogRow : st::forumDialogRow)
            : hasTags ? st::taggedDialogRow
                      : st::defaultDialogRow;
@@ -681,6 +682,12 @@ const Ui::Text::String &FakeRow::name() const {
     _name.setText(st::semiboldTextStyle, peer->name(), Ui::NameTextOptions());
   }
   return _name;
+}
+
+DateText FakeRow::dateText(
+		TimeId date,
+		crl::time now) const {
+	return ResolveDateText(_dateCache, date, now);
 }
 
 } // namespace Dialogs

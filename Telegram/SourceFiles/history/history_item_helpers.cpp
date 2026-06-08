@@ -536,15 +536,26 @@ TextWithEntities DropDisallowedCustomEmoji(not_null<PeerData *> to, TextWithEnti
 	if (to->session().premium() || to->isSelf()) {
 		return text;
 	}
+	const auto isLocalIconEmoji = [](const EntityInText &entity) {
+		return entity.data().startsWith(u"icon-emoji-"_q);
+	};
 	const auto channel = to->asMegagroup();
 	const auto allowSetId = channel ? channel->mgInfo->emojiSet.id : 0;
 	if (!allowSetId) {
-		text.entities.erase(ranges::remove(text.entities, EntityType::CustomEmoji, &EntityInText::type),
-							text.entities.end());
+		const auto predicate = [&](const EntityInText &entity) {
+			return (entity.type() == EntityType::CustomEmoji)
+				&& !isLocalIconEmoji(entity);
+		};
+		text.entities.erase(
+			ranges::remove_if(text.entities, predicate),
+			text.entities.end());
 	} else {
 		const auto predicate = [&](const EntityInText &entity)
 		{
 			if (entity.type() != EntityType::CustomEmoji) {
+				return false;
+			}
+			if (isLocalIconEmoji(entity)) {
 				return false;
 			}
 			if (const auto id = Data::ParseCustomEmojiData(entity.data())) {
@@ -704,7 +715,8 @@ MessageFlags FlagsFromMTP(MsgId id, MTPDmessage::Flags flags, MessageFlags local
 		((flags & MTP::f_paid_suggested_post_ton)		  ? Flag::TonPaidSuggested
 			 : (flags & MTP::f_paid_suggested_post_stars) ? Flag::StarsPaidSuggested
 														  : Flag()) |
-		((flags & MTP::f_summary_from_language) ? Flag::CanBeSummarized : Flag());
+		((flags & MTP::f_summary_from_language) ? Flag::CanBeSummarized : Flag()) |
+		((flags & MTP::f_guestchat_via_from) ? Flag::GuestChatViaFrom : Flag());
 }
 
 MessageFlags FlagsFromMTP(MsgId id, MTPDmessageService::Flags flags, MessageFlags localFlags) {
@@ -1062,6 +1074,20 @@ void CheckPollVoteNotificationSchedule(not_null<HistoryItem *> item,
 	TextUtilities::ParseEntities(result, Ui::ItemTextNoMonoOptions().flags);
 	result.entities.push_front(EntityInText(EntityType::Italic, 0, result.text.size()));
 	return result;
+}
+
+HistoryMessageMarkupData UnsupportedMessageMarkup() {
+	using Button = HistoryMessageMarkupButton;
+	auto markup = HistoryMessageMarkupData();
+	markup.flags = ReplyMarkupFlag::Inline;
+	auto row = std::vector<Button>();
+	row.emplace_back(
+		Button::Type::Url,
+		tr::lng_update_telegram(tr::now),
+		Button::Visual(),
+		QByteArray("https://desktop.telegram.org"));
+	markup.rows.push_back(std::move(row));
+	return markup;
 }
 
 void ShowTrialTranscribesToast(int left, TimeId until) {

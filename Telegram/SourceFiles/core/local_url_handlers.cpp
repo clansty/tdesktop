@@ -21,6 +21,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/language_box.h"
 #include "boxes/peers/edit_peer_info_box.h"
 #include "boxes/premium_preview_box.h"
+#include "boxes/preview_ai_tone_box.h"
 #include "boxes/share_box.h"
 #include "boxes/star_gift_box.h"
 #include "boxes/sticker_set_box.h"
@@ -30,6 +31,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/deep_links/deep_links_router.h"
 #include "core/update_checker.h"
 #include "data/components/credits.h"
+#include "data/data_ai_compose_tones.h"
 #include "data/data_birthday.h"
 #include "data/data_channel.h"
 #include "data/data_document.h"
@@ -282,6 +284,41 @@ bool ShowTheme(Window::SessionController *controller, const Match &match,
   return true;
 }
 
+bool ShowAiStyle(
+		Window::SessionController *controller,
+		const Match &match,
+		const QVariant &context) {
+	if (!controller) {
+		return false;
+	}
+	const auto slug = match->captured(1);
+	Core::App().hideMediaView();
+	const auto weak = base::make_weak(controller);
+	auto &tones = controller->session().data().aiComposeTones();
+	tones.resolve(slug, [=](Data::AiComposeTone tone) {
+		const auto strong = weak.get();
+		if (!strong) {
+			return;
+		}
+		strong->window().show(Box(
+			PreviewAiToneBox,
+			&strong->session(),
+			std::move(tone)));
+	}, [=](const MTP::Error &error) {
+		const auto strong = weak.get();
+		if (!strong) {
+			return;
+		} else if (error.type() == u"AICOMPOSE_TONE_SLUG_INVALID"_q) {
+			strong->window().showToast(
+				tr::lng_ai_compose_tone_invalid(tr::now));
+		} else if (!MTP::IgnoreError(error)) {
+			strong->window().showToast(error.type());
+		}
+	});
+	controller->window().activate();
+	return true;
+}
+
 void ShowLanguagesBox(Window::SessionController *controller) {
   static auto Guard = base::binary_guard();
   Guard = LanguageBox::Show(controller);
@@ -491,9 +528,12 @@ bool ResolveUsernameOrPhone(Window::SessionController *controller,
   if (domainParam == u"oauth"_q) {
     const auto token = params.value(u"startapp"_q);
     if (!token.isEmpty()) {
-      UrlAuthBox::ActivateUrl(controller->uiShow(), &controller->session(),
-                              u"tg://resolve?domain=oauth&startapp="_q + token,
-                              context);
+      UrlAuthBox::ActivateUrl(
+          controller->uiShow(),
+          &controller->session(),
+          u"tg://resolve?domain=oauth&startapp="_q
+              + qthelp::url_encode(token),
+          context);
       return true;
     }
   }
@@ -1473,8 +1513,11 @@ bool ResolveOAuth(Window::SessionController *controller, const Match &match,
   if (token.isEmpty()) {
     return false;
   }
-  UrlAuthBox::ActivateUrl(controller->uiShow(), &controller->session(),
-                          u"tg://oauth?token="_q + token, context);
+  UrlAuthBox::ActivateUrl(
+      controller->uiShow(),
+      &controller->session(),
+      u"tg://oauth?token="_q + qthelp::url_encode(token),
+      context);
   return true;
 }
 
@@ -1492,6 +1535,7 @@ const std::vector<LocalUrlHandler> &LocalUrlHandlers() {
       {u"^(addstickers|addemoji)/?\\?set=([a-zA-Z0-9\\.\\_]+)(&|$)"_q,
        ShowStickerSet},
       {u"^addtheme/?\\?slug=([a-zA-Z0-9\\.\\_]+)(&|$)"_q, ShowTheme},
+      {u"^addstyle/?\\?slug=([a-zA-Z0-9\\.\\_]+)(&|$)"_q, ShowAiStyle},
       {u"^setlanguage/?(\\?lang=([a-zA-Z0-9\\.\\_\\-]+))?(&|$)"_q, SetLanguage},
       {u"^msg_url/?\\?(.+)(#|$)"_q, ShareUrl},
       {u"^confirmphone/?\\?(.+)(#|$)"_q, ConfirmPhone},
@@ -1659,6 +1703,11 @@ QString TryConvertUrlToLocal(QString url) {
                    regex_match(u"^addtheme/([a-zA-Z0-9\\.\\_]+)(\\?|$)"_q,
                                query, matchOptions)) {
       return u"tg://addtheme?slug="_q + url_encode(themeMatch->captured(1));
+    } else if (const auto addStyleMatch =
+                   regex_match(u"^addstyle/([a-zA-Z0-9\\.\\_]+)(\\?|$)"_q,
+                               query, matchOptions)) {
+      return u"tg://addstyle?slug="_q
+             + url_encode(addStyleMatch->captured(1));
     } else if (const auto languageMatch =
                    regex_match(u"^setlanguage/([a-zA-Z0-9\\.\\_\\-]+)(\\?|$)"_q,
                                query, matchOptions)) {
@@ -1832,36 +1881,55 @@ QString TryConvertUrlToLocal(QString url) {
   return url;
 }
 
-bool InternalPassportOrOAuthLink(const QString &url) {
+struct InternalLinkCheckResult {
+  QString command;
+  QString username;
+};
+
+[[nodiscard]] InternalLinkCheckResult InternalLinkCheck(const QString &url) {
   const auto urlTrimmed = url.trimmed();
   if (!urlTrimmed.startsWith(u"tg://"_q, Qt::CaseInsensitive)) {
-    return false;
+    return {};
   }
   const auto command = base::StringViewMid(urlTrimmed, u"tg://"_q.size());
 
   using namespace qthelp;
   const auto matchOptions = RegExOption::CaseInsensitive;
-  const auto authMatch =
-      regex_match(u"^passport/?\\?(.+)(#|$)"_q, command, matchOptions);
-  const auto oauthMatch =
-      regex_match(u"^oauth/?\\?(.+)(#|$)"_q, command, matchOptions);
   const auto usernameMatch =
       regex_match(u"^resolve/?\\?(.+)(#|$)"_q, command, matchOptions);
-  auto usernameValue = QString();
+  auto username = QString();
   if (usernameMatch->hasMatch()) {
     const auto params = url_parse_params(usernameMatch->captured(1),
                                          UrlParamNameTransform::ToLower);
-    usernameValue = params.value(u"domain"_q);
+    username = params.value(u"domain"_q);
   }
-  const auto authLegacy = (usernameValue == u"telegrampassport"_q);
-  const auto oauthLegacy = (usernameValue == u"oauth"_q);
-  return authMatch->hasMatch() || oauthMatch->hasMatch() || authLegacy ||
-         oauthLegacy;
+  return {.command = command.toString(), .username = username};
+}
+
+bool InternalPassportLink(const QString &url) {
+  const auto result = InternalLinkCheck(url);
+
+  using namespace qthelp;
+  const auto matchOptions = RegExOption::CaseInsensitive;
+  const auto authMatch =
+      regex_match(u"^passport/?\\?(.+)(#|$)"_q, result.command, matchOptions);
+  const auto authLegacy = (result.username == u"telegrampassport"_q);
+  return authMatch->hasMatch() || authLegacy;
+}
+
+bool InternalPassportOrOAuthLink(const QString &url) {
+  const auto result = InternalLinkCheck(url);
+
+  using namespace qthelp;
+  const auto matchOptions = RegExOption::CaseInsensitive;
+  const auto oauthMatch =
+      regex_match(u"^oauth/?\\?(.+)(#|$)"_q, result.command, matchOptions);
+  const auto oauthLegacy = (result.username == u"oauth"_q);
+  return InternalPassportLink(url) || oauthMatch->hasMatch() || oauthLegacy;
 }
 
 bool StartUrlRequiresActivate(const QString &url) {
-  return Core::App().passcodeLocked() ? true
-                                      : !InternalPassportOrOAuthLink(url);
+  return Core::App().passcodeLocked() || !InternalPassportLink(url);
 }
 
 void ResolveAndShowUniqueGift(std::shared_ptr<ChatHelpers::Show> show,

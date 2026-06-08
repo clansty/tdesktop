@@ -38,6 +38,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session.h"
 #include "chat_helpers/stickers_emoji_pack.h"
 #include "payments/payments_reaction_process.h" // TryAddingPaidReaction.
+#include "window/section_widget.h"
 #include "window/window_session_controller.h"
 #include "ui/chat/chat_style.h"
 #include "ui/effects/glare.h"
@@ -75,6 +76,7 @@ namespace {
 
 // A new message from the same sender is attached to previous within 15 minutes.
 constexpr int kAttachMessageToPreviousSecondsDelta = 900;
+constexpr auto kMaxShownLine = 1024 * 1024;
 
 Element *HoveredElement/* = nullptr*/;
 Element *PressedElement/* = nullptr*/;
@@ -131,9 +133,6 @@ private:
 		HistoryMessageMarkupButton::Color color;
 
 		friend inline constexpr auto operator<=>(
-			CacheKey,
-			CacheKey) = default;
-		friend inline constexpr bool operator==(
 			CacheKey,
 			CacheKey) = default;
 	};
@@ -1725,6 +1724,23 @@ Ui::Text::OnlyCustomEmoji Element::onlyCustomEmoji() const {
 	return _text.toOnlyCustomEmoji();
 }
 
+void Element::skipInactiveTextAppearing() {
+	if (pendingResize()) {
+		// This message isn't displayed right now,
+		// so we can skip text animation.
+		if (const auto appearing = Get<TextAppearing>()) {
+			appearing->widthAnimation.stop();
+			appearing->heightAnimation.stop();
+			appearing->shownLine = kMaxShownLine;
+			appearing->shownWidth
+				= appearing->shownHeight
+				= appearing->revealedLineWidth
+				= 0;
+			appearing->geometryValid = false;
+		}
+	}
+}
+
 const Ui::Text::String &Element::text() const {
 	return _text;
 }
@@ -1744,10 +1760,16 @@ OnlyEmojiAndSpaces Element::isOnlyEmojiAndSpaces() const {
 }
 
 int Element::textHeightFor(int textWidth) const {
+	constexpr auto kMaxWidth = (1 << 16) - 1;
+	if (textWidth <= 0 || textWidth > kMaxWidth) {
+		return 0;
+	}
 	const_cast<Element*>(this)->validateText();
 	if (_textWidth != textWidth) {
 		_textWidth = textWidth;
-		_textHeight = _text.countHeight(textWidth);
+		const auto result = _text.countSize(textWidth);
+		_textRealWidth = std::clamp(result.width(), 0, kMaxWidth);
+		_textHeight = result.height();
 	}
 	return _textHeight;
 }
@@ -2081,6 +2103,7 @@ bool Element::computeIsAttachToPrevious(not_null<Element*> previous) {
 		return !item->isService()
 			&& !item->isEmpty()
 			&& !item->isPostHidingAuthor()
+			&& !item->isGuestChatBotMessage()
 			&& (!item->history()->peer->isMegagroup()
 				|| !view->hasOutLayout()
 				|| !item->from()->isChannel());
@@ -2112,9 +2135,18 @@ bool Element::computeIsAttachToPrevious(not_null<Element*> previous) {
 					prevForwarded,
 					item,
 					forwarded);
-			} else {
-				return prev->from() == item->from();
+			} else if (prev->from() != item->from()) {
+			    return false;
+			} else if (!item->author()->isMegagroup()) {
+				return true;
 			}
+			const auto rank = [&](not_null<HistoryItem*> item) {
+			    const auto msgsigned = item->Get<HistoryMessageSigned>();
+				return (msgsigned && msgsigned->isAnonymousRank)
+					? msgsigned->author
+					: QString();
+			};
+			return rank(item) == rank(prev);
 		}
 	}
 	return false;
@@ -2577,6 +2609,9 @@ void Element::refreshReactions() {
 				}
 				const auto item = strong->data();
 				const auto controller = ExtractController(context);
+				const auto wasChosen = ranges::contains(
+					item->chosenReactions(),
+					id);
 				if (item->reactionsAreTags()) {
 					if (item->history()->session().premium()) {
 						const auto tag = Data::SearchTagToQuery(id);
@@ -2595,6 +2630,10 @@ void Element::refreshReactions() {
 						1,
 						std::nullopt,
 						controller->uiShow());
+					return;
+				} else if (!wasChosen
+					&& controller
+					&& Window::ShowReactPremiumError(controller, item, id)) {
 					return;
 				} else {
 					const auto source = HistoryReactionSource::Existing;
@@ -2672,20 +2711,15 @@ void Element::itemTextUpdated() {
 	}
 }
 
-void Element::itemTextUpdatedStreaming() {
-	clearSpecialOnlyEmoji();
-	_text = Ui::Text::String(st::msgMinWidth);
-	invalidateTextSizeCache();
-}
-
 void Element::blockquoteExpandChanged() {
 	invalidateTextSizeCache();
 	history()->owner().requestViewResize(this);
 }
 
 void Element::invalidateTextSizeCache() {
-	_textWidth = -1;
+	_textWidth = 0;
 	_textHeight = 0;
+	_textRealWidth = 0;
 	invalidateTextDependentCache();
 }
 

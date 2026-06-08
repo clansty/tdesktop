@@ -577,7 +577,11 @@ void TopBarWidget::paintTopBar(Painter &p) {
 		}
 		if (const auto info = namePeer->botVerifyDetails()) {
 			if (!_titleBadge.ready(info)) {
-				_titleBadge.set(info, namePeer->owner().customEmojiManager().factory(), [=] { update(); });
+				_titleBadge.set(
+					info,
+					namePeer->owner().customEmojiManager().factory(
+						Data::CustomEmojiSizeTag::Isolated),
+					[=] { update(); });
 			}
 			const auto position = QPoint{nameleft, nametop};
 			const auto skip = _titleBadge.drawVerified(p, position, st::dialogsVerifiedColors);
@@ -893,8 +897,13 @@ void TopBarWidget::resizeEvent(QResizeEvent *e) {
 int TopBarWidget::countSelectedButtonsTop(float64 selectedShown) { return (1. - selectedShown) * (-st::topBarHeight); }
 
 void TopBarWidget::updateSearchVisibility() {
+	const auto pinnedInSavedMessages =
+		(_activeChat.section == Section::Pinned)
+		&& _activeChat.key.peer()
+		&& _activeChat.key.peer()->isSelf();
 	const auto searchAllowedMode = (_activeChat.section == Section::History) ||
 		(_activeChat.section == Section::Replies) ||
+		(_activeChat.section == Section::Pinned && !pinnedInSavedMessages) ||
 		(_activeChat.section == Section::SavedSublist && _activeChat.key.sublist());
 	_search->setVisible(searchAllowedMode && !_chooseForReportReason);
 }

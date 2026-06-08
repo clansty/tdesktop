@@ -47,7 +47,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "chat_helpers/message_field.h"
 #include "core/application.h"
 #include "core/core_cloud_password.h"
+#include "core/credits_amount.h"
 #include "data/business/data_shortcut_messages.h"
+#include "data/components/credits.h"
 #include "data/components/scheduled_messages.h"
 #include "data/data_changes.h"
 #include "data/data_channel.h"
@@ -58,6 +60,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_forum_topic.h"
 #include "data/data_histories.h"
 #include "data/data_history_messages.h"
+#include "data/data_media_types.h"
+#include "data/data_message_reaction_id.h"
 #include "data/data_saved_messages.h"
 #include "data/data_saved_music.h"
 #include "data/data_saved_sublist.h"
@@ -83,7 +87,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/storage_account.h"
 #include "support/support_helper.h"
 #include "ui/boxes/confirm_box.h"
+#include "ui/boxes/emoji_stake_box.h"
 #include "ui/chat/attach/attach_prepare.h"
+#include "ui/controls/ton_common.h"
 #include "ui/item_text_options.h"
 #include "ui/text/text_utilities.h"
 #include "ui/toast/toast.h"
@@ -537,6 +543,30 @@ void ApiWrap::sendMessageFail(const QString &error, not_null<PeerData *> peer,
       }
     }
     peer->updateFull();
+	} else if (error == u"BALANCE_TOO_LOW"_q) {
+		const auto item = _session->data().message(itemId);
+		const auto stake = (item && item->media())
+			? item->media()->diceGameOutcome().stakeNanoTon
+			: int64(0);
+		if (stake > 0) {
+			const auto required = CreditsAmount(
+				stake / Ui::kNanosInOne,
+				stake % Ui::kNanosInOne,
+				CreditsType::Ton);
+			if (randomId) {
+				_session->data().unregisterMessageRandomId(randomId);
+			}
+			item->destroy();
+			if (show) {
+				show->show(Box(
+					Ui::InsufficientTonBox,
+					_session,
+					required));
+			}
+			return;
+		} else if (show) {
+			show->showToast(error);
+		}
   } else if (show) {
     show->showToast(error);
   }
@@ -1411,6 +1441,31 @@ void ApiWrap::deleteAllFromParticipantSend(not_null<ChannelData *> channel,
           history->requestChatListMessage();
         }
       })
+      .send();
+}
+
+void ApiWrap::deleteAllReactionsFromParticipant(
+    not_null<PeerData *> peer,
+    not_null<PeerData *> participant,
+    MsgId originMsgId,
+    const Data::ReactionId &originReaction) {
+  _session->data().removeReactionsFromParticipant(
+      peer, 0, participant, originReaction, originMsgId);
+  request(MTPmessages_DeleteParticipantReactions(peer->input(),
+                                                 participant->input()))
+      .send();
+}
+
+void ApiWrap::deleteParticipantReaction(
+    not_null<PeerData *> peer,
+    MsgId msgId,
+    not_null<PeerData *> participant,
+    const Data::ReactionId &reaction) {
+  _session->data().removeReactionsFromParticipant(
+      peer, msgId, participant, reaction, 0);
+  request(MTPmessages_DeleteParticipantReaction(
+              peer->input(), MTP_int(msgId.bare), participant->input()))
+      .done([=](const MTPUpdates &result) { applyUpdates(result); })
       .send();
 }
 

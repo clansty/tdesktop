@@ -12,6 +12,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/premium_limits_box.h"
 #include "boxes/premium_preview_box.h"
 #include "boxes/send_credits_box.h"
+#include "boxes/send_files_box_reply_header.h"
 #include "boxes/send_gif_with_caption_box.h"
 #include "chat_helpers/emoji_suggestions_widget.h"
 #include "chat_helpers/field_autocomplete.h"
@@ -117,46 +118,74 @@ void FileDialogCallback(FileDialog::OpenResult &&result,
 	callback(std::move(*list));
 }
 
-void RenameFileBox(not_null<Ui::GenericBox *> box, const QString &currentName, Fn<void(QString)> apply) {
+}
+
+void RenameFileBox(
+		not_null<Ui::GenericBox*> box,
+		const QString &currentName,
+		bool allowExtensionEdit,
+		Fn<void(QString)> apply) {
 	box->setTitle(tr::lng_rename_file());
-	const auto field =
-		box->addRow(object_ptr<Ui::InputField>(box, st::settingsDeviceName, rpl::single(QString()), currentName));
-	const auto extension = [&]
-	{
-		if (currentName.isEmpty()) {
-			return u".png"_q;
-		}
-		const auto dot = currentName.lastIndexOf('.');
-		return (dot >= 0) ? currentName.mid(dot) : QString();
-	}();
-	const auto nameWithoutExt =
-		extension.isEmpty() ? currentName : currentName.left(currentName.size() - extension.size());
-	const auto maxNameLength = kMaxDisplayNameLength - extension.size();
-	field->setMaxLength((maxNameLength > 0) ? maxNameLength : 0);
-	field->setText(nameWithoutExt);
+	const auto field = box->addRow(object_ptr<Ui::InputField>(
+		box,
+		st::settingsDeviceName,
+		rpl::single(QString()),
+		currentName));
+	QString extension;
+	if (allowExtensionEdit) {
+		field->setMaxLength(kMaxDisplayNameLength);
+		field->setText(currentName);
+	} else {
+		extension = [&] {
+			if (currentName.isEmpty()) {
+				return u".png"_q;
+			}
+			const auto dot = currentName.lastIndexOf('.');
+			return (dot >= 0) ? currentName.mid(dot) : QString();
+		}();
+		const auto nameWithoutExt = extension.isEmpty()
+			? currentName
+			: currentName.left(currentName.size() - extension.size());
+		const auto maxNameLength = kMaxDisplayNameLength - extension.size();
+		field->setMaxLength((maxNameLength > 0) ? maxNameLength : 0);
+		field->setText(nameWithoutExt);
+	}
 	field->selectAll();
-	box->setFocusCallback([=] { field->setFocusFast(); });
-	const auto save = [=]
-	{
+	box->setFocusCallback([=] {
+		field->setFocusFast();
+	});
+	const auto save = [=] {
 		const auto newName = field->getLastText().trimmed();
 		if (newName.isEmpty()) {
 			field->showError();
 			return;
 		}
-		if ((newName.size() + extension.size()) > kMaxDisplayNameLength) {
+		if (allowExtensionEdit) {
+			if (newName.size() > kMaxDisplayNameLength) {
+				field->showError();
+				return;
+			}
+		} else if ((newName.size() + extension.size())
+			> kMaxDisplayNameLength) {
 			field->showError();
 			return;
 		}
 		const auto weak = base::make_weak(box);
-		apply(newName + extension);
+		apply(allowExtensionEdit ? newName : (newName + extension));
 		if (const auto strong = weak.get()) {
 			strong->closeBox();
 		}
 	};
-	field->submits() | rpl::on_next([=] { save(); }, box->lifetime());
+	field->submits() | rpl::on_next([=] {
+		save();
+	}, box->lifetime());
 	box->addButton(tr::lng_settings_save(), save);
-	box->addButton(tr::lng_cancel(), [=] { box->closeBox(); });
+	box->addButton(tr::lng_cancel(), [=] {
+		box->closeBox();
+	});
 }
+
+namespace {
 
 void EditFileCaptionBox(not_null<Ui::GenericBox *> box,
 						const style::ComposeControls &st,
@@ -359,6 +388,8 @@ int SendFilesBox::Block::fromIndex() const { return _from; }
 
 int SendFilesBox::Block::tillIndex() const { return _till; }
 
+bool SendFilesBox::Block::isSingleMedia() const { return _isSingleMedia; }
+
 object_ptr<Ui::RpWidget> SendFilesBox::Block::takeWidget() { return object_ptr<Ui::RpWidget>::fromRaw(_preview.get()); }
 
 rpl::producer<int> SendFilesBox::Block::itemDeleteRequest() const {
@@ -554,7 +585,56 @@ SendFilesBox::SendFilesBox(QWidget *, SendFilesBoxDescriptor &&descriptor)
 	  _caption(this, _st.files.caption, Ui::InputField::Mode::MultiLine),
 	  _prefilledCaptionText(std::move(descriptor.caption)), _scroll(this, st::boxScroll),
 	  _inner(_scroll->setOwnedWidget(object_ptr<Ui::VerticalLayout>(_scroll.data()))) {
+	setReplyTo(descriptor.replyTo);
 	enqueueNextPrepare();
+}
+
+void SendFilesBox::setReplyTo(FullReplyTo replyTo) {
+	if (_replyTo == replyTo) {
+		return;
+	} else if (!replyTo.messageId || !replyTo.messageId.peer) {
+		_replyTo = {};
+		if (_replyHeader) {
+			_replyHeader->hideAnimated();
+		}
+		return;
+	}
+	_replyTo = replyTo;
+	if (_replyHeader) {
+		_replyHeader = nullptr;
+		_replyHeaderHeight = 0;
+	}
+	_replyHeader = std::make_unique<SendFiles::ReplyPillHeader>(
+		this,
+		_show,
+		std::move(replyTo));
+	_replyHeader->setRoundedShapeBelow(
+		!_blocks.empty() && !_blocks.front().isSingleMedia());
+	_replyHeader->show();
+	_replyHeader->desiredHeight(
+	) | rpl::on_next([=](int height) {
+		if (_replyHeaderHeight.current() != height) {
+			_replyHeaderHeight = height;
+			updateBoxSize();
+			updateControlsGeometry();
+		}
+	}, _replyHeader->lifetime());
+	_replyHeader->closeRequests(
+	) | rpl::on_next([=] {
+		_replyTo = {};
+		if (_replyHeader) {
+			_replyHeader->hideAnimated();
+		}
+	}, _replyHeader->lifetime());
+	_replyHeader->hideFinished(
+	) | rpl::on_next([=] {
+		InvokeQueued(this, [=] {
+			_replyHeader = nullptr;
+			_replyHeaderHeight = 0;
+			updateBoxSize();
+			updateControlsGeometry();
+		});
+	}, _replyHeader->lifetime());
 }
 
 Fn<SendMenu::Details()> SendFilesBox::prepareSendMenuDetails(const SendFilesBoxDescriptor &descriptor) {
@@ -1104,6 +1184,10 @@ void SendFilesBox::generatePreviewFrom(int fromBlock) {
 	if (albumStart >= 0) {
 		pushBlock(albumStart, _list.files.size());
 	}
+	if (_replyHeader) {
+		_replyHeader->setRoundedShapeBelow(
+			!_blocks.empty() && !_blocks.front().isSingleMedia());
+	}
 }
 
 void SendFilesBox::pushBlock(int from, int till) {
@@ -1297,19 +1381,24 @@ void SendFilesBox::pushBlock(int from, int till) {
 		if (canEditFileData) {
 			state->menu->addAction(
 				tr::lng_rename_file(tr::now),
-				[=]
-				{
-					auto &file = _list.files[fileIndex];
-					_show->show(Box(RenameFileBox,
-									file.displayName,
-									[=](QString newName)
-									{
-										const auto displayName = std::move(newName);
-										_list.files[fileIndex].displayName = displayName;
-										if (!setDisplayNameInSingleFilePreview(fileIndex, displayName)) {
-											refreshAllAfterChanges(from);
-										}
-									}));
+					[=]
+					{
+						const auto displayName = _list.files[fileIndex].displayName;
+						_show->show(Box([=](not_null<Ui::GenericBox*> box) {
+							RenameFileBox(
+								box,
+								displayName,
+								false,
+								[=](QString newName) {
+									const auto displayName = std::move(newName);
+									_list.files[fileIndex].displayName = displayName;
+									if (!setDisplayNameInSingleFilePreview(
+											fileIndex,
+											displayName)) {
+										refreshAllAfterChanges(from);
+									}
+								});
+						}));
 				},
 				&st::menuIconEdit);
 			state->menu->addAction(
@@ -1893,6 +1982,7 @@ void SendFilesBox::updateBoxSize() {
 	if (!_caption->isHidden()) {
 		footerHeight += st::boxPhotoCaptionSkip + _caption->height();
 	}
+	footerHeight += _replyHeaderHeight.current();
 	const auto pairs = std::array<std::pair<RpWidget *, int>, 4>{{
 		{_groupFiles.data(), st::boxPhotoCompressedSkip},
 		{_sendImagesAsPhotos.data(), st::boxPhotoCompressedSkip},
@@ -1968,8 +2058,14 @@ void SendFilesBox::updateControlsGeometry() {
 			bottom -= pair.second + pointer->heightNoMargins();
 		}
 	}
-	_scroll->resize(width(), bottom - _titleHeight.current());
-	_scroll->move(0, _titleHeight.current());
+	const auto replyH = _replyHeaderHeight.current();
+	const auto replyTopOverlap = std::min(st::boxPhotoCaptionSkip, replyH);
+	const auto replyTop = _titleHeight.current() - replyTopOverlap;
+	if (_replyHeader) {
+		_replyHeader->setGeometry(0, replyTop, width(), replyH);
+	}
+	_scroll->resize(width(), bottom - replyTop - replyH);
+	_scroll->move(0, replyTop + replyH);
 }
 
 void SendFilesBox::showFinished() {
@@ -1980,10 +2076,16 @@ void SendFilesBox::showFinished() {
 
 rpl::producer<TextWithTags> SendFilesBox::takeTextWithTagsRequests() const { return _textWithTagsRequests.events(); }
 
-void SendFilesBox::requestToTakeTextWithTags() const {
-	if (!_caption->isHidden()) {
-		_textWithTagsRequests.fire_copy(_caption->getTextWithTags());
+void SendFilesBox::requestToTakeTextWithTags() {
+	if (_caption->isHidden()) {
+		return;
 	}
+	const auto text = _caption->getTextWithTags();
+	if (text.text.isEmpty()) {
+		return;
+	}
+	_textTaken = true;
+	_textWithTagsRequests.fire_copy(text);
 }
 
 void SendFilesBox::setInnerFocus() {
@@ -2097,7 +2199,7 @@ void SendFilesBox::send(Api::SendOptions options, bool ctrlShiftEnter) {
 			}
 		}
 
-		_confirmedCallback(std::move(bundle), options);
+		_confirmedCallback(std::move(bundle), options, _replyTo);
 	}
 	closeBox();
 }

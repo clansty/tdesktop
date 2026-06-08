@@ -193,6 +193,7 @@ public:
 	void updateStoryMentionText();
 
 	[[nodiscard]] UserData *viaBot() const;
+	[[nodiscard]] bool isGuestChatBotMessage() const;
 	[[nodiscard]] UserData *getMessageBot() const;
 	[[nodiscard]] bool hideLinks() const;
 	[[nodiscard]] bool isHistoryEntry() const;
@@ -345,8 +346,11 @@ public:
 	[[nodiscard]] bool canBeSummarized() const {
 		return _flags & MessageFlag::CanBeSummarized;
 	}
-	[[nodiscard]] bool isTextAppearing() const {
+	[[nodiscard]] bool textAppearing() const {
 		return _flags & MessageFlag::TextAppearing;
+	}
+	[[nodiscard]] bool textAppearingStarted() const {
+		return _flags & MessageFlag::TextAppearingStarted;
 	}
 	[[nodiscard]] bool hasRealFromId() const;
 	[[nodiscard]] bool isPostHidingAuthor() const;
@@ -449,6 +453,7 @@ public:
 	void applyTTL(TimeId destroyAt);
 	void setAyuHint(const QString &hint);
 	void setRealId(MsgId newId);
+	void markTextAppearingStarted();
 	void incrementReplyToTopCounter();
 	void applyEffectWatchedOnUnreadKnown();
 
@@ -489,6 +494,9 @@ public:
 	void toggleReaction(
 		const Data::ReactionId &reaction,
 		HistoryReactionSource source);
+	bool removeReactionsFromParticipant(
+		not_null<PeerData*> participant,
+		const Data::ReactionId &reaction);
 	void addPaidReaction(int count, std::optional<PeerId> shownPeer = {});
 	void cancelScheduledPaidReaction();
 	[[nodiscard]] Data::PaidReactionSend startPaidReactionSending();
@@ -530,8 +538,7 @@ public:
 		return _media.get();
 	}
 	[[nodiscard]] bool computeDropForwardedInfo() const;
-	void setText(const TextWithEntities &textWithEntities);
-	void setTextStreaming(TextWithEntities text);
+	void setText(TextWithEntities textWithEntities);
 
 	[[nodiscard]] MsgId replyToId() const;
 	[[nodiscard]] FullMsgId replyToFullId() const;

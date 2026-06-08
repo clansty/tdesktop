@@ -64,6 +64,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session.h"
 #include "main/main_session_settings.h"
 #include "menu/menu_timecode_action.h"
+#include "data/components/recent_inline_bots.h"
 #include "data/components/scheduled_messages.h"
 #include "data/data_histories.h"
 #include "data/data_saved_messages.h"
@@ -88,6 +89,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang/lang_keys.h"
 #include "styles/style_chat.h"
 #include "styles/style_chat_helpers.h"
+#include "styles/style_info.h"
 #include "styles/style_window.h"
 #include "styles/style_boxes.h"
 #include "styles/style_layers.h"
@@ -474,36 +476,6 @@ ChatWidget::ChatWidget(
 			}
 		}, lifetime());
 	}
-
-	session().data().drawToReplyRequests(
-	) | rpl::on_next([=](Data::DrawToReplyRequest request) {
-		if (request.messageId.peer != _peer->id) {
-			return;
-		}
-		auto image = ResolveDrawToReplyImage(
-			&session().data(),
-			request);
-		if (image.isNull()) {
-			return;
-		}
-		const auto replyTo = request.messageId;
-		OpenDrawToReplyEditor(
-			controller,
-			std::move(image),
-			crl::guard(this, [=](QImage &&result) {
-				if (result.isNull()) {
-					return;
-				}
-				if (replyTo) {
-					replyToMessage({ .messageId = replyTo });
-				}
-				auto list = Storage::PrepareMediaFromImage(
-					std::move(result),
-					QByteArray(),
-					st::sendMediaPreviewSize);
-				confirmSendingFiles(std::move(list));
-			}));
-	}, lifetime());
 
 	_selfForwardsTagger = std::make_unique<HistoryView::SelfForwardsTagger>(
 		controller,
@@ -933,6 +905,12 @@ void ChatWidget::setupComposeControls() {
 			[=] { chooseAttach(overrideCompress); });
 	}, lifetime());
 
+	_composeControls->setSendAsFileConfirmed(crl::guard(this, [=](
+			std::shared_ptr<Ui::PreparedBundle> bundle,
+			Api::SendOptions options) {
+		sendingFilesConfirmed(std::move(bundle), options);
+	}));
+
 	_composeControls->fileChosen(
 	) | rpl::on_next([=](ChatHelpers::FileChosen data) {
 		controller()->hideLayer(anim::type::normal);
@@ -1235,9 +1213,15 @@ bool ChatWidget::confirmSendingFiles(
 		sendMenuDetails(),
 		[=](const TextWithTags &text) { _composeControls->setText(text); });
 
+	box->setReplyTo(_composeControls->replyingToMessage());
 	box->setConfirmedCallback(crl::guard(this, [=](
 			std::shared_ptr<Ui::PreparedBundle> bundle,
-			Api::SendOptions options) {
+			Api::SendOptions options,
+			FullReplyTo currentReplyTo) {
+		if (!currentReplyTo.messageId
+				&& _composeControls->replyingToMessage().messageId) {
+			_composeControls->cancelReplyMessage();
+		}
 		sendingFilesConfirmed(std::move(bundle), options);
 	}));
 	box->setCancelledCallback(_composeControls->restoreTextCallback(
@@ -1543,7 +1527,7 @@ void ChatWidget::edit(
 		&& item->media()->allowsEditCaption();
 	if (sending.text.isEmpty() && !hasMediaWithCaption) {
 		if (item) {
-			controller()->show(Box<DeleteMessagesBox>(item, false));
+			controller()->show(Box<DeleteMessagesBox>(item));
 		} else {
 			doSetInnerFocus();
 		}
@@ -1607,18 +1591,47 @@ void ChatWidget::edit(
 }
 
 void ChatWidget::validateSubsectionTabs() {
-	if (!_subsectionCheckLifetime && _history->peer->isMegagroup()) {
-		_subsectionCheckLifetime = _history->peer->asChannel()->flagsValue(
-		) | rpl::skip(
-			1
-		) | rpl::filter([=](Data::Flags<ChannelDataFlags>::Change change) {
-			const auto mask = ChannelDataFlag::Forum
-				| ChannelDataFlag::ForumTabs
-				| ChannelDataFlag::MonoforumAdmin;
-			return change.diff & mask;
-		}) | rpl::on_next([=] {
-			validateSubsectionTabs();
-		});
+	if (!_subsectionCheckLifetime) {
+		if (const auto group = _history->peer->asMegagroup()) {
+			_subsectionCheckLifetime = group->flagsValue(
+			) | rpl::skip(
+				1
+			) | rpl::filter([=](Data::Flags<ChannelDataFlags>::Change change) {
+				const auto mask = ChannelDataFlag::Forum
+					| ChannelDataFlag::ForumTabs
+					| ChannelDataFlag::MonoforumAdmin;
+				return change.diff & mask;
+			}) | rpl::on_next([=] {
+				validateSubsectionTabs();
+			});
+		} else if (!_topic) {
+			if (const auto user = _history->peer->asBot()) {
+				_subsectionCheckLifetime = user->flagsValue(
+				) | rpl::skip(
+					1
+				) | rpl::filter([=](Data::Flags<UserDataFlags>::Change change) {
+					return change.diff & UserDataFlag::Forum;
+				}) | rpl::on_next([=] {
+					_subsectionTopicsLifetime.destroy();
+					validateSubsectionTabs();
+				});
+			}
+		}
+	}
+	if (!_subsectionTopicsLifetime && !_topic) {
+		if (const auto user = _history->peer->asBot()) {
+			if (const auto forum = user->forum()) {
+				_subsectionTopicsLifetime = forum->topicsList()->fullSize().value(
+				) | rpl::map([](int size) {
+					return size > 0;
+				}) | rpl::distinct_until_changed(
+				) | rpl::skip(
+					1
+				) | rpl::on_next([=] {
+					validateSubsectionTabs();
+				});
+			}
+		}
 	}
 	const auto thread = _topic ? (Data::Thread*)_topic : _sublist;
 	if (!thread || !HistoryView::SubsectionTabs::UsedFor(_history)) {
@@ -1626,7 +1639,9 @@ void ChatWidget::validateSubsectionTabs() {
 			_subsectionTabsLifetime.destroy();
 			_subsectionTabs = nullptr;
 			updateControlsGeometry();
-			if (const auto forum = _history->asForum()) {
+
+			if (const auto forum = _history->asForum()
+				; forum && !_history->peer->isUser()) {
 				controller()->showForum(forum, {
 					Window::SectionShow::Way::Backward,
 					anim::type::normal,
@@ -1836,17 +1851,7 @@ void ChatWidget::sendInlineResult(
 	//_saveDraftStart = crl::now();
 	//onDraftSave();
 
-	auto &bots = cRefRecentInlineBots();
-	const auto index = bots.indexOf(bot);
-	if (index) {
-		if (index > 0) {
-			bots.removeAt(index);
-		} else if (bots.size() >= RecentInlineBotsLimit) {
-			bots.resize(RecentInlineBotsLimit - 1);
-		}
-		bots.push_front(bot);
-		bot->session().local().writeRecentHashtagsAndBots();
-	}
+	bot->session().recentInlineBots().bump(bot);
 	finishSending();
 }
 
@@ -1856,6 +1861,11 @@ SendMenu::Details ChatWidget::sendMenuDetails() const {
 		? Type::Scheduled
 		: Type::SilentOnly;
 	return SendMenu::Details{ .type = type };
+}
+
+bool ChatWidget::processChosenSticker(ChatHelpers::FileChosen &&chosen) {
+	_composeControls->processChosenSticker(std::move(chosen));
+	return true;
 }
 
 FullReplyTo ChatWidget::replyTo() const {
@@ -2705,6 +2715,26 @@ void ChatWidget::restoreState(not_null<ChatMemento*> memento) {
 		refreshReplies();
 	}
 	_cornerButtons.setReplyReturns(memento->replyReturns());
+
+	// Custom initial scroll for post comments, from "Discussion started".
+	if (!memento->highlightId()
+		&& _repliesRoot
+		&& _repliesRoot->isDiscussionPost()
+		&& _replies->computeInboxReadTillFull() == MsgId(1)) {
+		_inner->overrideInitialScroll([=] {
+			const auto divider = _replies ? _replies->divider() : nullptr;
+			if (!divider) {
+				return false;
+			}
+			const auto view = _inner->viewByPosition(divider->position());
+			if (!view) {
+				return false;
+			}
+			const auto top = std::max(view->y() - st::topBarHeight, 0);
+			listScrollTo(top);
+			return true;
+		});
+	}
 	_inner->restoreState(memento->list());
 	if (const auto highlight = memento->highlightId()) {
 		auto params = Window::SectionShow(
@@ -3135,6 +3165,8 @@ MessagesBarData ChatWidget::listMessagesBar(
 		bool markLastAsRead) {
 	if ((!_sublist && !_replies) || elements.empty()) {
 		return {};
+	} else if (_sublist && !_sublist->parentChat()) {
+		return {};
 	}
 	const auto till = _replies
 		? _replies->computeInboxReadTillFull()
@@ -3311,6 +3343,34 @@ void ChatWidget::listShowPremiumToast(not_null<DocumentData*> document) {
 			[=] { _stickerToast = nullptr; });
 	}
 	_stickerToast->showFor(document);
+}
+
+bool ChatWidget::handleDrawToReplyRequest(Data::DrawToReplyRequest request) {
+	if (request.messageId.peer != _peer->id) {
+		return false;
+	}
+	auto image = ResolveDrawToReplyImage(&session().data(), request);
+	if (image.isNull()) {
+		return false;
+	}
+	const auto replyTo = request.messageId;
+	OpenDrawToReplyEditor(
+		controller(),
+		std::move(image),
+		crl::guard(this, [=](QImage &&result) {
+			if (result.isNull()) {
+				return;
+			}
+			if (replyTo) {
+				replyToMessage({ .messageId = replyTo });
+			}
+			auto list = Storage::PrepareMediaFromImage(
+				std::move(result),
+				QByteArray(),
+				st::sendMediaPreviewSize);
+			confirmSendingFiles(std::move(list));
+		}));
+	return true;
 }
 
 void ChatWidget::listOpenPhoto(
@@ -3546,6 +3606,7 @@ bool ChatWidget::searchInChatEmbedded(
 		_history,
 		sublist->sublistPeer(),
 		query);
+	_composeSearch->setCalendarChat(Dialogs::Key(sublist));
 
 	updateControlsGeometry();
 	setInnerFocus();

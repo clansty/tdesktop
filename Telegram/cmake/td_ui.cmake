@@ -155,6 +155,10 @@ PRIVATE
     editor/scene/scene_item_image.h
     editor/scene/scene_item_line.cpp
     editor/scene/scene_item_line.h
+    editor/scene/scene_item_text.cpp
+    editor/scene/scene_item_text.h
+    editor/scene/scene_emoji_document.cpp
+    editor/scene/scene_emoji_document.h
 
     ui/boxes/about_cocoon_box.h
     ui/boxes/about_cocoon_box.cpp
@@ -225,12 +229,15 @@ PRIVATE
 
     menu/gift_resale_filter.cpp
     menu/gift_resale_filter.h
+    menu/menu_action_with_thumbnail.cpp
+    menu/menu_action_with_thumbnail.h
     menu/menu_checked_action.cpp
     menu/menu_checked_action.h
     menu/menu_check_item.cpp
     menu/menu_check_item.h
     menu/menu_item_rate_transcribe.cpp
     menu/menu_item_rate_transcribe.h
+    menu/menu_send_details.h
     menu/menu_timecode_action.cpp
     menu/menu_timecode_action.h
     menu/menu_ttl.cpp

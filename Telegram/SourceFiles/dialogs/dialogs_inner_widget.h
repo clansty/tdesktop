@@ -10,11 +10,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/flags.h"
 #include "base/object_ptr.h"
 #include "base/timer.h"
-#include "dialogs/dialogs_key.h"
-#include "dialogs/ui/dialogs_quick_action_context.h"
 #include "data/data_messages.h"
-#include "ui/dragging_scroll_manager.h"
+#include "dialogs/ui/dialogs_quick_action_context.h"
+#include "dialogs/dialogs_inner_widget_accessibility.h"
+#include "dialogs/dialogs_key.h"
+#include "lang/lang_keys.h"
 #include "ui/effects/animations.h"
+#include "ui/dragging_scroll_manager.h"
 #include "ui/rp_widget.h"
 #include "ui/userpic_view.h"
 
@@ -172,6 +174,7 @@ public:
 		Qt::KeyboardModifiers modifiers = {},
 		MsgId pressedTopicRootId = {},
 		PeerId pressedSublistPeerId = {});
+	bool processKeyDispatch(QKeyEvent *e);
 
 	void scrollToEntry(const RowDescriptor &entry);
 
@@ -235,6 +238,23 @@ public:
 	void prepareQuickAction(int64 key, Dialogs::Ui::QuickDialogAction);
 	void clearQuickActions();
 
+	Qt::FocusPolicy accessibilityFocusPolicy() override {
+		return Qt::TabFocus;
+	}
+	QAccessible::Role accessibilityRole() override {
+		return QAccessible::Role::List;
+	}
+	Ui::AccessibilityState accessibilityState() const override;
+	int accessibilityChildCount() const override;
+	QString accessibilityChildName(int index) const override;
+	QAccessible::State accessibilityChildState(int index) const override;
+	QAccessible::Role accessibilityChildRole() const override;
+	QRect accessibilityChildRect(int index) const override;
+	int accessibilityChildColumnCount(int row) const override;
+	QAccessible::Role accessibilityChildSubItemRole() const override;
+	QString accessibilityChildSubItemName(int row, int column) const override;
+	QString accessibilityChildSubItemValue(int row, int column) const override;
+
 protected:
 	void visibleTopBottomUpdated(
 		int visibleTop,
@@ -248,6 +268,8 @@ protected:
 	void enterEventHook(QEnterEvent *e) override;
 	void leaveEventHook(QEvent *e) override;
 	void contextMenuEvent(QContextMenuEvent *e) override;
+	void focusInEvent(QFocusEvent *e) override;
+	void keyPressEvent(QKeyEvent *e) override;
 
 private:
 	struct CollapsedRow;
@@ -480,6 +502,8 @@ private:
 	Ui::VideoUserpic *validateVideoUserpic(not_null<History*> history);
 
 	Row *shownRowByKey(Key key);
+	[[nodiscard]] const std::vector<SubItem> &activeSubItems(int row) const;
+	void announceSelectedFocus();
 	void clearSearchResults(bool alsoPeerSearchResults = true);
 	void clearPeerSearchResults();
 	void clearPreviewResults();
@@ -577,6 +601,9 @@ private:
 	std::vector<PinnedRow> _pinnedRows;
 	Ui::Animations::Basic _pinnedShiftAnimation;
 	base::flat_set<Key> _pinnedOnDragStart;
+
+	mutable int _activeSubItemsRow = -1;
+	mutable std::vector<SubItem> _activeSubItems;
 
 	// Remember the last currently dragged row top shift for updating area.
 	int _aboveTopShift = -1;

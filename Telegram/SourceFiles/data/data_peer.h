@@ -298,6 +298,8 @@ public:
 		PeerId sublistPeerId) const;
 
 	[[nodiscard]] bool useSubsectionTabs() const;
+	[[nodiscard]] bool displaySubsectionTabs() const;
+	[[nodiscard]] bool displayAsForum() const;
 	[[nodiscard]] bool viewForumAsMessages() const;
 	void processTopics(const MTPVector<MTPForumTopic> &topics);
 
@@ -634,7 +636,7 @@ private:
 	crl::time _lastFullUpdate = 0;
 
 	QString _name;
-	uint32 _nameVersion : 29 = 1;
+	uint32 _nameVersion : 16 = 1;
 	
 	mutable QString _fakeName = QString();
 	int _randomNumber = 0;
@@ -685,5 +687,6 @@ void SetTopPinnedMessageId(
 [[nodiscard]] std::optional<uint8> ColorIndexFromColor(const MTPPeerColor *);
 
 [[nodiscard]] bool IsBotUserCreatesTopics(not_null<PeerData*>);
+[[nodiscard]] bool IsBotCreatesTopics(not_null<const PeerData*>);
 
 } // namespace Data

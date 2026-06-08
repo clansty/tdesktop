@@ -46,6 +46,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_window.h"
 #include "styles/style_dialogs.h" // ChildSkip().x() for new child windows.
 
+#ifdef Q_OS_MAC
+#include "platform/mac/global_menu_mac.h"
+#endif // Q_OS_MAC
+
 #include <QtCore/QMimeData>
 #include <QtGui/QWindow>
 #include <QtGui/QScreen>
@@ -504,6 +508,14 @@ bool MainWindow::hideNoQuit() {
 void MainWindow::clearWidgets() {
 	clearWidgetsHook();
 	updateGlobalMenu();
+}
+
+void MainWindow::updateGlobalMenu() {
+#ifdef Q_OS_MAC
+	Platform::RequestUpdateGlobalMenu();
+#else // Q_OS_MAC
+	updateGlobalMenuHook();
+#endif // Q_OS_MAC
 }
 
 void MainWindow::updateIsActive() {

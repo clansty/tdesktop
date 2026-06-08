@@ -333,6 +333,9 @@ enum class MessageFlag : uint64 {
   HasUnreadPollVote = (1ULL << 59),
 
   TextAppearing = (1ULL << 60),
+  TextAppearingStarted = (1ULL << 61),
+
+  GuestChatViaFrom = (1ULL << 62),
 
   AyuNoForwards = (1ULL << 63),
 };

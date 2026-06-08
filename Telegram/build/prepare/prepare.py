@@ -452,7 +452,7 @@ if customRunCommand:
 stage('patches', """
     git clone https://github.com/desktop-app/patches.git
     cd patches
-    git checkout 4519c85c924b9da81f29d4aac045886f896ee479
+    git checkout 3128a5b5879c450f686f240cc9602ad7f4a054b4
 """)
 
 stage('msys64', """
@@ -1496,8 +1496,8 @@ release:
     cd qt_$QT
     git submodule update --init --recursive --progress qtbase qtimageformats qtsvg
 depends:patches/qtbase_""" + qt + """/*.patch
-    cd qtbase
 win:
+    cd qtbase
     setlocal enabledelayedexpansion
     for /r %%i in (..\\..\\patches\\qtbase_%QT%\\*) do (
         git apply %%i -v
@@ -1506,7 +1506,6 @@ win:
             exit /b 1
         )
     )
-
     cd ..
 
     SET CONFIGURATIONS=-debug
@@ -1556,8 +1555,7 @@ win:
     jom -j %NUMBER_OF_PROCESSORS%
     jom -j %NUMBER_OF_PROCESSORS% install
 mac:
-    find ../../patches/qtbase_$QT -type f -print0 | sort -z | xargs -0 git apply
-    cd ..
+    find ../../patches/qtbase_$QT -type f -print0 | sort -z | xargs -0 git -C qtbase apply
 
     CONFIGURATIONS=-debug
 release:
@@ -1589,10 +1587,8 @@ else: # qt > '6'
     cd qt_$QT
     git submodule update --init --recursive --progress qtbase qtimageformats qtsvg
 depends:patches/qtbase_""" + qt + """/*.patch
-    cd qtbase
 mac:
-    find ../../patches/qtbase_$QT -type f -print0 | sort -z | xargs -0 git apply -v
-    cd ..
+    find $PWD/../patches/qtbase_$QT -type f -print0 | sort -z | xargs -0 git -C qtbase apply -v
     sed -i.bak 's/tqtc-//' {qtimageformats,qtsvg}/dependencies.yaml
 
     CONFIGURATIONS=-debug
@@ -1619,6 +1615,7 @@ mac:
     cmake --build .
     cmake --install .
 win:
+    cd qtbase
     for /r %%i in (..\\..\\patches\\qtbase_%QT%\\*) do git apply %%i -v
     cd ..
 
@@ -1681,7 +1678,7 @@ win:
 stage('tg_owt', """
     git clone https://github.com/desktop-app/tg_owt.git
     cd tg_owt
-    git checkout 5c5c71258777d0196dbb3a09cc37d2f56ead28ab
+    git checkout 89df288dd6ba5b2ec95b3c5eaf1e7e0c3a870fc4
     git submodule update --init --recursive
 win:
     SET MOZJPEG_PATH=$LIBS_DIR/mozjpeg

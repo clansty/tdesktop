@@ -38,6 +38,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_session.h"
 #include "data/data_stories.h"
 #include "data/data_user.h"
+#include "data/stickers/data_custom_emoji.h"
 #include "data/stickers/data_stickers.h"
 #include "dialogs/dialogs_indexed_list.h"
 #include "dialogs/dialogs_quick_action.h"
@@ -74,6 +75,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/effects/ripple_animation.h"
 #include "ui/painter.h"
 #include "ui/rect.h"
+#include "ui/screen_reader_mode.h"
 #include "ui/text/text_options.h"
 #include "ui/text/text_utilities.h"
 #include "ui/ui_utility.h"
@@ -91,6 +93,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <QtCore/QMimeData>
 #include <QtWidgets/QApplication>
+#include <unordered_map>
 
 // AyuGram includes
 #include "ayu/ui/ayu_userpic.h"
@@ -286,6 +289,7 @@ InnerWidget::InnerWidget(QWidget *parent,
         update();
       }) {
   setAttribute(Qt::WA_OpaquePaintEvent, true);
+  setAccessibleName(tr::lng_recent_chats(tr::now));
 
   style::PaletteChanged() |
       rpl::on_next(
@@ -858,7 +862,7 @@ void InnerWidget::paintEvent(QPaintEvent *e) {
     const auto &key = row->key();
     const auto active = mayBeActive && isRowActive(row, activeEntry);
     const auto history = key.history();
-    const auto forum = history && history->isForum();
+		const auto forum = history && history->peer->displayAsForum();
     const auto monoforum = history && history->amMonoforumAdmin();
     if ((forum || monoforum) && !_topicJumpCache) {
       _topicJumpCache = std::make_unique<Ui::TopicJumpCache>();
@@ -1569,8 +1573,11 @@ void InnerWidget::paintPeerSearchResult(
 
   if (const auto info = peer->botVerifyDetails()) {
     if (!result->badge.ready(info)) {
-      result->badge.set(info, peer->owner().customEmojiManager().factory(),
-                        [=] { updateSearchResult(peer); });
+      result->badge.set(
+          info,
+          peer->owner().customEmojiManager().factory(
+              Data::CustomEmojiSizeTag::Isolated),
+          [=] { updateSearchResult(peer); });
     }
     const auto &st = Ui::VerifiedStyle(context);
     const auto position = rectForName.topLeft();
@@ -2823,7 +2830,11 @@ void InnerWidget::dialogRowReplaced(Row *oldRow, Row *newRow) {
     _selected = newRow;
   }
   if (_pressed == oldRow) {
-    setPressed(newRow, _pressedTopicJump, _pressedRightButton);
+		if (newRow) {
+			setPressed(newRow, _pressedTopicJump, _pressedRightButton);
+		} else {
+			clearPressed();
+		}
   }
   if (_dragging == oldRow) {
     if (newRow) {
@@ -5564,6 +5575,170 @@ void InnerWidget::deactivateQuickAction() {
     _inactiveQuickActions.push_back(
         QuickActionPtr{_activeQuickAction.release()});
   }
+}
+
+void InnerWidget::focusInEvent(QFocusEvent *e) {
+	RpWidget::focusInEvent(e);
+	if (_state != WidgetState::Default) {
+		return;
+	}
+	if (!_selected && !_shownList->empty()) {
+		_selected = _shownList->cbegin()->get();
+	}
+	if (_selected) {
+		const auto row = _selected;
+		InvokeQueued(this, [=] {
+			if (_selected == row && hasFocus()) {
+				announceSelectedFocus();
+			}
+		});
+	}
+}
+
+bool InnerWidget::processKeyDispatch(QKeyEvent *e) {
+	const auto previous = _selected;
+	if (e->key() == Qt::Key_Up) {
+		selectSkip(-1);
+	} else if (e->key() == Qt::Key_Down) {
+		selectSkip(1);
+	} else if (e->key() == Qt::Key_PageUp) {
+		selectSkipPage(_visibleBottom - _visibleTop, -1);
+	} else if (e->key() == Qt::Key_PageDown) {
+		selectSkipPage(_visibleBottom - _visibleTop, 1);
+	} else {
+		return false;
+	}
+	if (_selected != previous) {
+		announceSelectedFocus();
+	}
+	return true;
+}
+
+void InnerWidget::keyPressEvent(QKeyEvent *e) {
+	if (processKeyDispatch(e)) {
+		return;
+	} else if (e->key() == Qt::Key_Return || e->key() == Qt::Key_Enter) {
+		chooseRow();
+		return;
+	}
+	RpWidget::keyPressEvent(e);
+}
+
+void InnerWidget::announceSelectedFocus() {
+	if (!_selected || _state != WidgetState::Default) {
+		return;
+	}
+	auto index = 0;
+	for (auto i = _shownList->cbegin(); i != _shownList->cend(); ++i, ++index) {
+		if (i->get() == _selected) {
+			accessibilityChildNameChanged(index);
+			accessibilityChildFocused(index);
+			return;
+		}
+	}
+}
+
+Ui::AccessibilityState InnerWidget::accessibilityState() const {
+	return {};
+}
+
+int InnerWidget::accessibilityChildCount() const {
+	return _shownList->size();
+}
+
+QString InnerWidget::accessibilityChildName(int index) const {
+	if (index < 0 || index >= _shownList->size()) {
+		return {};
+	}
+	auto it = _shownList->cbegin();
+	std::advance(it, index);
+	return RowAccessibilityName(it->get(), _filterId);
+}
+
+QAccessible::State InnerWidget::accessibilityChildState(int index) const {
+	auto state = QAccessible::State();
+	state.selectable = true;
+	if (Ui::ScreenReaderModeActive()) {
+		state.focusable = true;
+	}
+	if (index < 0 || index >= _shownList->size()) {
+		return state;
+	}
+	auto it = _shownList->cbegin();
+	std::advance(it, index);
+	if (it->get() == _selected) {
+		state.selected = true;
+		state.active = true;
+		if (Ui::ScreenReaderModeActive()) {
+			state.focused = true;
+		}
+	}
+	return state;
+}
+
+QAccessible::Role InnerWidget::accessibilityChildRole() const {
+	return QAccessible::Role::ListItem;
+}
+
+QRect InnerWidget::accessibilityChildRect(int index) const {
+	if (index < 0 || index >= _shownList->size()) {
+		return QRect();
+	}
+	auto it = _shownList->cbegin();
+	std::advance(it, index);
+	const auto row = it->get();
+	return QRect(0, row->top(), width(), row->height());
+}
+
+int InnerWidget::accessibilityChildColumnCount(int row) const {
+	if (row < 0 || row >= _shownList->size()) {
+		return 0;
+	}
+	return int(activeSubItems(row).size());
+}
+
+const std::vector<SubItem> &InnerWidget::activeSubItems(int row) const {
+	Expects(row >= 0 && row < _shownList->size());
+
+	if (_activeSubItemsRow != row) {
+		auto it = _shownList->cbegin();
+		std::advance(it, row);
+		_activeSubItems = ActiveSubItems(it->get(), _filterId);
+		_activeSubItemsRow = row;
+	}
+	return _activeSubItems;
+}
+
+QAccessible::Role InnerWidget::accessibilityChildSubItemRole() const {
+	return QAccessible::Cell;
+}
+
+QString InnerWidget::accessibilityChildSubItemName(
+		int row,
+		int column) const {
+	if (row < 0 || row >= _shownList->size()) {
+		return {};
+	}
+	const auto &active = activeSubItems(row);
+	if (column < 0 || column >= int(active.size())) {
+		return {};
+	}
+	return SubItemLabel(active[column]);
+}
+
+QString InnerWidget::accessibilityChildSubItemValue(
+		int row,
+		int column) const {
+	if (row < 0 || row >= _shownList->size()) {
+		return {};
+	}
+	const auto &active = activeSubItems(row);
+	if (column < 0 || column >= int(active.size())) {
+		return {};
+	}
+	auto it = _shownList->cbegin();
+	std::advance(it, row);
+	return SubItemValue(it->get(), _filterId, active[column]);
 }
 
 } // namespace Dialogs
